@@ -8,7 +8,11 @@ version = "0.1.0"
 description = "SMAK prototype"
 requires-python = ">=3.10"
 dependencies = [
+    "click",
 ]
+
+[project.scripts]
+smak = "smak.cli:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
