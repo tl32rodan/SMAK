@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from smak.core.domain import KnowledgeUnit
+from smak.ingest.parsers.issue import IssueParser
+from smak.ingest.parsers.perl import PerlParser
+from smak.ingest.parsers.python import PythonParser
 
 
 class Parser(Protocol):
@@ -24,5 +27,21 @@ class SimpleLineParser:
         units = []
         origin = source or "content"
         for index, line in enumerate(lines, start=1):
-            units.append(KnowledgeUnit(uid=f"{origin}:{index}", content=line, source=source))
+            units.append(
+                KnowledgeUnit(
+                    uid=f"{origin}:{index}",
+                    content=line,
+                    source_type="documentation",
+                    metadata={"line": index, "source": source},
+                )
+            )
         return units
+
+
+__all__ = [
+    "IssueParser",
+    "Parser",
+    "PerlParser",
+    "PythonParser",
+    "SimpleLineParser",
+]
