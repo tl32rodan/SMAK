@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 
 @dataclass(frozen=True)
@@ -12,8 +12,9 @@ class KnowledgeUnit:
 
     uid: str
     content: str
+    source_type: str
+    relations: tuple[str, ...] = field(default_factory=tuple)
     metadata: dict[str, Any] = field(default_factory=dict)
-    source: str | None = None
 
     def with_metadata(self, updates: Mapping[str, Any]) -> "KnowledgeUnit":
         """Return a new knowledge unit with merged metadata."""
@@ -22,6 +23,18 @@ class KnowledgeUnit:
         return KnowledgeUnit(
             uid=self.uid,
             content=self.content,
+            source_type=self.source_type,
+            relations=self.relations,
             metadata=merged,
-            source=self.source,
+        )
+
+    def with_relations(self, relations: Sequence[str]) -> "KnowledgeUnit":
+        """Return a new knowledge unit with updated relations."""
+
+        return KnowledgeUnit(
+            uid=self.uid,
+            content=self.content,
+            source_type=self.source_type,
+            relations=tuple(relations),
+            metadata=self.metadata,
         )

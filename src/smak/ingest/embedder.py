@@ -13,6 +13,11 @@ class SimpleEmbedder:
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         return [self._vectorize(text) for text in texts]
 
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        """Compatibility wrapper for document embedding."""
+
+        return self.embed(texts)
+
     @staticmethod
     def _vectorize(text: str) -> list[float]:
         length = len(text)

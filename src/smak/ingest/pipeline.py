@@ -8,7 +8,7 @@ from typing import Any
 from smak.core.domain import KnowledgeUnit
 from smak.ingest.embedder import SimpleEmbedder
 from smak.ingest.parsers import Parser
-from smak.ingest.sidecar import SidecarLoader
+from smak.ingest.sidecar import IntegrityError, SidecarManager
 
 
 @dataclass
@@ -26,7 +26,7 @@ class IngestPipeline:
 
     parser: Parser
     embedder: SimpleEmbedder
-    sidecar_loader: SidecarLoader
+    sidecar_manager: SidecarManager
 
     def run(
         self,
@@ -37,5 +37,11 @@ class IngestPipeline:
     ) -> IngestResult:
         units = self.parser.parse(content, source=source)
         embeddings = self.embedder.embed([unit.content for unit in units])
-        metadata = self.sidecar_loader.load(sidecar_payload)
-        return IngestResult(units=units, embeddings=embeddings, metadata=metadata)
+        metadata = self.sidecar_manager.load(sidecar_payload)
+        symbols = [unit.metadata.get("symbol") for unit in units if unit.metadata.get("symbol")]
+        self.sidecar_manager.validate(symbols, metadata)
+        enriched_units = self.sidecar_manager.apply(units, metadata)
+        return IngestResult(units=enriched_units, embeddings=embeddings, metadata=metadata)
+
+
+__all__ = ["IngestPipeline", "IngestResult", "IntegrityError"]

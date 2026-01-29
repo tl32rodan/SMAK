@@ -1,8 +1,10 @@
+from dataclasses import dataclass
+
 import pytest
 
 from smak.agent.react import ReActAgent
-from smak.agent.router import ToolRouter
-from smak.agent.tools import Tool, ToolRegistry
+from smak.agent.router import IndexRouter, ToolRouter
+from smak.agent.tools import MeshSearchTool, Tool, ToolRegistry
 
 
 def test_tool_registry_registers_and_lists() -> None:
@@ -41,3 +43,51 @@ def test_react_agent_invokes_tool_and_tracks_history() -> None:
 
     assert result == 6
     assert agent.history == [{"tool": "double", "args": (3,), "kwargs": {}}]
+
+
+def test_index_router_routes_with_classifier() -> None:
+    router = IndexRouter(
+        index_names=["code", "issue"],
+        classifier=lambda query, names: [name for name in names if name in query],
+    )
+
+    assert router.route("code search") == ["code"]
+
+
+def test_mesh_search_tool_expands_relations() -> None:
+    @dataclass
+    class FakeIndex:
+        data: dict[str, dict]
+
+        def search(self, query: str) -> list[dict]:
+            return [self.data["code::login"]]
+
+        def get_by_id(self, uid: str) -> dict | None:
+            return self.data.get(uid)
+
+    class FakeRegistry:
+        def __init__(self) -> None:
+            self.indices = {
+                "code": FakeIndex(
+                    data={
+                        "code::login": {
+                            "payload": {"relations": ["issue::101"]},
+                            "uid": "code::login",
+                        },
+                    }
+                ),
+                "issue": FakeIndex(
+                    data={
+                        "issue::101": {"payload": {"content": "issue body"}, "uid": "issue::101"}
+                    }
+                ),
+            }
+
+        def get_index(self, name: str) -> FakeIndex:
+            return self.indices[name]
+
+    tool = MeshSearchTool(registry=FakeRegistry())
+
+    results = tool.search("code", "login")
+
+    assert [result["uid"] for result in results] == ["code::login", "issue::101"]

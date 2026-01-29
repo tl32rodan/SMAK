@@ -15,3 +15,11 @@ def test_simple_embedder_handles_empty_text() -> None:
     vectors = embedder.embed([""])
 
     assert vectors == [[0.0, 0.0, 0.0]]
+
+
+def test_simple_embedder_embeds_documents() -> None:
+    embedder = SimpleEmbedder()
+
+    vectors = embedder.embed_documents(["ab"])
+
+    assert vectors == [[2.0, 195.0, 97.5]]
