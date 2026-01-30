@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from smak.core.domain import KnowledgeUnit
-from smak.utils.yaml import load_yaml
+from smak.utils.yaml import safe_load
 
 
 class IntegrityError(ValueError):
@@ -22,7 +22,7 @@ class SidecarManager:
 
         if not payload:
             return {}
-        parsed = load_yaml(payload)
+        parsed = safe_load(payload)
         if parsed is None:
             return {}
         if isinstance(parsed, dict):
