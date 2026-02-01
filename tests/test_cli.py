@@ -6,29 +6,29 @@ from smak.cli import _default_config_template, _ingest_folder, main
 from smak.config import SmakConfig, StorageConfig
 
 
-class FakeIndex:
-    def __init__(self, saved: list) -> None:
+class FakeNode:
+    def __init__(self, text: str, id_: str, metadata: dict) -> None:
+        self.text = text
+        self.id_ = id_
+        self.metadata = metadata
+        self.embedding: list[float] | None = None
+
+
+class FakeVectorStore:
+    def __init__(self, saved: list, index_name: str) -> None:
         self._saved = saved
+        self.index_name = index_name
 
-    def add(self, docs: list) -> None:
-        self._saved.extend(docs)
-
-
-class FakeRegistry:
-    def __init__(self, saved: list) -> None:
-        self._saved = saved
-        self.last_index: str | None = None
-
-    def get_index(self, name: str) -> FakeIndex:
-        self.last_index = name
-        return FakeIndex(self._saved)
+    def add(self, nodes: list) -> None:
+        self._saved.extend(nodes)
 
 
 def test_default_config_template_includes_storage() -> None:
     template = _default_config_template()
 
     assert "storage:" in template
-    assert "base_path: ./data/faiss_indexes" in template
+    assert "provider: milvus_lite" in template
+    assert "uri: ./milvus_data.db" in template
 
 
 def test_ingest_folder_processes_files(tmp_path: Path) -> None:
@@ -43,20 +43,27 @@ def test_ingest_folder_processes_files(tmp_path: Path) -> None:
     )
 
     saved: list = []
-    registry = FakeRegistry(saved)
+    created: dict[str, str] = {}
 
-    def loader(base_path: str) -> FakeRegistry:
-        assert base_path == "vault"
-        return registry
+    def loader(index_name: str, config: SmakConfig) -> FakeVectorStore:
+        assert config.storage.uri == "vault.db"
+        created["index"] = index_name
+        return FakeVectorStore(saved, index_name)
 
-    config = SmakConfig(storage=StorageConfig(base_path="vault"))
+    config = SmakConfig(storage=StorageConfig(uri="vault.db"))
 
-    stats = _ingest_folder(folder, "code", config, registry_loader=loader)
+    stats = _ingest_folder(
+        folder,
+        "code",
+        config,
+        vector_store_loader=loader,
+        node_class_loader=lambda: FakeNode,
+    )
 
     assert stats.files == 1
     assert stats.vectors == 1
-    assert registry.last_index == "code"
-    assert saved[0].payload["relations"] == ["issue::1"]
+    assert created["index"] == "code"
+    assert saved[0].metadata["relations"] == ["issue::1"]
 
 
 def test_cli_init_and_ingest(tmp_path: Path, monkeypatch) -> None:
@@ -66,11 +73,14 @@ def test_cli_init_and_ingest(tmp_path: Path, monkeypatch) -> None:
     source = folder / "note.md"
     source.write_text("---\nid: issue-1\n---\nbody\n", encoding="utf-8")
     config_path = tmp_path / "workspace_config.yaml"
-    config_path.write_text("storage:\n  base_path: vault\n", encoding="utf-8")
+    config_path.write_text("storage:\n  uri: vault.db\n", encoding="utf-8")
 
     saved: list = []
-    registry = FakeRegistry(saved)
-    monkeypatch.setattr("smak.cli._load_registry", lambda _: registry)
+    monkeypatch.setattr(
+        "smak.cli._load_vector_store",
+        lambda index, config: FakeVectorStore(saved, index),
+    )
+    monkeypatch.setattr("smak.cli._load_text_node_class", lambda: FakeNode)
 
     init_result = runner.invoke(
         main,
@@ -103,12 +113,23 @@ def test_cli_init_and_ingest(tmp_path: Path, monkeypatch) -> None:
     assert saved
 
 
-def test_load_registry_missing_dependency(monkeypatch) -> None:
+def test_load_vector_store_missing_dependency(monkeypatch) -> None:
     from smak import cli
 
     monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: None)
 
     try:
-        cli._load_registry("vault")
+        cli._load_vector_store("code", SmakConfig())
     except Exception as exc:
-        assert "faiss-storage-lib" in str(exc)
+        assert "llama-index-vector-stores-milvus" in str(exc)
+
+
+def test_load_text_node_missing_dependency(monkeypatch) -> None:
+    from smak import cli
+
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: None)
+
+    try:
+        cli._load_text_node_class()
+    except Exception as exc:
+        assert "llama-index-core" in str(exc)

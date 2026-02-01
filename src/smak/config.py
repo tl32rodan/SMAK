@@ -31,7 +31,8 @@ class LLMConfig:
 class StorageConfig:
     """Configuration for vector storage."""
 
-    base_path: str = "vault"
+    provider: str = "milvus_lite"
+    uri: str = "./milvus_data.db"
 
 
 @dataclass(frozen=True)
@@ -72,7 +73,10 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
         api_base=llm_data.get("api_base"),
     )
     storage_data = data.get("storage", {}) if isinstance(data, Mapping) else {}
-    storage = StorageConfig(base_path=str(storage_data.get("base_path", "vault")))
+    storage = StorageConfig(
+        provider=str(storage_data.get("provider", "milvus_lite")),
+        uri=str(storage_data.get("uri", storage_data.get("base_path", "./milvus_data.db"))),
+    )
     if isinstance(data, Mapping):
         embedding_dimensions = int(data.get("embedding_dimensions", 3))
     else:
