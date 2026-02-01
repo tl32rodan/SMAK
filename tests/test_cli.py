@@ -28,7 +28,7 @@ def test_default_config_template_includes_storage() -> None:
     template = _default_config_template()
 
     assert "storage:" in template
-    assert "base_path: vault" in template
+    assert "base_path: ./data/faiss_indexes" in template
 
 
 def test_ingest_folder_processes_files(tmp_path: Path) -> None:
@@ -101,3 +101,14 @@ def test_cli_init_and_ingest(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0
     assert "Ingestion Complete" in result.output
     assert saved
+
+
+def test_load_registry_missing_dependency(monkeypatch) -> None:
+    from smak import cli
+
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda _: None)
+
+    try:
+        cli._load_registry("vault")
+    except Exception as exc:
+        assert "faiss-storage-lib" in str(exc)

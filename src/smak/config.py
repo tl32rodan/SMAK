@@ -23,6 +23,8 @@ class LLMConfig:
 
     provider: str = "openai"
     model: str | None = None
+    temperature: float = 0.0
+    api_base: str | None = None
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,8 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
     llm = LLMConfig(
         provider=str(llm_data.get("provider", "openai")),
         model=llm_data.get("model"),
+        temperature=float(llm_data.get("temperature", 0.0)),
+        api_base=llm_data.get("api_base"),
     )
     storage_data = data.get("storage", {}) if isinstance(data, Mapping) else {}
     storage = StorageConfig(base_path=str(storage_data.get("base_path", "vault")))

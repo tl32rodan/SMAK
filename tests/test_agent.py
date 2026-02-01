@@ -5,6 +5,7 @@ import pytest
 from smak.agent.react import ReActAgent
 from smak.agent.router import IndexRouter, ToolRouter
 from smak.agent.tools import MeshSearchTool, Tool, ToolRegistry
+from smak.utils.llm_parser import parse_json_from_text
 
 
 def test_tool_registry_registers_and_lists() -> None:
@@ -43,6 +44,28 @@ def test_react_agent_invokes_tool_and_tracks_history() -> None:
 
     assert result == 6
     assert agent.history == [{"tool": "double", "args": (3,), "kwargs": {}}]
+
+
+def test_react_agent_step_retries_with_json_parse() -> None:
+    registry = ToolRegistry()
+    tool = Tool(name="double", description="", handler=lambda value: value * 2)
+    registry.register(tool)
+    agent = ReActAgent(router=ToolRouter(registry=registry))
+
+    responses = iter(
+        [
+            "Here is the JSON you asked for: {\"tool\": \"double\", \"args\": [4],}",
+            "{\"tool\": \"double\", \"args\": [4]}",
+        ]
+    )
+
+    def fake_llm(prompt: str) -> str:
+        return next(responses)
+
+    result = agent.step("prompt", fake_llm, retries=1)
+
+    assert result == 8
+    assert agent.history[-1]["tool"] == "double"
 
 
 def test_index_router_routes_with_classifier() -> None:
@@ -91,3 +114,9 @@ def test_mesh_search_tool_expands_relations() -> None:
     results = tool.search("code", "login")
 
     assert [result["uid"] for result in results] == ["code::login", "issue::101"]
+
+
+def test_parse_json_from_text_handles_filler() -> None:
+    parsed = parse_json_from_text("Sure! {\"tool\": \"noop\"} Thanks.")
+
+    assert parsed == {"tool": "noop"}
