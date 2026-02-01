@@ -203,7 +203,7 @@ def ingest(folder: Path, index: str, config: str, workers: int) -> None:
     except Exception as exc:  # pragma: no cover - click prints the exception
         raise click.ClickException(f"Error loading config: {exc}") from exc
 
-    click.echo(f"🚀 Starting ingestion for '{folder}' -> Index: '{index}'...")
+    click.echo(f"Starting ingestion for '{folder}' -> Index: '{index}'...")
     try:
         stats = _ingest_folder(folder, index, cfg, max_workers=workers, show_progress=True)
     except IntegrityError as exc:
@@ -211,7 +211,7 @@ def ingest(folder: Path, index: str, config: str, workers: int) -> None:
     except Exception as exc:
         raise click.ClickException(f"Ingestion failed: {exc}") from exc
 
-    click.echo("✅ Ingestion Complete!")
+    click.echo("Ingestion Complete!")
     click.echo(f"   - Processed Files: {stats.files}")
     click.echo(f"   - Vectors Added: {stats.vectors}")
 
@@ -225,19 +225,18 @@ def init(config_path: str, force: bool) -> None:
     if target.exists() and not force:
         raise click.ClickException(f"Config already exists: {target}")
     target.write_text(_default_config_template(), encoding="utf-8")
-    click.echo(f"📝 Wrote workspace config to {target}")
+    click.echo(f"Wrote workspace config to {target}")
 
 
 @main.command()
 @click.option("--port", default=7860, help="Port to run the server on")
 def server(port: int) -> None:
     """Launch the Agent Demo Server."""
-    spec = importlib.util.find_spec("examples.demo_server")
-    if spec is None:
-        raise click.ClickException("Demo server module not available.")
-    module = importlib.import_module("examples.demo_server")
-    demo = getattr(module, "demo")
-    click.echo(f"🤖 Launching SMAK Agent Server on port {port}...")
+    try:
+        from examples.demo_server import demo
+    except ImportError as exc:
+        raise click.ClickException("Demo server module not available.") from exc
+    click.echo(f"Launching SMAK Agent Server on port {port}...")
     demo.launch(server_name="0.0.0.0", server_port=port, share=False)
 
 

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from smak.core.domain import KnowledgeUnit
-from smak.utils.yaml import load_yaml
+from smak.utils.yaml import safe_load
 
 
 @dataclass
@@ -15,7 +15,7 @@ class IssueParser:
 
     def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:
         frontmatter, body = _split_frontmatter(content or "")
-        metadata = load_yaml(frontmatter) if frontmatter else {}
+        metadata = safe_load(frontmatter) if frontmatter else {}
         if metadata is None:
             metadata = {}
         if not isinstance(metadata, dict):

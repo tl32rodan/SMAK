@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
-from smak.utils.yaml import load_yaml
+from smak.utils.yaml import safe_load
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ def load_config(path: str | Path) -> SmakConfig:
     """Load configuration from a YAML file."""
 
     raw = Path(path).read_text(encoding="utf-8")
-    data: Any = load_yaml(raw) or {}
+    data: Any = safe_load(raw) or {}
     return _coerce_config(data)
 
 
