@@ -14,7 +14,6 @@ from typing import Callable, Iterable
 import click
 
 from smak.config import SmakConfig, load_config
-from smak.db.adapter import VectorAdapter
 from smak.ingest.embedder import SimpleEmbedder
 from smak.ingest.parsers import IssueParser, Parser, PerlParser, PythonParser, SimpleLineParser
 from smak.ingest.pipeline import IngestPipeline, IntegrityError
@@ -51,16 +50,31 @@ class IngestStats:
     vectors: int
 
 
-def _load_registry(base_path: str):
-    spec = importlib.util.find_spec("faiss_storage_lib.engine.registry")
+def _load_text_node_class():
+    spec = importlib.util.find_spec("llama_index.core.schema")
     if spec is None:  # pragma: no cover - guard for missing dependency
         raise click.ClickException(
-            "Critical dependency 'faiss-storage-lib' not found. "
-            "Did you run pip install -e ../faiss-storage-lib?"
+            "Critical dependency 'llama-index-core' not found. "
+            "Did you run pip install llama-index-core?"
         )
-    module = importlib.import_module("faiss_storage_lib.engine.registry")
-    registry_class = getattr(module, "IndexRegistry")
-    return registry_class(base_path)
+    module = importlib.import_module("llama_index.core.schema")
+    return getattr(module, "TextNode")
+
+
+def _load_vector_store(index_name: str, config: SmakConfig):
+    spec = importlib.util.find_spec("llama_index.vector_stores.milvus")
+    if spec is None:  # pragma: no cover - guard for missing dependency
+        raise click.ClickException(
+            "Critical dependency 'llama-index-vector-stores-milvus' not found. "
+            "Did you run pip install llama-index-vector-stores-milvus?"
+        )
+    module = importlib.import_module("llama_index.vector_stores.milvus")
+    store_class = getattr(module, "MilvusVectorStore")
+    return store_class(
+        uri=config.storage.uri,
+        collection_name=index_name,
+        dim=config.embedding_dimensions,
+    )
 
 
 def _default_config_template() -> str:
@@ -69,7 +83,8 @@ def _default_config_template() -> str:
             "# SMAK Workspace Configuration",
             "",
             "storage:",
-            "  base_path: ./data/faiss_indexes",
+            "  provider: milvus_lite",
+            "  uri: ./milvus_data.db",
             "",
             "indices:",
             "  - name: source_code",
@@ -90,11 +105,15 @@ def _default_config_template() -> str:
                 "knowledge base."
             ),
             "",
-            "llm:",
-            "  provider: openai",
-            "  model: gpt-4o",
-            "  temperature: 0.0",
-            "  # api_base: http://localhost:11434/v1",
+            "llama_index:",
+            "  llm:",
+            "    provider: openai",
+            "    model: gpt-4o",
+            "    temperature: 0.0",
+            "    # api_base: http://localhost:11434/v1",
+            "  embedding:",
+            "    provider: openai",
+            "    model: text-embedding-3-small",
             "",
             "embedding_dimensions: 3",
             "",
@@ -134,16 +153,18 @@ def _ingest_folder(
     folder: Path,
     index: str,
     config: SmakConfig,
-    registry_loader: Callable[[str], object] | None = None,
+    vector_store_loader: Callable[[str, SmakConfig], object] | None = None,
+    node_class_loader: Callable[[], type] | None = None,
     *,
     max_workers: int = DEFAULT_MAX_WORKERS,
     show_progress: bool = False,
 ) -> IngestStats:
-    loader = registry_loader or _load_registry
-    registry = loader(config.storage.base_path)
+    vector_store_factory = vector_store_loader or _load_vector_store
+    node_factory = node_class_loader or _load_text_node_class
+    vector_store = vector_store_factory(index, config)
+    node_class = node_factory()
     embedder = SimpleEmbedder()
     sidecar_manager = SidecarManager()
-    adapter = VectorAdapter(registry=registry, embedder=embedder)
 
     paths = list(_iter_source_files(folder))
     file_count = 0
@@ -161,8 +182,19 @@ def _ingest_folder(
         content = file_path.read_text(encoding="utf-8", errors="replace")
         sidecar = _sidecar_payload(file_path)
         result = pipeline.run(content, source=str(file_path), sidecar_payload=sidecar)
+        vectors = embedder.embed_documents([unit.content for unit in result.units])
+        nodes = []
+        for unit, vector in zip(result.units, vectors):
+            node = node_class(
+                text=unit.content,
+                id_=unit.uid,
+                metadata={"relations": list(unit.relations), "meta": unit.metadata},
+            )
+            node.embedding = vector
+            nodes.append(node)
         with lock:
-            adapter.save(index, result.units)
+            if nodes:
+                vector_store.add(nodes)
         return file_path, len(result.units)
 
     max_workers = max(1, min(max_workers, os.cpu_count() or max_workers))
