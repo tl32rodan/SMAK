@@ -1,27 +1,41 @@
-import json
 from types import SimpleNamespace
-
-import httpx
 
 from smak.bridge import models
 from smak.bridge.models import InternalNomicEmbedding, build_internal_llm
 
 
-def test_internal_nomic_embedding_posts_request() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content.decode("utf-8"))
-        assert payload == {"model": "nomic-test", "input": ["hello"]}
-        return httpx.Response(
-            200,
-            json={"data": [{"index": 0, "embedding": [0.1, 0.2, 0.3]}]},
-        )
+class DummyResponse:
+    def __init__(self, payload):
+        self._payload = payload
 
-    transport = httpx.MockTransport(handler)
-    client = httpx.Client(transport=transport)
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class DummySession:
+    def __init__(self, expected_payload, response_payload):
+        self.expected_payload = expected_payload
+        self.response_payload = response_payload
+        self.calls = []
+
+    def post(self, url, json, headers, timeout):
+        self.calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        assert json == self.expected_payload
+        return DummyResponse(self.response_payload)
+
+
+def test_internal_nomic_embedding_posts_request() -> None:
+    session = DummySession(
+        expected_payload={"model": "nomic-test", "input": ["hello"]},
+        response_payload={"data": [{"index": 0, "embedding": [0.1, 0.2, 0.3]}]},
+    )
     embedder = InternalNomicEmbedding(
         api_base="http://nomic.test",
         model="nomic-test",
-        client=client,
+        session=session,
     )
 
     vector = embedder.get_text_embedding("hello")
@@ -30,25 +44,19 @@ def test_internal_nomic_embedding_posts_request() -> None:
 
 
 def test_internal_nomic_embedding_batches_response_in_order() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content.decode("utf-8"))
-        assert payload["input"] == ["a", "b"]
-        return httpx.Response(
-            200,
-            json={
-                "data": [
-                    {"index": 1, "embedding": [2.0]},
-                    {"index": 0, "embedding": [1.0]},
-                ]
-            },
-        )
-
-    transport = httpx.MockTransport(handler)
-    client = httpx.Client(transport=transport)
+    session = DummySession(
+        expected_payload={"model": "nomic-test", "input": ["a", "b"]},
+        response_payload={
+            "data": [
+                {"index": 1, "embedding": [2.0]},
+                {"index": 0, "embedding": [1.0]},
+            ]
+        },
+    )
     embedder = InternalNomicEmbedding(
         api_base="http://nomic.test",
         model="nomic-test",
-        client=client,
+        session=session,
     )
 
     vectors = embedder._get_text_embeddings(["a", "b"])
@@ -68,4 +76,3 @@ def test_build_internal_llm_uses_internal_defaults(monkeypatch) -> None:
 
     assert llm.model == "gpt-oss-turbo"
     assert captured["api_base"] == "http://x"
-

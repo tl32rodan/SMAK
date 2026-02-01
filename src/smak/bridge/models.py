@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any, Sequence
 
-import httpx
+import requests
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.llms.openai_like import OpenAILike
 
@@ -30,7 +31,7 @@ class InternalNomicEmbedding(BaseEmbedding):
         model: str | None = None,
         timeout: float = 30.0,
         headers: dict[str, str] | None = None,
-        client: httpx.Client | None = None,
+        session: requests.Session | None = None,
         embed_batch_size: int = 64,
     ) -> None:
         api_base = api_base or os.environ.get("SMAK_NOMIC_API_BASE", _DEFAULT_NOMIC_API_BASE)
@@ -40,7 +41,7 @@ class InternalNomicEmbedding(BaseEmbedding):
         self.model = model
         self.timeout = timeout
         self.headers = headers or {}
-        self.client = client or httpx.Client(timeout=self.timeout)
+        self.session = session or requests.Session()
 
     def _embedding_endpoint(self) -> str:
         if self.api_base.endswith("/v1"):
@@ -49,8 +50,8 @@ class InternalNomicEmbedding(BaseEmbedding):
 
     def _post_embeddings(self, texts: Sequence[str]) -> list[list[float]]:
         payload = {"model": self.model, "input": list(texts)}
-        response = self.client.post(
-            self._embedding_endpoint(), json=payload, headers=self.headers
+        response = self.session.post(
+            self._embedding_endpoint(), json=payload, headers=self.headers, timeout=self.timeout
         )
         response.raise_for_status()
         data = response.json()
@@ -78,12 +79,13 @@ class InternalNomicEmbedding(BaseEmbedding):
 
     async def _aget_text_embeddings(self, texts: list[str]) -> list[list[float]]:
         payload = {"model": self.model, "input": list(texts)}
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                self._embedding_endpoint(), json=payload, headers=self.headers
-            )
-        response.raise_for_status()
-        data = response.json()
+        response = await _async_post_embeddings(
+            self._embedding_endpoint(),
+            payload,
+            self.headers,
+            self.timeout,
+        )
+        data = response
         if "data" in data:
             return _normalize_openai_embeddings(data["data"], len(texts))
         if "embeddings" in data:
@@ -101,6 +103,33 @@ def _normalize_openai_embeddings(data: Sequence[dict[str, Any]], size: int) -> l
     if any(embedding is None for embedding in embeddings):
         raise ValueError("Embedding response did not include all requested entries.")
     return [embedding for embedding in embeddings if embedding is not None]
+
+
+async def _async_post_embeddings(
+    url: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+    timeout: float,
+) -> dict[str, Any]:
+    response = await asyncio.to_thread(
+        _sync_post_embeddings,
+        url,
+        payload,
+        headers,
+        timeout,
+    )
+    return response
+
+
+def _sync_post_embeddings(
+    url: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+    timeout: float,
+) -> dict[str, Any]:
+    response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+    response.raise_for_status()
+    return response.json()
 
 
 def build_internal_llm(
