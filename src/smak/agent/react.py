@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from smak.agent.router import ToolRouter
+from smak.utils.llm_parser import ensure_action_payload, parse_json_from_text
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -20,3 +24,31 @@ class ReActAgent:
         result = tool(*args, **kwargs)
         self.history.append({"tool": tool.name, "args": args, "kwargs": kwargs})
         return result
+
+    def step(
+        self,
+        prompt: str,
+        llm: Callable[[str], str],
+        *,
+        retries: int = 2,
+    ) -> Any:
+        """Run a single ReAct step by querying an LLM and invoking a tool."""
+
+        last_error: Exception | None = None
+        current_prompt = prompt
+        for attempt in range(retries + 1):
+            response = llm(current_prompt)
+            try:
+                payload = parse_json_from_text(response)
+                action = ensure_action_payload(payload)
+                return self.act(action["tool"], *action["args"], **action["kwargs"])
+            except Exception as exc:  # pragma: no cover - defensive for unexpected failures
+                last_error = exc
+                logger.warning(
+                    "Failed to parse LLM response on attempt %s: %s", attempt + 1, exc
+                )
+                current_prompt = (
+                    f"{prompt}\n\nThe previous response could not be parsed: {exc}. "
+                    "Please respond with valid JSON only."
+                )
+        raise ValueError("Unable to parse LLM response after retries.") from last_error

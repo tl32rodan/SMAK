@@ -63,7 +63,10 @@ class MeshSearchTool:
         expanded: list[dict[str, Any]] = []
         for result in results:
             expanded.append(result)
-            relations = result.get("payload", {}).get("relations", [])
+            payload = result.get("payload", {})
+            relations = payload.get("relations", [])
+            if not relations:
+                relations = payload.get("meta", {}).get("relations", [])
             for relation in relations:
                 related = self._lookup_relation(relation)
                 if related:
@@ -74,5 +77,17 @@ class MeshSearchTool:
         if "::" not in relation:
             return None
         index_name, _ = relation.split("::", 1)
-        index = self.registry.get_index(index_name)
-        return index.get_by_id(relation)
+        candidates = [index_name]
+        if index_name.endswith("s"):
+            candidates.append(index_name.rstrip("s"))
+        else:
+            candidates.append(f"{index_name}s")
+        for candidate in candidates:
+            try:
+                index = self.registry.get_index(candidate)
+            except KeyError:
+                continue
+            related = index.get_by_id(relation)
+            if related:
+                return related
+        return None
