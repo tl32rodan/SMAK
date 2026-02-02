@@ -28,7 +28,8 @@ class TestConfig(unittest.TestCase):
                 "  provider: ollama\n"
                 "  model: llama3\n"
                 "  temperature: 0.4\n"
-                "  api_base: http://localhost:11434/v1\n",
+                "  api_base: http://localhost:11434/v1\n"
+                "embedding_dimensions: 12\n",
                 encoding="utf-8",
             )
 
@@ -38,6 +39,7 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(config.llm.provider, "ollama")
             self.assertEqual(config.llm.temperature, 0.4)
             self.assertEqual(config.llm.api_base, "http://localhost:11434/v1")
+            self.assertEqual(config.embedding_dimensions, 12)
 
     def test_load_config_reads_storage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

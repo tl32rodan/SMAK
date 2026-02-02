@@ -30,22 +30,22 @@ are delegated to Milvus Lite and LlamaIndex. It provides:
 Use `smak init` to generate a template `workspace_config.yaml`. The schema includes:
 
 ```yaml
-indices:
-  - name: source_code
-    description: Source code files
+storage:
+  provider: milvus_lite
+  uri: ./milvus_data.db
 llm:
   provider: openai
   model: llama3
-  model_endpoint: http://localhost:11434
-embedding:
-  model_endpoint: http://localhost:11434
-milvus_lite:
-  uri: ./milvus_data.db
+  temperature: 0.2
+  api_base: http://localhost:11434/v1
+indices:
+  - name: source_code
+    description: Source code files
 embedding_dimensions: 3
 ```
 
 Use the Milvus Lite `uri` to define the local vector store location. Provide the
-internal model endpoints for embedding and LLM calls.
+LLM provider details as needed for chat completion requests.
 
 ## Ingestion workflow
 
