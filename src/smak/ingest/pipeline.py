@@ -51,7 +51,6 @@ class IngestPipeline:
         compute_embeddings: bool = False,
     ) -> IngestResult:
         units = self.parser.parse(content, source=source)
-        embeddings = self._embed_units(units) if compute_embeddings else []
         sidecar_manager = self.sidecar_manager
         if sidecar_manager is None:
             sidecar_manager = SidecarManager()
@@ -59,6 +58,7 @@ class IngestPipeline:
         symbols = [unit.metadata.get("symbol") for unit in units if unit.metadata.get("symbol")]
         sidecar_manager.validate(symbols, metadata)
         enriched_units = sidecar_manager.apply(units, metadata)
+        embeddings = self._embed_units(enriched_units) if compute_embeddings else []
         return IngestResult(units=enriched_units, embeddings=embeddings, metadata=metadata)
 
     def _embed_units(self, units: list[KnowledgeUnit]) -> list[list[float]]:
