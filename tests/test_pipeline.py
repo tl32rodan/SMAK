@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from smak.ingest.embedder import SimpleEmbedder
 from smak.ingest.parsers import PythonParser
-from smak.ingest.sidecar import SidecarManager
+from smak.ingest.sidecar import IntegrityError, SidecarManager
 
 
 def _install_fake_dependencies() -> None:
@@ -129,6 +129,29 @@ class TestIngestPipeline(unittest.TestCase):
             )
 
         self.assertEqual(result.embeddings, [[28.0]])
+
+    def test_ingest_pipeline_skips_embedding_on_sidecar_integrity_error(self) -> None:
+        embedder = SimpleNamespace(embed_documents=unittest.mock.Mock())
+        embedder.embed_documents.side_effect = AssertionError("Embedding should not run")
+
+        pipeline = _load_pipeline().IngestPipeline(
+            parser=PythonParser(),
+            embedder=embedder,
+            sidecar_manager=SidecarManager(),
+        )
+
+        content = "def login():\n    return True\n"
+        sidecar = "symbols:\n  - name: does_not_exist\n"
+
+        with self.assertRaises(IntegrityError):
+            pipeline.run(
+                content,
+                source="doc.txt",
+                sidecar_payload=sidecar,
+                compute_embeddings=True,
+            )
+
+        embedder.embed_documents.assert_not_called()
 
 
 if __name__ == "__main__":
