@@ -11,6 +11,9 @@ dependencies = [
     "click",
     "tqdm",
     "PyYAML",
+    "requests",
+    "llama-index-core",
+    "llama-index-llms-openai-like",
 ]
 
 [project.scripts]
