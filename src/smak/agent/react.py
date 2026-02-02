@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from smak.agent.router import ToolRouter
+from smak.agent.tools import MeshRetrievalTool
 from smak.utils.llm_parser import ensure_action_payload, parse_json_from_text
 
 logger = logging.getLogger(__name__)
@@ -52,3 +53,34 @@ class ReActAgent:
                     "Please respond with valid JSON only."
                 )
         raise ValueError("Unable to parse LLM response after retries.") from last_error
+
+
+def build_llamaindex_react_agent(
+    mesh_tool: MeshRetrievalTool,
+    *,
+    tools: Sequence[Any] | None = None,
+    llm: Any | None = None,
+    use_query_engine_tool: bool = False,
+    **kwargs: Any,
+) -> Any:
+    agent_cls = _require_llamaindex_agent()
+    llama_tools = list(tools or [])
+    if use_query_engine_tool:
+        llama_tools.append(mesh_tool.as_query_engine_tool())
+    else:
+        llama_tools.append(mesh_tool.as_function_tool())
+    if hasattr(agent_cls, "from_tools"):
+        return agent_cls.from_tools(llama_tools, llm=llm, **kwargs)
+    return agent_cls(llama_tools, llm=llm, **kwargs)
+
+
+def _require_llamaindex_agent() -> Any:
+    try:
+        return __import__("llama_index.core.agent", fromlist=["ReActAgent"]).__dict__[
+            "ReActAgent"
+        ]
+    except (ModuleNotFoundError, KeyError, AttributeError) as exc:  # pragma: no cover
+        raise ModuleNotFoundError(
+            "LlamaIndex is required to build the ReActAgent. "
+            "Install 'llama-index-core' to use this feature."
+        ) from exc
