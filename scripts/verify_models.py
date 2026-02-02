@@ -5,9 +5,7 @@ from __future__ import annotations
 import argparse
 from typing import Sequence
 
-from llama_index.core.llms import ChatMessage
-
-from smak.bridge.models import InternalNomicEmbedding, build_internal_llm
+from smak.verify_models import verify_models
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -48,21 +46,16 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
-
-    embedder = InternalNomicEmbedding(
-        api_base=args.embedding_api_base,
-        model=args.embedding_model,
-    )
-    embedding = embedder.get_text_embedding(args.text)
-    print("Embedding vector length:", len(embedding))
-
-    llm = build_internal_llm(
+    embedding_length, response_text = verify_models(
+        text=args.text,
         provider=args.provider,
-        model=args.llm_model,
-        api_base=args.llm_api_base,
+        llm_model=args.llm_model,
+        llm_api_base=args.llm_api_base,
+        embedding_model=args.embedding_model,
+        embedding_api_base=args.embedding_api_base,
     )
-    response = llm.chat([ChatMessage(role="user", content=args.text)])
-    print("LLM response:", response.message.content)
+    print("Embedding vector length:", embedding_length)
+    print("LLM response:", response_text)
     return 0
 
 

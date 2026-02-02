@@ -8,8 +8,8 @@ are delegated to Milvus Lite and LlamaIndex. It provides:
   enrich them with sidecar metadata, embed them, and persist vectors into Milvus Lite.
 - **Semantic mesh tools**: Search across indices and resolve mesh relations through
   LlamaIndex-backed retrieval.
-- **CLI workflow**: Initialize configuration, ingest folders, and run a demo server
-  for agent interactions.
+- **CLI workflow**: Initialize configuration, ingest folders, verify internal models,
+  and run a demo server for agent interactions.
 
 ## Architecture overview
 
@@ -61,6 +61,15 @@ During ingestion, SMAK:
 4. Injects `file_name`, `symbol_name`, `intent`, and `mesh_relations`.
 5. Embeds each knowledge unit with the internal Nomic model.
 6. Stores vectors in Milvus Lite for the configured index.
+
+## Model verification
+
+Use the `verify-models` subcommand to validate the internal embedding and LLM adapters
+before running a full ingestion:
+
+```bash
+smak verify-models --text "Hello from SMAK" --provider qwen
+```
 
 ## LlamaIndex + Milvus Lite storage
 

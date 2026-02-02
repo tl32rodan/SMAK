@@ -18,6 +18,7 @@ from smak.config import SmakConfig, load_config
 from smak.ingest.parsers import IssueParser, Parser, PerlParser, PythonParser, SimpleLineParser
 from smak.ingest.pipeline import Embedder, IngestPipeline, IntegrityError
 from smak.ingest.sidecar import SidecarManager
+from smak.verify_models import verify_models
 
 SIDECAR_SUFFIXES = (".sidecar.yaml", ".sidecar.yml")
 DEFAULT_MAX_WORKERS = 4
@@ -278,10 +279,48 @@ def server(port: int) -> None:
     demo.launch(server_name="0.0.0.0", server_port=port, share=False)
 
 
+@main.command(name="verify-models")
+@click.option("--text", default="Hello from SMAK", help="Text to embed and send to the LLM.")
+@click.option(
+    "--provider",
+    default="qwen",
+    type=click.Choice(["qwen", "gpt-oss", "gpt_oss"]),
+    help="Internal LLM provider.",
+)
+@click.option("--llm-model", default=None, help="Override the LLM model name.")
+@click.option("--llm-api-base", default=None, help="Override the internal LLM API base URL.")
+@click.option("--embedding-model", default=None, help="Override the Nomic embedding model name.")
+@click.option(
+    "--embedding-api-base",
+    default=None,
+    help="Override the Nomic embedding API base URL.",
+)
+def verify_models_command(
+    text: str,
+    provider: str,
+    llm_model: str | None,
+    llm_api_base: str | None,
+    embedding_model: str | None,
+    embedding_api_base: str | None,
+) -> None:
+    """Verify internal embedding + LLM adapters."""
+    embedding_length, response_text = verify_models(
+        text=text,
+        provider=provider,
+        llm_model=llm_model,
+        llm_api_base=llm_api_base,
+        embedding_model=embedding_model,
+        embedding_api_base=embedding_api_base,
+    )
+    click.echo(f"Embedding vector length: {embedding_length}")
+    click.echo(f"LLM response: {response_text}")
+
+
 __all__ = [
     "IngestStats",
     "ingest",
     "init",
     "main",
     "server",
+    "verify_models_command",
 ]
