@@ -208,6 +208,15 @@ class TestCli(unittest.TestCase):
                 cli._load_text_node_class()
             self.assertIn("llama-index-core", str(exc.exception))
 
+    def test_server_command_invokes_launcher(self) -> None:
+        runner = CliRunner()
+        with patch("smak.cli.launch_server") as launcher:
+            cli = _load_cli()
+            result = runner.invoke(cli.main, ["server", "--port", "7777", "--config", "cfg.yaml"])
+
+        self.assertEqual(result.exit_code, 0)
+        launcher.assert_called_once_with(port=7777, config_path="cfg.yaml")
+
 
 if __name__ == "__main__":
     unittest.main()
