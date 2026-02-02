@@ -1,25 +1,30 @@
+import unittest
+
 from smak.ingest.embedder import SimpleEmbedder
 
 
-def test_simple_embedder_vectorizes_text() -> None:
-    embedder = SimpleEmbedder()
+class TestSimpleEmbedder(unittest.TestCase):
+    def test_simple_embedder_vectorizes_text(self) -> None:
+        embedder = SimpleEmbedder()
 
-    vectors = embedder.embed(["ab"])
+        vectors = embedder.embed(["ab"])
 
-    assert vectors == [[2.0, 195.0, 97.5]]
+        self.assertEqual(vectors, [[2.0, 195.0, 97.5]])
+
+    def test_simple_embedder_handles_empty_text(self) -> None:
+        embedder = SimpleEmbedder()
+
+        vectors = embedder.embed([""])
+
+        self.assertEqual(vectors, [[0.0, 0.0, 0.0]])
+
+    def test_simple_embedder_embeds_documents(self) -> None:
+        embedder = SimpleEmbedder()
+
+        vectors = embedder.embed_documents(["ab"])
+
+        self.assertEqual(vectors, [[2.0, 195.0, 97.5]])
 
 
-def test_simple_embedder_handles_empty_text() -> None:
-    embedder = SimpleEmbedder()
-
-    vectors = embedder.embed([""])
-
-    assert vectors == [[0.0, 0.0, 0.0]]
-
-
-def test_simple_embedder_embeds_documents() -> None:
-    embedder = SimpleEmbedder()
-
-    vectors = embedder.embed_documents(["ab"])
-
-    assert vectors == [[2.0, 195.0, 97.5]]
+if __name__ == "__main__":
+    unittest.main()
