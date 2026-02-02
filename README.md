@@ -1,25 +1,29 @@
 # SMAK
 
-SMAK (Semantic Mesh Agentic Kernel) is a lightweight prototype for ingesting source
-assets into vector storage and querying them through agent tools. It provides:
+SMAK (Semantic Mesh Agentic Kernel) is a lightweight middleware layer that enforces
+sidecar governance and mesh retrieval across source assets. Storage and orchestration
+are delegated to Milvus Lite and LlamaIndex. It provides:
 
-- **Ingestion pipeline**: Parse files into structured knowledge units, enrich them
-  with sidecar metadata, embed them, and persist vectors into an index.
-- **Semantic mesh tools**: Search across indices and expand relations between
-  related entities.
+- **Ingestion pipeline**: Parse files into structured knowledge units, validate and
+  enrich them with sidecar metadata, embed them, and persist vectors into Milvus Lite.
+- **Semantic mesh tools**: Search across indices and resolve mesh relations through
+  LlamaIndex-backed retrieval.
 - **CLI workflow**: Initialize configuration, ingest folders, and run a demo server
   for agent interactions.
 
 ## Architecture overview
 
-1. **Parsing**: Language-specific parsers (Python, Perl, Markdown issues, or line-based)
-   convert file contents into `KnowledgeUnit` records.
-2. **Sidecar metadata**: Optional `.sidecar.yaml`/`.sidecar.yml` files provide
-   structured metadata and relations keyed by symbols.
-3. **Embedding**: The embedder turns each knowledge unit into vector embeddings.
-4. **Storage**: The vector adapter persists embeddings and payloads into a registry-backed
-   vector index (for example, `faiss-storage-lib`).
-5. **Agents**: Tools can query indices and follow relations in the semantic mesh.
+1. **Parsing**: `SmakRepositoryLoader` uses language-specific parsers (Python, Perl,
+   Markdown issues, or line-based) to convert file contents into `KnowledgeUnit` records.
+2. **Sidecar validation**: `.sidecar.yaml`/`.sidecar.yml` files are validated in a
+   fail-fast step before any ingestion continues.
+3. **Metadata injection**: Each knowledge unit is enriched with `file_name`,
+   `symbol_name`, `intent`, and `mesh_relations` metadata.
+4. **Embedding**: Internal Nomic models generate embeddings for each unit.
+5. **Storage**: Embeddings and payloads are stored in Milvus Lite
+   (`uri: ./milvus_data.db`).
+6. **Agents**: Retrieval uses LlamaIndex ReAct with a Mesh Retrieval two-pass lookup
+   to surface matches and follow mesh relations.
 
 ## Configuration
 
@@ -32,12 +36,16 @@ indices:
 llm:
   provider: openai
   model: llama3
-storage:
-  base_path: vault
+  model_endpoint: http://localhost:11434
+embedding:
+  model_endpoint: http://localhost:11434
+milvus_lite:
+  uri: ./milvus_data.db
 embedding_dimensions: 3
 ```
 
-The CLI uses the `storage.base_path` when creating the vector index registry.
+Use the Milvus Lite `uri` to define the local vector store location. Provide the
+internal model endpoints for embedding and LLM calls.
 
 ## Ingestion workflow
 
@@ -48,42 +56,15 @@ smak ingest --folder ./src --index source_code --config workspace_config.yaml
 During ingestion, SMAK:
 
 1. Loads `workspace_config.yaml`.
-2. Creates a registry instance (see protocol below).
-3. Parses each file in the folder.
-4. Applies sidecar metadata if a `file.ext.sidecar.yaml` exists.
-5. Embeds each knowledge unit.
-6. Adds vector documents to the specified index.
+2. `SmakRepositoryLoader` parses each file in the folder.
+3. Validates sidecar metadata and fails fast if invalid entries are found.
+4. Injects `file_name`, `symbol_name`, `intent`, and `mesh_relations`.
+5. Embeds each knowledge unit with the internal Nomic model.
+6. Stores vectors in Milvus Lite for the configured index.
 
-## Registry protocol for vector storage libraries
+## LlamaIndex + Milvus Lite storage
 
-SMAK relies on an index registry abstraction so you can plug in backends such as
-`faiss-storage-lib`. The CLI defaults to:
-
-```python
-from faiss_storage_lib.engine.registry import IndexRegistry
-registry = IndexRegistry(base_path)
-```
-
-For alternative libraries, provide an object that implements the following protocol:
-
-```python
-class IndexRegistry(Protocol):
-    def get_index(self, name: str) -> VectorIndex: ...
-
-class VectorIndex(Protocol):
-    def add(self, docs: Sequence[VectorDocument]) -> None: ...
-```
-
-`VectorDocument` is a structure containing a unique ID, a vector, and a payload
-with metadata and relations. For agent search operations, the registry should also
-expose search-capable indices:
-
-```python
-class VectorSearchIndex(Protocol):
-    def search(self, query: str) -> Sequence[dict[str, Any]]: ...
-    def get_by_id(self, uid: str) -> dict[str, Any] | None: ...
-```
-
-To wire in a custom registry for libraries like `faiss-storage-lib`, keep the same
-`get_index` contract and ensure the returned index implements `add`, `search`, and
-`get_by_id` as needed by the ingestion pipeline and agent tools.
+SMAK uses the LlamaIndex vector store integration with Milvus Lite to persist and
+retrieve vector documents. Mesh relations are resolved by first retrieving primary
+matches, then performing a second-pass lookup for related nodes referenced in
+`mesh_relations` so agent tooling can traverse the semantic mesh.
