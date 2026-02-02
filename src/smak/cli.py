@@ -13,10 +13,10 @@ from typing import Callable, Iterable
 
 import click
 
+from smak.bridge.models import InternalNomicEmbedding
 from smak.config import SmakConfig, load_config
-from smak.ingest.embedder import SimpleEmbedder
 from smak.ingest.parsers import IssueParser, Parser, PerlParser, PythonParser, SimpleLineParser
-from smak.ingest.pipeline import IngestPipeline, IntegrityError
+from smak.ingest.pipeline import Embedder, IngestPipeline, IntegrityError
 from smak.ingest.sidecar import SidecarManager
 
 SIDECAR_SUFFIXES = (".sidecar.yaml", ".sidecar.yml")
@@ -155,15 +155,17 @@ def _ingest_folder(
     config: SmakConfig,
     vector_store_loader: Callable[[str, SmakConfig], object] | None = None,
     node_class_loader: Callable[[], type] | None = None,
+    embedder_loader: Callable[[], Embedder] | None = None,
     *,
     max_workers: int = DEFAULT_MAX_WORKERS,
     show_progress: bool = False,
 ) -> IngestStats:
     vector_store_factory = vector_store_loader or _load_vector_store
     node_factory = node_class_loader or _load_text_node_class
+    embedder_factory = embedder_loader or InternalNomicEmbedding
     vector_store = vector_store_factory(index, config)
     node_class = node_factory()
-    embedder = SimpleEmbedder()
+    embedder = embedder_factory()
     sidecar_manager = SidecarManager()
 
     paths = list(_iter_source_files(folder))

@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol, Sequence
 
+from smak.bridge.models import InternalNomicEmbedding
 from smak.core.domain import KnowledgeUnit
-from smak.ingest.embedder import SimpleEmbedder
 from smak.ingest.parsers import Parser
 from smak.ingest.sidecar import IntegrityError, SidecarManager
+
+
+class Embedder(Protocol):
+    def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
+
+    def get_text_embeddings(self, texts: list[str]) -> list[list[float]]: ...
 
 
 @dataclass
@@ -25,8 +33,14 @@ class IngestPipeline:
     """Coordinate ingest steps for content."""
 
     parser: Parser
-    embedder: SimpleEmbedder
-    sidecar_manager: SidecarManager
+    embedder: Embedder | None = None
+    sidecar_manager: SidecarManager | None = None
+
+    def __post_init__(self) -> None:
+        if self.embedder is None:
+            self.embedder = InternalNomicEmbedding()
+        if self.sidecar_manager is None:
+            self.sidecar_manager = SidecarManager()
 
     def run(
         self,
@@ -37,14 +51,28 @@ class IngestPipeline:
         compute_embeddings: bool = False,
     ) -> IngestResult:
         units = self.parser.parse(content, source=source)
-        embeddings = (
-            self.embedder.embed([unit.content for unit in units]) if compute_embeddings else []
-        )
-        metadata = self.sidecar_manager.load(sidecar_payload)
+        embeddings = self._embed_units(units) if compute_embeddings else []
+        sidecar_manager = self.sidecar_manager
+        if sidecar_manager is None:
+            sidecar_manager = SidecarManager()
+        metadata = sidecar_manager.load(sidecar_payload)
         symbols = [unit.metadata.get("symbol") for unit in units if unit.metadata.get("symbol")]
-        self.sidecar_manager.validate(symbols, metadata)
-        enriched_units = self.sidecar_manager.apply(units, metadata)
+        sidecar_manager.validate(symbols, metadata)
+        enriched_units = sidecar_manager.apply(units, metadata)
         return IngestResult(units=enriched_units, embeddings=embeddings, metadata=metadata)
 
+    def _embed_units(self, units: list[KnowledgeUnit]) -> list[list[float]]:
+        texts = [unit.content for unit in units]
+        embedder = self.embedder
+        if embedder is None:
+            return []
+        if hasattr(embedder, "embed_documents"):
+            return embedder.embed_documents(texts)
+        if hasattr(embedder, "embed"):
+            return embedder.embed(texts)
+        if hasattr(embedder, "get_text_embeddings"):
+            return embedder.get_text_embeddings(list(texts))
+        raise AttributeError("Embedder does not support embedding documents.")
 
-__all__ = ["IngestPipeline", "IngestResult", "IntegrityError"]
+
+__all__ = ["Embedder", "IngestPipeline", "IngestResult", "IntegrityError"]

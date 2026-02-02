@@ -1,14 +1,85 @@
 from __future__ import annotations
 
+import importlib
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 from click.testing import CliRunner
 
-from smak.cli import _default_config_template, _ingest_folder, main
 from smak.config import SmakConfig, StorageConfig
+from smak.ingest.embedder import SimpleEmbedder
+
+
+def _install_fake_dependencies() -> None:
+    fake_requests = ModuleType("requests")
+
+    class FakeSession:
+        def post(self, url: str, json: dict, headers: dict, timeout: float) -> SimpleNamespace:
+            return SimpleNamespace(
+                raise_for_status=lambda: None,
+                json=lambda: {"data": [{"index": 0, "embedding": [0.0]}]},
+            )
+
+    fake_requests.Session = FakeSession
+    fake_requests.post = lambda *args, **kwargs: SimpleNamespace(
+        raise_for_status=lambda: None,
+        json=lambda: {"data": [{"index": 0, "embedding": [0.0]}]},
+    )
+
+    fake_embeddings = ModuleType("llama_index.core.embeddings")
+
+    class FakeBaseEmbedding:
+        def __init__(self, model_name: str, embed_batch_size: int) -> None:
+            self.model_name = model_name
+            self.embed_batch_size = embed_batch_size
+
+        def get_text_embedding(self, text: str) -> list[float]:
+            return [0.0]
+
+        def get_text_embeddings(self, texts: list[str]) -> list[list[float]]:
+            return [[0.0] for _ in texts]
+
+    fake_embeddings.BaseEmbedding = FakeBaseEmbedding
+
+    fake_openai_like = ModuleType("llama_index.llms.openai_like")
+
+    class FakeOpenAILike:
+        def __init__(self, **kwargs: object) -> None:
+            self.__dict__.update(kwargs)
+
+    fake_openai_like.OpenAILike = FakeOpenAILike
+
+    fake_core = ModuleType("llama_index.core")
+    fake_core.embeddings = fake_embeddings
+
+    fake_llms = ModuleType("llama_index.llms")
+    fake_llms.openai_like = fake_openai_like
+
+    fake_root = ModuleType("llama_index")
+    fake_root.core = fake_core
+    fake_root.llms = fake_llms
+
+    sys.modules.update(
+        {
+            "requests": fake_requests,
+            "llama_index": fake_root,
+            "llama_index.core": fake_core,
+            "llama_index.core.embeddings": fake_embeddings,
+            "llama_index.llms": fake_llms,
+            "llama_index.llms.openai_like": fake_openai_like,
+        }
+    )
+
+
+_install_fake_dependencies()
+
+
+def _load_cli():
+    return importlib.import_module("smak.cli")
 
 
 class FakeNode:
@@ -30,7 +101,8 @@ class FakeVectorStore:
 
 class TestCli(unittest.TestCase):
     def test_default_config_template_includes_storage(self) -> None:
-        template = _default_config_template()
+        cli = _load_cli()
+        template = cli._default_config_template()
 
         self.assertIn("storage:", template)
         self.assertIn("provider: milvus_lite", template)
@@ -58,12 +130,14 @@ class TestCli(unittest.TestCase):
 
             config = SmakConfig(storage=StorageConfig(uri="vault.db"))
 
-            stats = _ingest_folder(
+            cli = _load_cli()
+            stats = cli._ingest_folder(
                 folder,
                 "code",
                 config,
                 vector_store_loader=loader,
                 node_class_loader=lambda: FakeNode,
+                embedder_loader=SimpleEmbedder,
             )
 
             self.assertEqual(stats.files, 1)
@@ -87,8 +161,9 @@ class TestCli(unittest.TestCase):
                 "smak.cli._load_vector_store",
                 new=lambda index, config: FakeVectorStore(saved, index),
             ), patch("smak.cli._load_text_node_class", new=lambda: FakeNode):
+                cli = _load_cli()
                 init_result = runner.invoke(
-                    main,
+                    cli.main,
                     [
                         "init",
                         "--path",
@@ -101,7 +176,7 @@ class TestCli(unittest.TestCase):
                 self.assertTrue((tmp_path / "generated.yaml").exists())
 
                 result = runner.invoke(
-                    main,
+                    cli.main,
                     [
                         "ingest",
                         "--folder",
