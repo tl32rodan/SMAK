@@ -18,6 +18,7 @@ from smak.config import SmakConfig, load_config
 from smak.ingest.parsers import IssueParser, Parser, PerlParser, PythonParser, SimpleLineParser
 from smak.ingest.pipeline import Embedder, IngestPipeline, IntegrityError
 from smak.ingest.sidecar import SidecarManager
+from smak.server import launch_server
 
 SIDECAR_SUFFIXES = (".sidecar.yaml", ".sidecar.yml")
 DEFAULT_MAX_WORKERS = 4
@@ -268,14 +269,14 @@ def init(config_path: str, force: bool) -> None:
 
 @main.command()
 @click.option("--port", default=7860, help="Port to run the server on")
-def server(port: int) -> None:
-    """Launch the Agent Demo Server."""
-    try:
-        from examples.demo_server import demo
-    except ImportError as exc:
-        raise click.ClickException("Demo server module not available.") from exc
+@click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
+def server(port: int, config: str) -> None:
+    """Launch the SMAK Agent Server."""
     click.echo(f"Launching SMAK Agent Server on port {port}...")
-    demo.launch(server_name="0.0.0.0", server_port=port, share=False)
+    try:
+        launch_server(port=port, config_path=config)
+    except ModuleNotFoundError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 __all__ = [
