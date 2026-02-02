@@ -34,9 +34,12 @@ class IngestPipeline:
         *,
         source: str | None = None,
         sidecar_payload: str | None = None,
+        compute_embeddings: bool = False,
     ) -> IngestResult:
         units = self.parser.parse(content, source=source)
-        embeddings = self.embedder.embed([unit.content for unit in units])
+        embeddings = (
+            self.embedder.embed([unit.content for unit in units]) if compute_embeddings else []
+        )
         metadata = self.sidecar_manager.load(sidecar_payload)
         symbols = [unit.metadata.get("symbol") for unit in units if unit.metadata.get("symbol")]
         self.sidecar_manager.validate(symbols, metadata)

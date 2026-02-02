@@ -181,10 +181,14 @@ def _ingest_folder(
         )
         content = file_path.read_text(encoding="utf-8", errors="replace")
         sidecar = _sidecar_payload(file_path)
-        result = pipeline.run(content, source=str(file_path), sidecar_payload=sidecar)
-        vectors = embedder.embed_documents([unit.content for unit in result.units])
+        result = pipeline.run(
+            content,
+            source=str(file_path),
+            sidecar_payload=sidecar,
+            compute_embeddings=True,
+        )
         nodes = []
-        for unit, vector in zip(result.units, vectors):
+        for unit, vector in zip(result.units, result.embeddings):
             node = node_class(
                 text=unit.content,
                 id_=unit.uid,

@@ -17,6 +17,20 @@ def test_ingest_pipeline_runs_end_to_end() -> None:
     result = pipeline.run(content, source="doc.txt", sidecar_payload=sidecar)
 
     assert [unit.metadata["symbol"] for unit in result.units] == ["login"]
-    assert result.embeddings == [[28.0, 2269.0, 81.03571428571429]]
+    assert result.embeddings == []
     assert result.metadata == {"symbols": {"login": {"relations": ["issue::123"]}}}
     assert result.units[0].relations == ("issue::123",)
+
+
+def test_ingest_pipeline_embeds_when_requested() -> None:
+    pipeline = IngestPipeline(
+        parser=PythonParser(),
+        embedder=SimpleEmbedder(),
+        sidecar_manager=SidecarManager(),
+    )
+
+    content = "def login():\n    return True\n"
+
+    result = pipeline.run(content, source="doc.txt", compute_embeddings=True)
+
+    assert result.embeddings == [[28.0, 2269.0, 81.03571428571429]]
