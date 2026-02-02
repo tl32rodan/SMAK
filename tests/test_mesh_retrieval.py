@@ -36,6 +36,7 @@ class FakeRegistry:
 @contextmanager
 def install_fake_llamaindex() -> Generator[dict[str, Any], None, None]:
     fake_tools = ModuleType("llama_index.core.tools")
+    fake_query_engine = ModuleType("llama_index.core.query_engine")
 
     class FakeFunctionTool:
         def __init__(self, fn: Any, name: str, description: str) -> None:
@@ -59,8 +60,13 @@ def install_fake_llamaindex() -> Generator[dict[str, Any], None, None]:
         ) -> "FakeQueryEngineTool":
             return cls(query_engine=query_engine, name=name, description=description)
 
+    class FakeBaseQueryEngine:
+        def query(self, query: str) -> Any:
+            return self._query(query)
+
     fake_tools.FunctionTool = FakeFunctionTool
     fake_tools.QueryEngineTool = FakeQueryEngineTool
+    fake_query_engine.BaseQueryEngine = FakeBaseQueryEngine
 
     fake_agent_module = ModuleType("llama_index.core.agent")
 
@@ -78,6 +84,7 @@ def install_fake_llamaindex() -> Generator[dict[str, Any], None, None]:
 
     fake_core = ModuleType("llama_index.core")
     fake_core.tools = fake_tools
+    fake_core.query_engine = fake_query_engine
     fake_core.agent = fake_agent_module
 
     fake_root = ModuleType("llama_index")
@@ -89,12 +96,14 @@ def install_fake_llamaindex() -> Generator[dict[str, Any], None, None]:
             "llama_index": fake_root,
             "llama_index.core": fake_core,
             "llama_index.core.tools": fake_tools,
+            "llama_index.core.query_engine": fake_query_engine,
             "llama_index.core.agent": fake_agent_module,
         },
     ):
         yield {
             "FakeFunctionTool": FakeFunctionTool,
             "FakeQueryEngineTool": FakeQueryEngineTool,
+            "FakeBaseQueryEngine": FakeBaseQueryEngine,
             "FakeAgent": FakeAgent,
         }
 
@@ -158,6 +167,7 @@ class TestMeshRetrievalTool(unittest.TestCase):
             self.assertIsInstance(function_tool, fake["FakeFunctionTool"])
             self.assertEqual(function_tool.fn, tool.retrieve)
             self.assertIsInstance(query_tool, fake["FakeQueryEngineTool"])
+            self.assertIsInstance(query_tool.query_engine, fake["FakeBaseQueryEngine"])
             self.assertEqual(query_tool.query_engine.query("login")["query"], "login")
 
     def test_build_llamaindex_react_agent(self) -> None:

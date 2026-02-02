@@ -61,6 +61,22 @@ def _require_llamaindex_component(module: str, component: str) -> Any:
         ) from exc
 
 
+def _mesh_retrieval_query_engine_cls() -> type:
+    base_query_engine = _require_llamaindex_component(
+        "llama_index.core.query_engine", "BaseQueryEngine"
+    )
+
+    class MeshRetrievalQueryEngine(base_query_engine):
+        def __init__(self, tool: "MeshRetrievalTool") -> None:
+            super().__init__()
+            self._tool = tool
+
+        def _query(self, query: str) -> Any:
+            return self._tool.retrieve(query)
+
+    return MeshRetrievalQueryEngine
+
+
 @dataclass
 class MeshSearchTool:
     """Search tool that expands relations in the semantic mesh."""
@@ -153,8 +169,9 @@ class MeshRetrievalTool:
         query_engine_tool = _require_llamaindex_component(
             "llama_index.core.tools", "QueryEngineTool"
         )
+        query_engine_cls = _mesh_retrieval_query_engine_cls()
         return query_engine_tool.from_defaults(
-            query_engine=_MeshRetrievalQueryEngine(tool=self),
+            query_engine=query_engine_cls(tool=self),
             name=self.name,
             description=self.description,
         )
@@ -206,11 +223,3 @@ class MeshRetrievalTool:
             or result.get("payload", {}).get("content")
             or result.get("metadata", {}).get("content")
         )
-
-
-@dataclass
-class _MeshRetrievalQueryEngine:
-    tool: MeshRetrievalTool
-
-    def query(self, query: str) -> dict[str, Any]:
-        return self.tool.retrieve(query)
