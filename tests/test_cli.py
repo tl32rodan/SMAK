@@ -107,6 +107,9 @@ class TestCli(unittest.TestCase):
         self.assertIn("storage:", template)
         self.assertIn("provider: milvus_lite", template)
         self.assertIn("uri: ./milvus_data.db", template)
+        self.assertIn("llm:", template)
+        self.assertIn("embedding_dimensions: 3", template)
+        self.assertNotIn("llama_index:", template)
 
     def test_ingest_folder_processes_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
