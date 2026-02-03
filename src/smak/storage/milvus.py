@@ -171,4 +171,24 @@ def _format_hit(hit: Any) -> dict[str, Any]:
     }
 
 
-__all__ = ["MilvusLiteVectorSearchIndex", "MilvusLiteVectorStore"]
+def load_milvus_lite_store(
+    *, uri: str, collection_name: str, dim: int
+) -> "MilvusLiteVectorStore":
+    try:
+        return MilvusLiteVectorStore(
+            uri=uri,
+            collection_name=collection_name,
+            dim=dim,
+        )
+    except ModuleNotFoundError as exc:  # pragma: no cover - guard for missing dependency
+        raise ModuleNotFoundError(
+            "Vector store dependency missing. Install "
+            "'pymilvus' with 'milvus-lite' to use Milvus storage."
+        ) from exc
+
+
+__all__ = [
+    "MilvusLiteVectorSearchIndex",
+    "MilvusLiteVectorStore",
+    "load_milvus_lite_store",
+]

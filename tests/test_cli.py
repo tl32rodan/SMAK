@@ -198,8 +198,9 @@ class TestCli(unittest.TestCase):
     def test_load_vector_store_missing_dependency(self) -> None:
         from smak import cli
 
-        with patch.object(cli.importlib.util, "find_spec", return_value=None), patch(
-            "smak.storage.milvus._load_pymilvus", side_effect=ModuleNotFoundError
+        with patch(
+            "smak.storage.milvus.load_milvus_lite_store",
+            side_effect=ModuleNotFoundError("Vector store dependency missing."),
         ):
             with self.assertRaises(Exception) as exc:
                 cli._load_vector_store("code", SmakConfig())

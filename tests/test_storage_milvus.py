@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from types import ModuleType
 from unittest.mock import patch
 
-from smak.storage.milvus import MilvusLiteVectorSearchIndex, MilvusLiteVectorStore
+from smak.storage.milvus import (
+    MilvusLiteVectorSearchIndex,
+    MilvusLiteVectorStore,
+    load_milvus_lite_store,
+)
 
 
 @dataclass
@@ -108,6 +112,15 @@ class TestMilvusLiteStorage(unittest.TestCase):
             results = list(index.search("query"))
             self.assertEqual(results[0]["uid"], "doc-1")
             self.assertEqual(index.get_by_id("doc-1")["uid"], "doc-1")
+
+    def test_load_milvus_lite_store_raises_clear_error(self) -> None:
+        with patch(
+            "smak.storage.milvus.MilvusLiteVectorStore",
+            side_effect=ModuleNotFoundError("pymilvus missing"),
+        ):
+            with self.assertRaises(ModuleNotFoundError) as exc:
+                load_milvus_lite_store(uri="memory.db", collection_name="code", dim=3)
+        self.assertIn("pymilvus", str(exc.exception))
 
 
 if __name__ == "__main__":

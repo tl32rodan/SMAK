@@ -62,18 +62,13 @@ During ingestion, SMAK:
 5. Embeds each knowledge unit with the internal Nomic model.
 6. Stores vectors in Milvus Lite for the configured index.
 
-## LlamaIndex + Milvus Lite storage
+## Milvus Lite storage
 
-SMAK uses the LlamaIndex vector store integration with Milvus Lite to persist and
-retrieve vector documents. Mesh relations are resolved by first retrieving primary
-matches, then performing a second-pass lookup for related nodes referenced in
-`mesh_relations` so agent tooling can traverse the semantic mesh.
-
-If `llama-index-vector-stores-milvus` is not available, SMAK can fall back to a
-native Milvus Lite connection via `pymilvus` + `milvus-lite`. This keeps the
-existing SMAK workflow intact while avoiding additional LlamaIndex dependencies,
-and it still stores vectors in the same local Milvus Lite URI. Install the native
-dependencies with:
+SMAK uses a native Milvus Lite connection via `pymilvus` + `milvus-lite` to persist
+and retrieve vector documents. Mesh relations are resolved by first retrieving
+primary matches, then performing a second-pass lookup for related nodes referenced
+in `mesh_relations` so agent tooling can traverse the semantic mesh. Install the
+native dependencies with:
 
 ```bash
 pip install pymilvus==2.6.8 milvus-lite==2.5.1
