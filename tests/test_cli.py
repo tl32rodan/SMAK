@@ -108,6 +108,8 @@ class TestCli(unittest.TestCase):
         self.assertIn("provider: milvus_lite", template)
         self.assertIn("uri: ./milvus_data.db", template)
         self.assertIn("llm:", template)
+        self.assertIn("provider: qwen", template)
+        self.assertIn("model: qwen3_235B_A22B", template)
         self.assertIn("embedding_dimensions: 3", template)
         self.assertNotIn("llama_index:", template)
 
