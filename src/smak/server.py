@@ -8,24 +8,33 @@ from typing import Any, Callable, Iterable
 
 from smak.agent.react import build_llamaindex_react_agent
 from smak.agent.tools import IndexRegistry, MeshRetrievalTool, VectorSearchIndex
-from smak.bridge.models import build_internal_llm
+from smak.bridge.models import InternalNomicEmbedding, build_internal_llm
 from smak.config import SmakConfig, load_config
+from smak.storage.milvus import MilvusLiteVectorSearchIndex, MilvusLiteVectorStore
 
 
 def _load_vector_store(index_name: str, config: SmakConfig) -> object:
     spec = importlib.util.find_spec("llama_index.vector_stores.milvus")
-    if spec is None:  # pragma: no cover - guard for missing dependency
-        raise ModuleNotFoundError(
-            "Critical dependency 'llama-index-vector-stores-milvus' not found. "
-            "Did you run pip install llama-index-vector-stores-milvus?"
+    if spec is not None:
+        module = importlib.import_module("llama_index.vector_stores.milvus")
+        store_class = getattr(module, "MilvusVectorStore")
+        return store_class(
+            uri=config.storage.uri,
+            collection_name=index_name,
+            dim=config.embedding_dimensions,
         )
-    module = importlib.import_module("llama_index.vector_stores.milvus")
-    store_class = getattr(module, "MilvusVectorStore")
-    return store_class(
-        uri=config.storage.uri,
-        collection_name=index_name,
-        dim=config.embedding_dimensions,
-    )
+    try:
+        return MilvusLiteVectorStore(
+            uri=config.storage.uri,
+            collection_name=index_name,
+            dim=config.embedding_dimensions,
+        )
+    except ModuleNotFoundError as exc:  # pragma: no cover - guard for missing dependency
+        raise ModuleNotFoundError(
+            "Vector store dependency missing. Install "
+            "'llama-index-vector-stores-milvus' or "
+            "'pymilvus' with 'milvus-lite' to use Milvus storage."
+        ) from exc
 
 
 def _build_vector_index(vector_store: object) -> object:
@@ -124,7 +133,12 @@ def build_index_registry(
     indices: dict[str, VectorSearchIndex] = {}
     for name in names:
         store = loader(name, config)
-        indices[name] = LlamaIndexVectorSearchIndex(store, index_builder=builder)
+        if isinstance(store, MilvusLiteVectorStore):
+            indices[name] = MilvusLiteVectorSearchIndex(
+                store=store, embedder=InternalNomicEmbedding()
+            )
+        else:
+            indices[name] = LlamaIndexVectorSearchIndex(store, index_builder=builder)
     return Registry(indices)
 
 

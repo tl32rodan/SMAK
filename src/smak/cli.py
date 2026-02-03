@@ -64,18 +64,28 @@ def _load_text_node_class():
 
 def _load_vector_store(index_name: str, config: SmakConfig):
     spec = importlib.util.find_spec("llama_index.vector_stores.milvus")
-    if spec is None:  # pragma: no cover - guard for missing dependency
-        raise click.ClickException(
-            "Critical dependency 'llama-index-vector-stores-milvus' not found. "
-            "Did you run pip install llama-index-vector-stores-milvus?"
+    if spec is not None:
+        module = importlib.import_module("llama_index.vector_stores.milvus")
+        store_class = getattr(module, "MilvusVectorStore")
+        return store_class(
+            uri=config.storage.uri,
+            collection_name=index_name,
+            dim=config.embedding_dimensions,
         )
-    module = importlib.import_module("llama_index.vector_stores.milvus")
-    store_class = getattr(module, "MilvusVectorStore")
-    return store_class(
-        uri=config.storage.uri,
-        collection_name=index_name,
-        dim=config.embedding_dimensions,
-    )
+    try:
+        from smak.storage.milvus import MilvusLiteVectorStore
+
+        return MilvusLiteVectorStore(
+            uri=config.storage.uri,
+            collection_name=index_name,
+            dim=config.embedding_dimensions,
+        )
+    except ModuleNotFoundError as exc:  # pragma: no cover - guard for missing dependency
+        raise click.ClickException(
+            "Vector store dependency missing. Install "
+            "'llama-index-vector-stores-milvus' or "
+            "'pymilvus' with 'milvus-lite' to use Milvus storage."
+        ) from exc
 
 
 def _default_config_template() -> str:
