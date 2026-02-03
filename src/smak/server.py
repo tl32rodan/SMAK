@@ -8,8 +8,9 @@ from typing import Any, Callable, Iterable
 
 from smak.agent.react import build_llamaindex_react_agent
 from smak.agent.tools import IndexRegistry, MeshRetrievalTool, VectorSearchIndex
-from smak.bridge.models import build_internal_llm
+from smak.bridge.models import InternalNomicEmbedding, build_internal_llm
 from smak.config import SmakConfig, load_config
+from smak.embedding import resolve_embedding_dimensions, validate_vector_store_dimension
 
 
 def _load_vector_store(index_name: str, config: SmakConfig) -> object:
@@ -21,6 +22,8 @@ def _load_vector_store(index_name: str, config: SmakConfig) -> object:
         )
     module = importlib.import_module("llama_index.vector_stores.milvus")
     store_class = getattr(module, "MilvusVectorStore")
+    if config.embedding_dimensions is None:
+        raise ValueError("Embedding dimensions must be resolved before loading storage.")
     return store_class(
         uri=config.storage.uri,
         collection_name=index_name,
@@ -121,9 +124,12 @@ def build_index_registry(
     loader = vector_store_loader or _load_vector_store
     builder = index_builder or _build_vector_index
     names = [entry.name for entry in config.indices] or ["source_code"]
+    if config.embedding_dimensions is None:
+        raise ValueError("Embedding dimensions must be resolved before building indices.")
     indices: dict[str, VectorSearchIndex] = {}
     for name in names:
         store = loader(name, config)
+        validate_vector_store_dimension(store, config.embedding_dimensions)
         indices[name] = LlamaIndexVectorSearchIndex(store, index_builder=builder)
     return Registry(indices)
 
@@ -187,6 +193,8 @@ def launch_server(
     gradio_factory: Callable[[Any, MeshRetrievalTool], Any] | None = None,
 ) -> Any:
     config = load_config(config_path)
+    embedder = InternalNomicEmbedding()
+    config = resolve_embedding_dimensions(config, embedder)
     registry = build_index_registry(
         config, vector_store_loader=vector_store_loader, index_builder=index_builder
     )

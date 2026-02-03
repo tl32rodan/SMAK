@@ -147,6 +147,23 @@ class TestInternalNomicEmbedding(unittest.TestCase):
 
             self.assertEqual(vectors, [[1.0], [2.0]])
 
+    def test_internal_nomic_embedding_reports_dimension(self) -> None:
+        with install_fake_dependencies():
+            models = self._load_models()
+            session = DummySession(
+                expected_payload={"model": "nomic-test", "input": ["hello"]},
+                response_payload={"data": [{"index": 0, "embedding": [0.1, 0.2]}]},
+            )
+            embedder = models.InternalNomicEmbedding(
+                api_base="http://nomic.test",
+                model="nomic-test",
+                session=session,
+            )
+
+            dimension = embedder.get_embedding_dimension()
+
+            self.assertEqual(dimension, 2)
+
     def test_build_internal_llm_uses_internal_defaults(self) -> None:
         with install_fake_dependencies() as fake:
             models = self._load_models()
