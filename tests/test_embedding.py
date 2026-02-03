@@ -4,8 +4,8 @@ import unittest
 
 from smak.config import SmakConfig
 from smak.embedding import (
-    infer_embedding_dimension,
-    resolve_embedding_dimensions,
+    detect_embedding_dimension,
+    initialize_embedding_dimensions,
     validate_vector_store_dimension,
 )
 
@@ -32,25 +32,25 @@ class DummyVectorStore:
 
 
 class TestEmbeddingHelpers(unittest.TestCase):
-    def test_infer_embedding_dimension_from_embedder_method(self) -> None:
+    def test_detect_embedding_dimension_from_embedder_method(self) -> None:
         embedder = DummyEmbedderWithDimension(7)
 
-        dimension = infer_embedding_dimension(embedder)
+        dimension = detect_embedding_dimension(embedder)
 
         self.assertEqual(dimension, 7)
 
-    def test_infer_embedding_dimension_from_embeddings(self) -> None:
+    def test_detect_embedding_dimension_from_embeddings(self) -> None:
         embedder = DummyEmbedderWithEmbeddings(4)
 
-        dimension = infer_embedding_dimension(embedder)
+        dimension = detect_embedding_dimension(embedder)
 
         self.assertEqual(dimension, 4)
 
-    def test_resolve_embedding_dimensions_updates_config(self) -> None:
+    def test_initialize_embedding_dimensions_updates_config(self) -> None:
         config = SmakConfig()
         embedder = DummyEmbedderWithDimension(8)
 
-        updated = resolve_embedding_dimensions(config, embedder)
+        updated = initialize_embedding_dimensions(config, embedder)
 
         self.assertEqual(updated.embedding_dimensions, 8)
 

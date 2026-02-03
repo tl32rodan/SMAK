@@ -18,14 +18,14 @@ class EmbeddingProbe(Protocol):
     def get_embedding_dimension(self) -> int: ...
 
 
-def resolve_embedding_dimensions(config: SmakConfig, embedder: EmbeddingProbe) -> SmakConfig:
-    dimension = infer_embedding_dimension(embedder)
+def initialize_embedding_dimensions(config: SmakConfig, embedder: EmbeddingProbe) -> SmakConfig:
+    dimension = detect_embedding_dimension(embedder)
     if config.embedding_dimensions == dimension:
         return config
     return replace(config, embedding_dimensions=dimension)
 
 
-def infer_embedding_dimension(embedder: EmbeddingProbe, probe_text: str = "hello") -> int:
+def detect_embedding_dimension(embedder: EmbeddingProbe, probe_text: str = "hello") -> int:
     if hasattr(embedder, "get_embedding_dimension"):
         dimension = embedder.get_embedding_dimension()
         return _validate_dimension(dimension)

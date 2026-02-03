@@ -10,7 +10,7 @@ from smak.agent.react import build_llamaindex_react_agent
 from smak.agent.tools import IndexRegistry, MeshRetrievalTool, VectorSearchIndex
 from smak.bridge.models import InternalNomicEmbedding, build_internal_llm
 from smak.config import SmakConfig, load_config
-from smak.embedding import resolve_embedding_dimensions, validate_vector_store_dimension
+from smak.embedding import initialize_embedding_dimensions, validate_vector_store_dimension
 
 
 def _load_vector_store(index_name: str, config: SmakConfig) -> object:
@@ -194,7 +194,7 @@ def launch_server(
 ) -> Any:
     config = load_config(config_path)
     embedder = InternalNomicEmbedding()
-    config = resolve_embedding_dimensions(config, embedder)
+    config = initialize_embedding_dimensions(config, embedder)
     registry = build_index_registry(
         config, vector_store_loader=vector_store_loader, index_builder=index_builder
     )
