@@ -103,6 +103,7 @@ class TestServer(unittest.TestCase):
         config = SmakConfig(
             indices=[IndexConfig(name="code", description="Code")],
             storage=StorageConfig(uri="memory.db"),
+            embedding_dimensions=3,
         )
         calls: list[str] = []
 
@@ -118,6 +119,27 @@ class TestServer(unittest.TestCase):
         self.assertIsInstance(registry, Registry)
         self.assertEqual(calls, ["code"])
         self.assertIsNotNone(registry.get_index("code"))
+
+    def test_build_index_registry_validates_dimensions(self) -> None:
+        config = SmakConfig(
+            indices=[IndexConfig(name="code", description="Code")],
+            embedding_dimensions=3,
+        )
+
+        class FakeDimStore(FakeVectorStore):
+            def __init__(self, nodes: list[FakeNode], dim: int) -> None:
+                super().__init__(nodes)
+                self.dim = dim
+
+        def loader(name: str, cfg: SmakConfig) -> FakeVectorStore:
+            return FakeDimStore([], dim=5)
+
+        with self.assertRaises(ValueError):
+            build_index_registry(
+                config,
+                vector_store_loader=loader,
+                index_builder=lambda _: FakeIndex([]),
+            )
 
     def test_build_gradio_ui_requires_gradio(self) -> None:
         sys.modules.pop("gradio", None)
@@ -137,9 +159,15 @@ class TestServer(unittest.TestCase):
         def fake_agent_builder(mesh_tool, llm) -> object:
             return lambda query: f"ok:{query}"
 
+        class DummyEmbedder:
+            def get_embedding_dimension(self) -> int:
+                return 3
+
         with tempfile.TemporaryDirectory() as tmp_dir, patch(
             "smak.server.load_config", return_value=config
-        ), patch("smak.server.importlib.util.find_spec", return_value=object()):
+        ), patch("smak.server.importlib.util.find_spec", return_value=object()), patch(
+            "smak.server.InternalNomicEmbedding", return_value=DummyEmbedder()
+        ):
             app = launch_server(
                 port=5555,
                 config_path=f"{tmp_dir}/workspace_config.yaml",

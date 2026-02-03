@@ -91,6 +91,12 @@ class InternalNomicEmbedding(BaseEmbedding):
             return list(data["embeddings"])
         raise ValueError("Unexpected response format from Nomic embedding service.")
 
+    def get_embedding_dimension(self, probe_text: str = "hello") -> int:
+        embedding = self._post_embeddings([probe_text])[0]
+        if not embedding:
+            raise ValueError("Embedding probe returned an empty vector.")
+        return len(embedding)
+
 
 def _normalize_openai_embeddings(data: Sequence[dict[str, Any]], size: int) -> list[list[float]]:
     embeddings: list[list[float] | None] = [None] * size

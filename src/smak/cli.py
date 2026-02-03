@@ -15,6 +15,7 @@ import click
 
 from smak.bridge.models import InternalNomicEmbedding
 from smak.config import SmakConfig, load_config
+from smak.embedding import initialize_embedding_dimensions, validate_vector_store_dimension
 from smak.ingest.parsers import IssueParser, Parser, PerlParser, PythonParser, SimpleLineParser
 from smak.ingest.pipeline import Embedder, IngestPipeline, IntegrityError
 from smak.ingest.sidecar import SidecarManager
@@ -71,6 +72,8 @@ def _load_vector_store(index_name: str, config: SmakConfig):
         )
     module = importlib.import_module("llama_index.vector_stores.milvus")
     store_class = getattr(module, "MilvusVectorStore")
+    if config.embedding_dimensions is None:
+        raise click.ClickException("Embedding dimensions must be resolved before loading storage.")
     return store_class(
         uri=config.storage.uri,
         collection_name=index_name,
@@ -111,8 +114,6 @@ def _default_config_template() -> str:
                 "    description: Contains architecture diagrams, API docs, and general "
                 "knowledge base."
             ),
-            "",
-            "embedding_dimensions: 3",
             "",
         ]
     )
@@ -157,12 +158,14 @@ def _ingest_folder(
     max_workers: int = DEFAULT_MAX_WORKERS,
     show_progress: bool = False,
 ) -> IngestStats:
+    embedder_factory = embedder_loader or InternalNomicEmbedding
+    embedder = embedder_factory()
+    config = initialize_embedding_dimensions(config, embedder)
     vector_store_factory = vector_store_loader or _load_vector_store
     node_factory = node_class_loader or _load_text_node_class
-    embedder_factory = embedder_loader or InternalNomicEmbedding
     vector_store = vector_store_factory(index, config)
     node_class = node_factory()
-    embedder = embedder_factory()
+    validate_vector_store_dimension(vector_store, config.embedding_dimensions)
     sidecar_manager = SidecarManager()
 
     paths = list(_iter_source_files(folder))
