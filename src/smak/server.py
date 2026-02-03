@@ -10,21 +10,15 @@ from smak.agent.react import build_llamaindex_react_agent
 from smak.agent.tools import IndexRegistry, MeshRetrievalTool, VectorSearchIndex
 from smak.bridge.models import InternalNomicEmbedding, build_internal_llm
 from smak.config import SmakConfig, load_config
-from smak.embedding import initialize_embedding_dimensions, validate_vector_store_dimension
+from smak.storage.milvus import (
+    MilvusLiteVectorSearchIndex,
+    MilvusLiteVectorStore,
+    load_milvus_lite_store,
+)
 
 
 def _load_vector_store(index_name: str, config: SmakConfig) -> object:
-    spec = importlib.util.find_spec("llama_index.vector_stores.milvus")
-    if spec is None:  # pragma: no cover - guard for missing dependency
-        raise ModuleNotFoundError(
-            "Critical dependency 'llama-index-vector-stores-milvus' not found. "
-            "Did you run pip install llama-index-vector-stores-milvus?"
-        )
-    module = importlib.import_module("llama_index.vector_stores.milvus")
-    store_class = getattr(module, "MilvusVectorStore")
-    if config.embedding_dimensions is None:
-        raise ValueError("Embedding dimensions must be resolved before loading storage.")
-    return store_class(
+    return load_milvus_lite_store(
         uri=config.storage.uri,
         collection_name=index_name,
         dim=config.embedding_dimensions,
@@ -129,8 +123,12 @@ def build_index_registry(
     indices: dict[str, VectorSearchIndex] = {}
     for name in names:
         store = loader(name, config)
-        validate_vector_store_dimension(store, config.embedding_dimensions)
-        indices[name] = LlamaIndexVectorSearchIndex(store, index_builder=builder)
+        if isinstance(store, MilvusLiteVectorStore):
+            indices[name] = MilvusLiteVectorSearchIndex(
+                store=store, embedder=InternalNomicEmbedding()
+            )
+        else:
+            indices[name] = LlamaIndexVectorSearchIndex(store, index_builder=builder)
     return Registry(indices)
 
 

@@ -64,21 +64,16 @@ def _load_text_node_class():
 
 
 def _load_vector_store(index_name: str, config: SmakConfig):
-    spec = importlib.util.find_spec("llama_index.vector_stores.milvus")
-    if spec is None:  # pragma: no cover - guard for missing dependency
-        raise click.ClickException(
-            "Critical dependency 'llama-index-vector-stores-milvus' not found. "
-            "Did you run pip install llama-index-vector-stores-milvus?"
+    from smak.storage.milvus import load_milvus_lite_store
+
+    try:
+        return load_milvus_lite_store(
+            uri=config.storage.uri,
+            collection_name=index_name,
+            dim=config.embedding_dimensions,
         )
-    module = importlib.import_module("llama_index.vector_stores.milvus")
-    store_class = getattr(module, "MilvusVectorStore")
-    if config.embedding_dimensions is None:
-        raise click.ClickException("Embedding dimensions must be resolved before loading storage.")
-    return store_class(
-        uri=config.storage.uri,
-        collection_name=index_name,
-        dim=config.embedding_dimensions,
-    )
+    except ModuleNotFoundError as exc:  # pragma: no cover - guard for missing dependency
+        raise click.ClickException(str(exc)) from exc
 
 
 def _default_config_template() -> str:
