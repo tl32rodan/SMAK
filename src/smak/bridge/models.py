@@ -10,11 +10,12 @@ import requests
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.llms.openai_like import OpenAILike
 
-_DEFAULT_NOMIC_API_BASE = "http://localhost:8787"
-_DEFAULT_NOMIC_MODEL = "nomic-embed-text-v1.5"
-_DEFAULT_QWEN_API_BASE = "http://localhost:8000/v1"
-_DEFAULT_GPT_OSS_API_BASE = "http://localhost:8001/v1"
-_DEFAULT_LLM_MODEL = "qwen2.5-7b-instruct"
+_DEFAULT_NOMIC_API_BASE = "http://f15dtpai1:11436"
+_DEFAULT_NOMIC_MODEL = "nomic_embed_text:latest"
+_DEFAULT_QWEN_API_BASE = "http://f15dtpai1:11516/v1"
+_DEFAULT_QWEN_LLM_MODEL = "qwen3_235B_A22B"
+_DEFAULT_GPT_API_BASE = "http://f15dtpai1:11517/v1"
+_DEFAULT_GPT_OSS_LLM_MODEL = "gpt-oss-120b"
 
 
 def _resolve_api_base(base: str) -> str:
@@ -50,9 +51,7 @@ class InternalNomicEmbedding(BaseEmbedding):
         self.session = session or requests.Session()
 
     def _embedding_endpoint(self) -> str:
-        if self.api_base.endswith("/v1"):
-            return f"{self.api_base}/embeddings"
-        return f"{self.api_base}/v1/embeddings"
+        return f"{self.api_base}/api/embed"
 
     def _post_embeddings(self, texts: Sequence[str]) -> list[list[float]]:
         payload = {"model": self.model, "input": list(texts)}
@@ -97,6 +96,12 @@ class InternalNomicEmbedding(BaseEmbedding):
         if "embeddings" in data:
             return list(data["embeddings"])
         raise ValueError("Unexpected response format from Nomic embedding service.")
+
+    def get_embedding_dimension(self, probe_text: str = "hello") -> int:
+        embedding = self._post_embeddings([probe_text])[0]
+        if not embedding:
+            raise ValueError("Embedding probe returned an empty vector.")
+        return len(embedding)
 
 
 def _normalize_openai_embeddings(data: Sequence[dict[str, Any]], size: int) -> list[list[float]]:
@@ -152,12 +157,12 @@ def build_internal_llm(
     normalized_provider = provider.lower()
     if normalized_provider == "qwen":
         base = api_base or os.environ.get("SMAK_QWEN_API_BASE", _DEFAULT_QWEN_API_BASE)
-        model_name = model or os.environ.get("SMAK_QWEN_MODEL", _DEFAULT_LLM_MODEL)
+        model_name = model or os.environ.get("SMAK_QWEN_MODEL", _DEFAULT_QWEN_LLM_MODEL)
     elif normalized_provider in {"gpt-oss", "gpt_oss"}:
         base = api_base or os.environ.get(
-            "SMAK_GPT_OSS_API_BASE", _DEFAULT_GPT_OSS_API_BASE
+            "SMAK_GPT_OSS_API_BASE", _DEFAULT_GPT_API_BASE
         )
-        model_name = model or os.environ.get("SMAK_GPT_OSS_MODEL", "gpt-oss")
+        model_name = model or os.environ.get("SMAK_GPT_OSS_MODEL", _DEFAULT_GPT_OSS_LLM_MODEL)
     else:
         raise ValueError(f"Unknown internal provider '{provider}'.")
     return OpenAILike(

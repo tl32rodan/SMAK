@@ -22,14 +22,22 @@ class DummyResponse:
 
 
 class DummySession:
-    def __init__(self, expected_payload: dict[str, Any], response_payload: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        expected_payload: dict[str, Any],
+        response_payload: dict[str, Any],
+        expected_url: str | None = None,
+    ) -> None:
         self.expected_payload = expected_payload
         self.response_payload = response_payload
+        self.expected_url = expected_url
         self.calls: list[dict[str, Any]] = []
 
     def post(
         self, url: str, json: dict[str, Any], headers: dict[str, str], timeout: float
     ) -> DummyResponse:
+        if self.expected_url and url != self.expected_url:
+            raise AssertionError(f"Unexpected url: {url}")
         self.calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
         self.assert_payload(json)
         return DummyResponse(self.response_payload)
@@ -182,6 +190,23 @@ class TestInternalNomicEmbedding(unittest.TestCase):
             self.assertEqual(embedder.api_base, "http://env-host")
             self.assertEqual(embedder.model, "env-model")
 
+    def test_internal_nomic_embedding_reports_dimension(self) -> None:
+        with install_fake_dependencies():
+            models = self._load_models()
+            session = DummySession(
+                expected_payload={"model": "nomic-test", "input": ["hello"]},
+                response_payload={"data": [{"index": 0, "embedding": [0.1, 0.2]}]},
+                expected_url="http://nomic.test/api/embed",
+            )
+            embedder = models.InternalNomicEmbedding(
+                api_base="http://nomic.test",
+                model="nomic-test",
+                session=session,
+            )
+            dimension = embedder.get_embedding_dimension()
+
+            self.assertEqual(dimension, 2)
+
     def test_build_internal_llm_uses_internal_defaults(self) -> None:
         with install_fake_dependencies() as fake:
             models = self._load_models()
@@ -194,6 +219,25 @@ class TestInternalNomicEmbedding(unittest.TestCase):
             self.assertIsInstance(llm, fake["FakeOpenAILike"])
             self.assertEqual(llm.model, "gpt-oss-turbo")
             self.assertEqual(llm.api_base, "http://x")
+
+    def test_build_internal_llm_defaults_to_configured_models(self) -> None:
+        with install_fake_dependencies() as fake, patch.dict("os.environ", {}, clear=True):
+            models = self._load_models()
+
+            with (
+                patch.object(models, "_DEFAULT_QWEN_LLM_MODEL", "qwen-default"),
+                patch.object(models, "_DEFAULT_QWEN_API_BASE", "http://qwen-default.test/v1"),
+                patch.object(models, "_DEFAULT_GPT_OSS_LLM_MODEL", "gpt-oss-default"),
+                patch.object(models, "_DEFAULT_GPT_API_BASE", "http://gpt-default.test/v1"),
+            ):
+                qwen_llm = models.build_internal_llm(provider="qwen")
+                gpt_llm = models.build_internal_llm(provider="gpt-oss")
+
+            self.assertIsInstance(qwen_llm, fake["FakeOpenAILike"])
+            self.assertEqual(qwen_llm.model, "qwen-default")
+            self.assertEqual(qwen_llm.api_base, "http://qwen-default.test/v1")
+            self.assertEqual(gpt_llm.model, "gpt-oss-default")
+            self.assertEqual(gpt_llm.api_base, "http://gpt-default.test/v1")
 
 
 if __name__ == "__main__":

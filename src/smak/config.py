@@ -42,7 +42,7 @@ class SmakConfig:
     indices: list[IndexConfig] = field(default_factory=list)
     llm: LLMConfig = field(default_factory=LLMConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
-    embedding_dimensions: int = 3
+    embedding_dimensions: int | None = None
 
 
 def load_config(path: str | Path) -> SmakConfig:
@@ -77,15 +77,10 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
         provider=str(storage_data.get("provider", "milvus_lite")),
         uri=str(storage_data.get("uri", storage_data.get("base_path", "./milvus_data.db"))),
     )
-    if isinstance(data, Mapping):
-        embedding_dimensions = int(data.get("embedding_dimensions", 3))
-    else:
-        embedding_dimensions = 3
     return SmakConfig(
         indices=indices,
         llm=llm,
         storage=storage,
-        embedding_dimensions=embedding_dimensions,
     )
 
 
