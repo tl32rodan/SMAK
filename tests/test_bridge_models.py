@@ -21,14 +21,22 @@ class DummyResponse:
 
 
 class DummySession:
-    def __init__(self, expected_payload: dict[str, Any], response_payload: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        expected_payload: dict[str, Any],
+        response_payload: dict[str, Any],
+        expected_url: str | None = None,
+    ) -> None:
         self.expected_payload = expected_payload
         self.response_payload = response_payload
+        self.expected_url = expected_url
         self.calls: list[dict[str, Any]] = []
 
     def post(
         self, url: str, json: dict[str, Any], headers: dict[str, str], timeout: float
     ) -> DummyResponse:
+        if self.expected_url and url != self.expected_url:
+            raise AssertionError(f"Unexpected url: {url}")
         self.calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
         self.assert_payload(json)
         return DummyResponse(self.response_payload)
@@ -146,6 +154,24 @@ class TestInternalNomicEmbedding(unittest.TestCase):
             vectors = embedder._get_text_embeddings(["a", "b"])
 
             self.assertEqual(vectors, [[1.0], [2.0]])
+
+    def test_internal_nomic_embedding_uses_api_embed_endpoint(self) -> None:
+        with install_fake_dependencies():
+            models = self._load_models()
+            session = DummySession(
+                expected_payload={"model": "nomic-test", "input": ["hello"]},
+                response_payload={"data": [{"index": 0, "embedding": [0.1]}]},
+                expected_url="http://nomic.test/api/embed",
+            )
+            embedder = models.InternalNomicEmbedding(
+                api_base="http://nomic.test",
+                model="nomic-test",
+                session=session,
+            )
+
+            vector = embedder.get_text_embedding("hello")
+
+            self.assertEqual(vector, [0.1])
 
     def test_build_internal_llm_uses_internal_defaults(self) -> None:
         with install_fake_dependencies() as fake:

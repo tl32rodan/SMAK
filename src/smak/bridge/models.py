@@ -10,7 +10,7 @@ import requests
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.llms.openai_like import OpenAILike
 
-_DEFAULT_NOMIC_API_BASE = "http://f15dtpai1:11436/api/embed"
+_DEFAULT_NOMIC_API_BASE = "http://f15dtpai1:11436"
 _DEFAULT_NOMIC_MODEL = "nomic_embed_text:latest"
 _DEFAULT_QWEN_API_BASE = "http://f15dtpai1:11516/v1"
 _DEFAULT_QWEN_LLM_MODEL = "qwen3_235B_A22B"
@@ -45,9 +45,7 @@ class InternalNomicEmbedding(BaseEmbedding):
         self.session = session or requests.Session()
 
     def _embedding_endpoint(self) -> str:
-        if self.api_base.endswith("/v1"):
-            return f"{self.api_base}/embeddings"
-        return f"{self.api_base}/v1/embeddings"
+        return f"{self.api_base}/api/embed"
 
     def _post_embeddings(self, texts: Sequence[str]) -> list[list[float]]:
         payload = {"model": self.model, "input": list(texts)}
