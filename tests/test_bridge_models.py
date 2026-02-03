@@ -160,6 +160,25 @@ class TestInternalNomicEmbedding(unittest.TestCase):
             self.assertEqual(llm.model, "gpt-oss-turbo")
             self.assertEqual(llm.api_base, "http://x")
 
+    def test_build_internal_llm_defaults_to_configured_models(self) -> None:
+        with install_fake_dependencies() as fake, patch.dict("os.environ", {}, clear=True):
+            models = self._load_models()
+
+            with (
+                patch.object(models, "_DEFAULT_QWEN_LLM_MODEL", "qwen-default"),
+                patch.object(models, "_DEFAULT_QWEN_API_BASE", "http://qwen-default.test/v1"),
+                patch.object(models, "_DEFAULT_GPT_OSS_LLM_MODEL", "gpt-oss-default"),
+                patch.object(models, "_DEFAULT_GPT_API_BASE", "http://gpt-default.test/v1"),
+            ):
+                qwen_llm = models.build_internal_llm(provider="qwen")
+                gpt_llm = models.build_internal_llm(provider="gpt-oss")
+
+            self.assertIsInstance(qwen_llm, fake["FakeOpenAILike"])
+            self.assertEqual(qwen_llm.model, "qwen-default")
+            self.assertEqual(qwen_llm.api_base, "http://qwen-default.test/v1")
+            self.assertEqual(gpt_llm.model, "gpt-oss-default")
+            self.assertEqual(gpt_llm.api_base, "http://gpt-default.test/v1")
+
 
 if __name__ == "__main__":
     unittest.main()
