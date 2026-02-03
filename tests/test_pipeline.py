@@ -4,9 +4,18 @@ import unittest
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
-from smak.ingest.embedder import SimpleEmbedder
 from smak.ingest.parsers import PythonParser
 from smak.ingest.sidecar import IntegrityError, SidecarManager
+
+
+class DummyEmbedder:
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[float(len(text)), 1.0, 2.0] for text in texts]
+
+
+class DummyEmbedderForEmbed:
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[float(len(text)), 1.0, 2.0] for text in texts]
 
 
 def _install_fake_dependencies() -> None:
@@ -81,7 +90,7 @@ class TestIngestPipeline(unittest.TestCase):
     def test_ingest_pipeline_runs_end_to_end(self) -> None:
         pipeline = _load_pipeline().IngestPipeline(
             parser=PythonParser(),
-            embedder=SimpleEmbedder(),
+            embedder=DummyEmbedder(),
             sidecar_manager=SidecarManager(),
         )
 
@@ -101,7 +110,7 @@ class TestIngestPipeline(unittest.TestCase):
     def test_ingest_pipeline_embeds_when_requested(self) -> None:
         pipeline = _load_pipeline().IngestPipeline(
             parser=PythonParser(),
-            embedder=SimpleEmbedder(),
+            embedder=DummyEmbedder(),
             sidecar_manager=SidecarManager(),
         )
 
@@ -109,14 +118,17 @@ class TestIngestPipeline(unittest.TestCase):
 
         result = pipeline.run(content, source="doc.txt", compute_embeddings=True)
 
-        self.assertEqual(result.embeddings, [[28.0, 2269.0, 81.03571428571429]])
+        self.assertEqual(result.embeddings, [[28.0, 1.0, 2.0]])
 
     def test_ingest_pipeline_defaults_to_internal_nomic_embedder(self) -> None:
-        class DummyEmbedder:
+        class DefaultDummyEmbedder:
             def embed_documents(self, texts: list[str]) -> list[list[float]]:
                 return [[float(len(text))] for text in texts]
 
-        with patch("smak.ingest.pipeline.InternalNomicEmbedding", return_value=DummyEmbedder()):
+        with patch(
+            "smak.ingest.pipeline.InternalNomicEmbedding",
+            return_value=DefaultDummyEmbedder(),
+        ):
             pipeline = _load_pipeline().IngestPipeline(
                 parser=PythonParser(),
                 sidecar_manager=SidecarManager(),
@@ -129,6 +141,17 @@ class TestIngestPipeline(unittest.TestCase):
             )
 
         self.assertEqual(result.embeddings, [[28.0]])
+
+    def test_ingest_pipeline_supports_embed_method(self) -> None:
+        pipeline = _load_pipeline().IngestPipeline(
+            parser=PythonParser(),
+            embedder=DummyEmbedderForEmbed(),
+            sidecar_manager=SidecarManager(),
+        )
+
+        result = pipeline.run("def login():\n    return True\n", compute_embeddings=True)
+
+        self.assertEqual(result.embeddings, [[28.0, 1.0, 2.0]])
 
     def test_ingest_pipeline_skips_embedding_on_sidecar_integrity_error(self) -> None:
         embedder = SimpleNamespace(embed_documents=unittest.mock.Mock())

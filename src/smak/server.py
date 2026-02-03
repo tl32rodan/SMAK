@@ -118,6 +118,8 @@ def build_index_registry(
     loader = vector_store_loader or _load_vector_store
     builder = index_builder or _build_vector_index
     names = [entry.name for entry in config.indices] or ["source_code"]
+    if config.embedding_dimensions is None:
+        raise ValueError("Embedding dimensions must be resolved before building indices.")
     indices: dict[str, VectorSearchIndex] = {}
     for name in names:
         store = loader(name, config)
@@ -189,6 +191,8 @@ def launch_server(
     gradio_factory: Callable[[Any, MeshRetrievalTool], Any] | None = None,
 ) -> Any:
     config = load_config(config_path)
+    embedder = InternalNomicEmbedding()
+    config = initialize_embedding_dimensions(config, embedder)
     registry = build_index_registry(
         config, vector_store_loader=vector_store_loader, index_builder=index_builder
     )

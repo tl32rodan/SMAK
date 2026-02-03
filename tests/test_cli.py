@@ -11,7 +11,6 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 from smak.config import SmakConfig, StorageConfig
-from smak.ingest.embedder import SimpleEmbedder
 
 
 def _install_fake_dependencies() -> None:
@@ -100,6 +99,10 @@ class FakeVectorStore:
 
 
 class TestCli(unittest.TestCase):
+    class DummyEmbedder:
+        def embed_documents(self, texts: list[str]) -> list[list[float]]:
+            return [[float(len(text)), 1.0, 2.0] for text in texts]
+
     def test_default_config_template_includes_storage(self) -> None:
         cli = _load_cli()
         template = cli._default_config_template()
@@ -108,7 +111,7 @@ class TestCli(unittest.TestCase):
         self.assertIn("provider: milvus_lite", template)
         self.assertIn("uri: ./milvus_data.db", template)
         self.assertIn("llm:", template)
-        self.assertIn("embedding_dimensions: 3", template)
+        self.assertNotIn("embedding_dimensions", template)
         self.assertNotIn("llama_index:", template)
 
     def test_ingest_folder_processes_files(self) -> None:
@@ -140,13 +143,44 @@ class TestCli(unittest.TestCase):
                 config,
                 vector_store_loader=loader,
                 node_class_loader=lambda: FakeNode,
-                embedder_loader=SimpleEmbedder,
+                embedder_loader=self.DummyEmbedder,
             )
 
             self.assertEqual(stats.files, 1)
             self.assertEqual(stats.vectors, 1)
             self.assertEqual(created["index"], "code")
             self.assertEqual(saved[0].metadata["relations"], ["issue::1"])
+
+    def test_ingest_folder_uses_embedder_dimension(self) -> None:
+        class WideEmbedder(SimpleNamespace):
+            def embed_documents(self, texts: list[str]) -> list[list[float]]:
+                return [[0.0] * 5 for _ in texts]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            folder = Path(tmp_dir) / "src"
+            folder.mkdir()
+            source = folder / "example.py"
+            source.write_text("def foo():\n    return 1\n", encoding="utf-8")
+
+            observed: dict[str, int] = {}
+
+            def loader(index_name: str, config: SmakConfig) -> FakeVectorStore:
+                observed["dim"] = config.embedding_dimensions
+                return FakeVectorStore([], index_name)
+
+            config = SmakConfig(storage=StorageConfig(uri="vault.db"))
+
+            cli = _load_cli()
+            cli._ingest_folder(
+                folder,
+                "code",
+                config,
+                vector_store_loader=loader,
+                node_class_loader=lambda: FakeNode,
+                embedder_loader=WideEmbedder,
+            )
+
+            self.assertEqual(observed["dim"], 5)
 
     def test_cli_init_and_ingest(self) -> None:
         runner = CliRunner()

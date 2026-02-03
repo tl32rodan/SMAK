@@ -11,7 +11,7 @@ class TestConfig(unittest.TestCase):
     def test_smak_config_defaults(self) -> None:
         config = SmakConfig()
 
-        self.assertEqual(config.embedding_dimensions, 3)
+        self.assertIsNone(config.embedding_dimensions)
         self.assertEqual(config.llm.provider, "openai")
         self.assertEqual(config.llm.temperature, 0.0)
         self.assertEqual(config.storage.provider, "milvus_lite")
@@ -39,7 +39,7 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(config.llm.provider, "ollama")
             self.assertEqual(config.llm.temperature, 0.4)
             self.assertEqual(config.llm.api_base, "http://localhost:11434/v1")
-            self.assertEqual(config.embedding_dimensions, 12)
+            self.assertIsNone(config.embedding_dimensions)
 
     def test_load_config_reads_storage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
