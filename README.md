@@ -99,6 +99,22 @@ symbols:
     mesh_relations:
       - SmakRepositoryLoader.parse
       - KnowledgeUnit
+  - symbol: ingest_folder
+    metadata:
+      intent: "CLI entry point for ingestion"
+    mesh_relations:
+      - issue:INGEST-42
+      - doc:ingestion-guide
+  - symbol: issue:INGEST-42
+    metadata:
+      intent: "Track ingestion regression in parallel workers"
+    mesh_relations:
+      - ingest_folder
+  - symbol: doc:ingestion-guide
+    metadata:
+      intent: "Explain ingestion steps and configuration"
+    mesh_relations:
+      - ingest_folder
 ```
 
 ## Milvus Lite storage
