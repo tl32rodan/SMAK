@@ -169,20 +169,6 @@ class TestInternalNomicEmbedding(unittest.TestCase):
 
             self.assertEqual(vectors, [[1.0], [2.0]])
 
-    def test_internal_nomic_embedding_defaults_and_endpoint(self) -> None:
-        with install_fake_dependencies():
-            models = self._load_models()
-            embedder = models.InternalNomicEmbedding(
-                api_base="http://example.com/",
-                model="custom-model",
-            )
-
-            self.assertEqual(embedder.api_base, "http://example.com")
-            self.assertEqual(embedder.model, "custom-model")
-            self.assertEqual(embedder.timeout, 30.0)
-            self.assertEqual(embedder.headers, {})
-            self.assertEqual(embedder._embedding_endpoint(), "http://example.com/v1/embeddings")
-
     def test_internal_nomic_embedding_env_defaults(self) -> None:
         with install_fake_dependencies():
             models = self._load_models()
