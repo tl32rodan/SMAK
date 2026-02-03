@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import sys
 import unittest
 from contextlib import contextmanager
@@ -56,12 +57,32 @@ def install_fake_dependencies() -> Generator[dict[str, Any], None, None]:
     fake_requests.Session = FakeSession
     fake_requests.post = fake_post
 
+    fake_pydantic = ModuleType("pydantic")
+
+    def fake_field(*, default_factory: Any | None = None) -> Any:
+        if default_factory is None:
+            return None
+        return default_factory()
+
+    fake_pydantic.Field = fake_field
+
     fake_embeddings = ModuleType("llama_index.core.embeddings")
 
     class FakeBaseEmbedding:
+        model_name: str
+        embed_batch_size: int
+
         def __init__(self, model_name: str, embed_batch_size: int) -> None:
             self.model_name = model_name
             self.embed_batch_size = embed_batch_size
+
+        def __setattr__(self, name: str, value: Any) -> None:
+            allowed: set[str] = set()
+            for cls in type(self).__mro__:
+                allowed.update(getattr(cls, "__annotations__", {}).keys())
+            if name not in allowed:
+                raise ValueError(f'\"{type(self).__name__}\" object has no field \"{name}\"')
+            super().__setattr__(name, value)
 
         def get_text_embedding(self, text: str) -> list[float]:
             return self._get_text_embedding(text)
@@ -93,6 +114,7 @@ def install_fake_dependencies() -> Generator[dict[str, Any], None, None]:
         sys.modules,
         {
             "requests": fake_requests,
+            "pydantic": fake_pydantic,
             "llama_index": fake_root,
             "llama_index.core": fake_core,
             "llama_index.core.embeddings": fake_embeddings,
@@ -146,6 +168,33 @@ class TestInternalNomicEmbedding(unittest.TestCase):
             vectors = embedder._get_text_embeddings(["a", "b"])
 
             self.assertEqual(vectors, [[1.0], [2.0]])
+
+    def test_internal_nomic_embedding_defaults_and_endpoint(self) -> None:
+        with install_fake_dependencies():
+            models = self._load_models()
+            embedder = models.InternalNomicEmbedding(
+                api_base="http://example.com/",
+                model="custom-model",
+            )
+
+            self.assertEqual(embedder.api_base, "http://example.com")
+            self.assertEqual(embedder.model, "custom-model")
+            self.assertEqual(embedder.timeout, 30.0)
+            self.assertEqual(embedder.headers, {})
+            self.assertEqual(embedder._embedding_endpoint(), "http://example.com/v1/embeddings")
+
+    def test_internal_nomic_embedding_env_defaults(self) -> None:
+        with install_fake_dependencies():
+            models = self._load_models()
+            env = {
+                "SMAK_NOMIC_API_BASE": "http://env-host",
+                "SMAK_NOMIC_MODEL": "env-model",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                embedder = models.InternalNomicEmbedding()
+
+            self.assertEqual(embedder.api_base, "http://env-host")
+            self.assertEqual(embedder.model, "env-model")
 
     def test_build_internal_llm_uses_internal_defaults(self) -> None:
         with install_fake_dependencies() as fake:

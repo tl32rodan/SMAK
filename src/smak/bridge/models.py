@@ -24,6 +24,12 @@ def _resolve_api_base(base: str) -> str:
 class InternalNomicEmbedding(BaseEmbedding):
     """Embedding adapter for the internal Nomic server."""
 
+    api_base: str | None = None
+    model: str | None = None
+    timeout: float = 30.0
+    headers: dict[str, str] | None = None
+    session: requests.Session | None = None
+
     def __init__(
         self,
         *,
