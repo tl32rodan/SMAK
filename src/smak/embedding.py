@@ -59,7 +59,7 @@ def validate_vector_store_dimension(vector_store: object, expected_dimension: in
         return
     if actual != expected_dimension:
         raise ValueError(
-            "Milvus collection embedding dimension mismatch: "
+            "Vector store embedding dimension mismatch: "
             f"expected {expected_dimension}, got {actual}."
         )
 

@@ -9,9 +9,12 @@ description = "SMAK prototype"
 requires-python = ">=3.10"
 dependencies = [
     "click",
+    "faiss-cpu",
+    "faiss-storage-lib",
     "tqdm",
     "PyYAML",
     "requests",
+    "numpy",
     "llama-index-core",
     "llama-index-llms-openai-like",
 ]

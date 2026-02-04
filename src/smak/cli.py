@@ -64,10 +64,13 @@ def _load_text_node_class():
 
 
 def _load_vector_store(index_name: str, config: SmakConfig):
-    from smak.storage.milvus import load_milvus_lite_store
+    from smak.storage.faiss_adapter import load_faiss_store
 
     try:
-        return load_milvus_lite_store(
+        provider = (config.storage.provider or "faiss").lower()
+        if provider != "faiss":
+            raise click.ClickException(f"Unsupported vector store provider: {provider}")
+        return load_faiss_store(
             uri=config.storage.uri,
             collection_name=index_name,
             dim=config.embedding_dimensions,
@@ -82,8 +85,8 @@ def _default_config_template() -> str:
             "# SMAK Workspace Configuration",
             "",
             "storage:",
-            "  provider: milvus_lite",
-            "  uri: ./milvus_data.db",
+            "  provider: faiss",
+            "  uri: ./smak_data",
             "",
             "llm:",
             "  provider: qwen",

@@ -108,8 +108,8 @@ class TestCli(unittest.TestCase):
         template = cli._default_config_template()
 
         self.assertIn("storage:", template)
-        self.assertIn("provider: milvus_lite", template)
-        self.assertIn("uri: ./milvus_data.db", template)
+        self.assertIn("provider: faiss", template)
+        self.assertIn("uri: ./smak_data", template)
         self.assertIn("llm:", template)
         self.assertNotIn("embedding_dimensions", template)
         self.assertNotIn("llama_index:", template)
@@ -233,7 +233,7 @@ class TestCli(unittest.TestCase):
         from smak import cli
 
         with patch(
-            "smak.storage.milvus.load_milvus_lite_store",
+            "smak.storage.faiss_adapter.load_faiss_store",
             side_effect=ModuleNotFoundError("Vector store dependency missing."),
         ):
             with self.assertRaises(Exception) as exc:

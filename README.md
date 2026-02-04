@@ -2,10 +2,10 @@
 
 SMAK (Semantic Mesh Agentic Kernel) is a lightweight middleware layer that enforces
 sidecar governance and mesh retrieval across source assets. Storage and orchestration
-are delegated to Milvus Lite and LlamaIndex. It provides:
+are delegated to Faiss and LlamaIndex. It provides:
 
 - **Ingestion pipeline**: Parse files into structured knowledge units, validate and
-  enrich them with sidecar metadata, embed them, and persist vectors into Milvus Lite.
+  enrich them with sidecar metadata, embed them, and persist vectors into Faiss storage.
 - **Semantic mesh tools**: Search across indices and resolve mesh relations through
   LlamaIndex-backed retrieval.
 - **CLI workflow**: Initialize configuration, ingest folders, and run a Gradio-based
@@ -21,8 +21,8 @@ are delegated to Milvus Lite and LlamaIndex. It provides:
    as `intent`, `mesh_relations`, and symbol metadata.
 4. **Embedding**: Internal Nomic embeddings are generated for each unit, and the
    embedding dimension is auto-detected at runtime.
-5. **Storage**: Embeddings and payloads are stored in Milvus Lite
-   (`uri: ./milvus_data.db`).
+5. **Storage**: Embeddings and payloads are stored in Faiss
+   (`uri: ./smak_data`).
 6. **Agents**: Retrieval uses LlamaIndex ReAct with a Mesh Retrieval two-pass lookup
    to surface matches and follow mesh relations, served via a Gradio chat UI.
 
@@ -32,8 +32,8 @@ Use `smak init` to generate a template `workspace_config.yaml`. The schema inclu
 
 ```yaml
 storage:
-  provider: milvus_lite
-  uri: ./milvus_data.db
+  provider: faiss
+  uri: ./smak_data
 llm:
   provider: qwen
   model: qwen3_235B_A22B
@@ -50,7 +50,7 @@ indices:
     description: Contains architecture diagrams, API docs, and general knowledge base.
 ```
 
-Use the Milvus Lite `uri` to define the local vector store location. Provide the
+Use the Faiss `uri` to define the local vector store location. Provide the
 LLM provider details as needed for chat completion requests. SMAK auto-detects the
 embedding dimension from the configured embedding service, so it does not need to
 be listed in the config file.
@@ -68,7 +68,7 @@ During ingestion, SMAK:
 3. Validates sidecar metadata and fails fast if invalid entries are found.
 4. Injects sidecar metadata and mesh relations.
 5. Embeds each knowledge unit with the internal Nomic model.
-6. Stores vectors in Milvus Lite for the configured index.
+6. Stores vectors in Faiss for the configured index.
 
 You can adjust concurrency with `--workers` (default 4). If `tqdm` is installed
 and stderr is a TTY, a progress bar is displayed during ingestion.
@@ -128,16 +128,17 @@ symbols:
       - ingest_folder
 ```
 
-## Milvus Lite storage
+## Faiss storage
 
-SMAK uses a native Milvus Lite connection via `pymilvus` + `milvus-lite` to persist
-and retrieve vector documents. Mesh relations are resolved by first retrieving
-primary matches, then performing a second-pass lookup for related nodes referenced
-in `mesh_relations` so agent tooling can traverse the semantic mesh. Install the
-native dependencies with:
+SMAK uses a local Faiss-backed storage adapter provided by the patched
+`faiss-storage-lib` to persist and retrieve vector documents. Mesh relations are
+resolved by first retrieving primary matches, then performing a second-pass lookup
+for related nodes referenced in `mesh_relations` so agent tooling can traverse the
+semantic mesh. Install the native dependencies with:
 
 ```bash
-pip install pymilvus==2.6.8 milvus-lite==2.5.1
+pip install faiss-cpu numpy
+pip install -e ../faiss-storage-lib
 ```
 
 ## LLM providers
