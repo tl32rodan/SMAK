@@ -96,16 +96,16 @@ class TestMeshSearchTool(unittest.TestCase):
                     "code": FakeIndex(
                         data={
                             "code::login": {
-                                "payload": {"relations": ["issue::101"]},
+                                "payload": {"relations": ["issue:101"]},
                                 "uid": "code::login",
                             },
                         }
                     ),
                     "issue": FakeIndex(
                         data={
-                            "issue::101": {
+                            "issue:101": {
                                 "payload": {"content": "issue body"},
-                                "uid": "issue::101",
+                                "uid": "issue:101",
                             }
                         }
                     ),
@@ -118,7 +118,7 @@ class TestMeshSearchTool(unittest.TestCase):
 
         results = tool.search("code", "login")
 
-        self.assertEqual([result["uid"] for result in results], ["code::login", "issue::101"])
+        self.assertEqual([result["uid"] for result in results], ["code::login", "issue:101"])
 
 
 class TestLLMParser(unittest.TestCase):

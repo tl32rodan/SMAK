@@ -19,7 +19,10 @@ class TestParsers(unittest.TestCase):
 
         units = parser.parse(content, source="main.py")
 
-        self.assertEqual([unit.uid for unit in units], ["main.py::login", "main.py::User"])
+        self.assertEqual(
+            [unit.uid for unit in units],
+            ["python:main.py::login", "python:main.py::User"],
+        )
         self.assertEqual({unit.metadata["symbol"] for unit in units}, {"login", "User"})
         self.assertTrue(all(unit.source_type == "source_code" for unit in units))
 
@@ -29,7 +32,10 @@ class TestParsers(unittest.TestCase):
 
         units = parser.parse(content, source="main.pl")
 
-        self.assertEqual([unit.uid for unit in units], ["main.pl::login", "main.pl::logout"])
+        self.assertEqual(
+            [unit.uid for unit in units],
+            ["perl:main.pl::login", "perl:main.pl::logout"],
+        )
         self.assertEqual([unit.content for unit in units], ["sub login {", "sub logout {"])
 
     def test_issue_parser_reads_frontmatter(self) -> None:
@@ -38,7 +44,7 @@ class TestParsers(unittest.TestCase):
 
         units = parser.parse(content, source="issue.md")
 
-        self.assertEqual(units[0].uid, "issue::101")
+        self.assertEqual(units[0].uid, "issue:101")
         self.assertEqual(units[0].metadata["title"], "Login issue")
         self.assertEqual(units[0].relations, ("code::login",))
 

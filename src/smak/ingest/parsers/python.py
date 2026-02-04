@@ -14,7 +14,7 @@ class PythonParser:
 
     def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:
         tree = ast.parse(content or "")
-        origin = source or "python"
+        origin = f"python:{source}" if source else "python"
         units: list[KnowledgeUnit] = []
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):

@@ -79,12 +79,12 @@ class FakeGradio(ModuleType):
 
 class TestServer(unittest.TestCase):
     def test_node_to_payload_normalizes_relations(self) -> None:
-        node = FakeNode("unit-1", "hello", {"meta": {"mesh_relations": ["issue::1"]}})
+        node = FakeNode("unit-1", "hello", {"meta": {"mesh_relations": ["issue:1"]}})
         payload = _node_to_payload(node)
 
         self.assertEqual(payload["uid"], "unit-1")
         self.assertEqual(payload["content"], "hello")
-        self.assertEqual(payload["metadata"]["mesh_relations"], ["issue::1"])
+        self.assertEqual(payload["metadata"]["mesh_relations"], ["issue:1"])
 
     def test_vector_search_index_search_and_get(self) -> None:
         node = FakeNode("unit-2", "payload", {"relations": ["doc::2"]})

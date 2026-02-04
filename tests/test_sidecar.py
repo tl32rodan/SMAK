@@ -24,7 +24,7 @@ class TestSidecarManager(unittest.TestCase):
         loader = SidecarManager()
         metadata = {
             "symbols": [
-                {"name": "missing", "relations": ["issue::1"], "intent": "missing-intent"}
+                {"name": "missing", "relations": ["issue:1"], "intent": "missing-intent"}
             ]
         }
 
@@ -42,7 +42,7 @@ class TestSidecarManager(unittest.TestCase):
         loader = SidecarManager()
         units = [
             KnowledgeUnit(
-                uid="main.py::login",
+                uid="python:main.py::login",
                 content="def login(): pass",
                 source_type="source_code",
                 metadata={"symbol": "login", "source": "main.py"},
@@ -52,7 +52,7 @@ class TestSidecarManager(unittest.TestCase):
             "symbols": [
                 {
                     "name": "login",
-                    "relations": ["issue::404"],
+                    "relations": ["issue:404"],
                     "intent": "auth",
                     "owner": "team",
                 }
@@ -61,21 +61,21 @@ class TestSidecarManager(unittest.TestCase):
 
         enriched = loader.apply(units, metadata)
 
-        self.assertEqual(enriched[0].relations, ("issue::404",))
+        self.assertEqual(enriched[0].relations, ("issue:404",))
         self.assertEqual(enriched[0].metadata["owner"], "team")
         self.assertEqual(enriched[0].metadata["file_name"], "main.py")
         self.assertEqual(enriched[0].metadata["symbol_name"], "login")
         self.assertEqual(enriched[0].metadata["intent"], "auth")
-        self.assertEqual(enriched[0].metadata["mesh_relations"], ["issue::404"])
+        self.assertEqual(enriched[0].metadata["mesh_relations"], ["issue:404"])
 
     def test_sidecar_apply_uses_existing_relations_when_missing(self) -> None:
         loader = SidecarManager()
         units = [
             KnowledgeUnit(
-                uid="main.py::logout",
+                uid="python:main.py::logout",
                 content="def logout(): pass",
                 source_type="source_code",
-                relations=("issue::200",),
+                relations=("issue:200",),
                 metadata={"symbol": "logout", "source": "main.py"},
             )
         ]
@@ -83,8 +83,8 @@ class TestSidecarManager(unittest.TestCase):
 
         enriched = loader.apply(units, metadata)
 
-        self.assertEqual(enriched[0].relations, ("issue::200",))
-        self.assertEqual(enriched[0].metadata["mesh_relations"], ["issue::200"])
+        self.assertEqual(enriched[0].relations, ("issue:200",))
+        self.assertEqual(enriched[0].metadata["mesh_relations"], ["issue:200"])
 
 
 if __name__ == "__main__":

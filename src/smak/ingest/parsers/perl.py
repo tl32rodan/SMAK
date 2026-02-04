@@ -15,7 +15,7 @@ class PerlParser:
     """Parse Perl source code into knowledge units."""
 
     def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:
-        origin = source or "perl"
+        origin = f"perl:{source}" if source else "perl"
         units: list[KnowledgeUnit] = []
         for line in (content or "").splitlines():
             match = _SUB_REGEX.match(line)
