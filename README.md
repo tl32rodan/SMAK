@@ -73,6 +73,17 @@ During ingestion, SMAK:
 You can adjust concurrency with `--workers` (default 4). If `tqdm` is installed
 and stderr is a TTY, a progress bar is displayed during ingestion.
 
+## Symbol search
+
+Use `smak search` to print the symbol identifiers for a file so you can paste
+them into a sidecar YAML file. The command accepts absolute or relative paths
+and prints one symbol ID per line.
+
+```bash
+smak search ./src/app.py
+# python:./src/app.py::login
+```
+
 ## Sidecar metadata
 
 Sidecar files live alongside source files and use the suffix
