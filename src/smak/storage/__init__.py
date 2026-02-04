@@ -1,13 +1,9 @@
 """Storage adapters for SMAK."""
 
-from .milvus import (
-    MilvusLiteVectorSearchIndex,
-    MilvusLiteVectorStore,
-    load_milvus_lite_store,
+from .faiss_adapter import (
+    FaissVectorSearchIndex,
+    FaissVectorStore,
+    load_faiss_store,
 )
 
-__all__ = [
-    "MilvusLiteVectorSearchIndex",
-    "MilvusLiteVectorStore",
-    "load_milvus_lite_store",
-]
+__all__ = ["FaissVectorSearchIndex", "FaissVectorStore", "load_faiss_store"]

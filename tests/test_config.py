@@ -14,8 +14,8 @@ class TestConfig(unittest.TestCase):
         self.assertIsNone(config.embedding_dimensions)
         self.assertEqual(config.llm.provider, "openai")
         self.assertEqual(config.llm.temperature, 0.0)
-        self.assertEqual(config.storage.provider, "milvus_lite")
-        self.assertEqual(config.storage.uri, "./milvus_data.db")
+        self.assertEqual(config.storage.provider, "faiss")
+        self.assertEqual(config.storage.uri, "./smak_data")
 
     def test_load_config_reads_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -45,13 +45,13 @@ class TestConfig(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "workspace.yaml"
             path.write_text(
-                "storage:\n  provider: milvus_lite\n  uri: data/vault.db\n",
+                "storage:\n  provider: faiss\n  uri: data/vault.db\n",
                 encoding="utf-8",
             )
 
             config = load_config(path)
 
-            self.assertEqual(config.storage.provider, "milvus_lite")
+            self.assertEqual(config.storage.provider, "faiss")
             self.assertEqual(config.storage.uri, "data/vault.db")
 
     def test_load_config_reads_legacy_base_path(self) -> None:

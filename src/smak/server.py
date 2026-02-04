@@ -11,15 +11,18 @@ from smak.agent.tools import IndexRegistry, MeshRetrievalTool, VectorSearchIndex
 from smak.bridge.models import InternalNomicEmbedding, build_internal_llm
 from smak.config import SmakConfig, load_config
 from smak.embedding import initialize_embedding_dimensions, validate_vector_store_dimension
-from smak.storage.milvus import (
-    MilvusLiteVectorSearchIndex,
-    MilvusLiteVectorStore,
-    load_milvus_lite_store,
+from smak.storage.faiss_adapter import (
+    FaissVectorSearchIndex,
+    FaissVectorStore,
+    load_faiss_store,
 )
 
 
 def _load_vector_store(index_name: str, config: SmakConfig) -> object:
-    return load_milvus_lite_store(
+    provider = (config.storage.provider or "faiss").lower()
+    if provider != "faiss":
+        raise ValueError(f"Unsupported vector store provider: {provider}")
+    return load_faiss_store(
         uri=config.storage.uri,
         collection_name=index_name,
         dim=config.embedding_dimensions,
@@ -125,8 +128,8 @@ def build_index_registry(
     for name in names:
         store = loader(name, config)
         validate_vector_store_dimension(store, config.embedding_dimensions)
-        if isinstance(store, MilvusLiteVectorStore):
-            indices[name] = MilvusLiteVectorSearchIndex(
+        if isinstance(store, FaissVectorStore):
+            indices[name] = FaissVectorSearchIndex(
                 store=store, embedder=InternalNomicEmbedding()
             )
         else:
