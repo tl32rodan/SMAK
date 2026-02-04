@@ -122,7 +122,7 @@ class TestCli(unittest.TestCase):
             source.write_text("def foo():\n    return 1\n", encoding="utf-8")
             sidecar = folder / "example.py.sidecar.yaml"
             sidecar.write_text(
-                "symbols:\n  - name: foo\n    relations:\n      - issue::1\n",
+                "symbols:\n  - name: foo\n    relations:\n      - issue:1\n",
                 encoding="utf-8",
             )
 
@@ -149,7 +149,7 @@ class TestCli(unittest.TestCase):
             self.assertEqual(stats.files, 1)
             self.assertEqual(stats.vectors, 1)
             self.assertEqual(created["index"], "code")
-            self.assertEqual(saved[0].metadata["relations"], ["issue::1"])
+            self.assertEqual(saved[0].metadata["relations"], ["issue:1"])
 
     def test_ingest_folder_uses_embedder_dimension(self) -> None:
         class WideEmbedder(SimpleNamespace):
@@ -256,6 +256,32 @@ class TestCli(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0)
         launcher.assert_called_once_with(port=7777, config_path="cfg.yaml")
+
+    def test_search_command_lists_python_symbols(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            source = tmp_path / "example.py"
+            source.write_text("def hello():\n    return True\n", encoding="utf-8")
+
+            cli = _load_cli()
+            result = runner.invoke(cli.main, ["search", str(source)])
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn(f"python:{source}::hello", result.output)
+
+    def test_search_command_lists_issue_symbols(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            source = tmp_path / "issue.md"
+            source.write_text("---\nid: issue_001_login_error\n---\nBody\n", encoding="utf-8")
+
+            cli = _load_cli()
+            result = runner.invoke(cli.main, ["search", str(source)])
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn("issue:issue_001_login_error", result.output)
 
 
 if __name__ == "__main__":

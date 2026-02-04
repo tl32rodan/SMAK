@@ -21,7 +21,7 @@ class IssueParser:
         if not isinstance(metadata, dict):
             metadata = {"value": metadata}
         issue_id = metadata.get("id") or metadata.get("title") or source or "issue"
-        uid = f"issue::{issue_id}"
+        uid = f"issue:{issue_id}"
         relations = metadata.get("relations", [])
         if isinstance(relations, str):
             relations = [relations]

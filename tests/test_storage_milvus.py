@@ -80,7 +80,7 @@ class TestMilvusLiteStorage(unittest.TestCase):
             node = FakeNode(
                 id_="unit-1",
                 text="hello",
-                metadata={"mesh_relations": ["issue::1"]},
+                metadata={"mesh_relations": ["issue:1"]},
                 embedding=[0.1, 0.2, 0.3],
             )
             store.add([node])
@@ -88,7 +88,7 @@ class TestMilvusLiteStorage(unittest.TestCase):
             results = store.search([0.1, 0.2, 0.3], top_k=1)
             self.assertEqual(results[0]["uid"], "unit-1")
             self.assertEqual(results[0]["content"], "hello")
-            self.assertEqual(results[0]["metadata"]["mesh_relations"], ["issue::1"])
+            self.assertEqual(results[0]["metadata"]["mesh_relations"], ["issue:1"])
 
             fetched = store.get_by_id("unit-1")
             self.assertIsNotNone(fetched)

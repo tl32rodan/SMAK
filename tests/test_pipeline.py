@@ -95,7 +95,7 @@ class TestIngestPipeline(unittest.TestCase):
         )
 
         content = "def login():\n    return True\n"
-        sidecar = "symbols:\n  - name: login\n    relations:\n      - issue::123\n"
+        sidecar = "symbols:\n  - name: login\n    relations:\n      - issue:123\n"
 
         result = pipeline.run(content, source="doc.txt", sidecar_payload=sidecar)
 
@@ -103,9 +103,9 @@ class TestIngestPipeline(unittest.TestCase):
         self.assertEqual(result.embeddings, [])
         self.assertEqual(
             result.metadata,
-            {"symbols": [{"name": "login", "relations": ["issue::123"]}]},
+            {"symbols": [{"name": "login", "relations": ["issue:123"]}]},
         )
-        self.assertEqual(result.units[0].relations, ("issue::123",))
+        self.assertEqual(result.units[0].relations, ("issue:123",))
 
     def test_ingest_pipeline_embeds_when_requested(self) -> None:
         pipeline = _load_pipeline().IngestPipeline(

@@ -10,6 +10,7 @@ from smak.agent.react import build_llamaindex_react_agent
 from smak.agent.tools import IndexRegistry, MeshRetrievalTool, VectorSearchIndex
 from smak.bridge.models import InternalNomicEmbedding, build_internal_llm
 from smak.config import SmakConfig, load_config
+from smak.embedding import initialize_embedding_dimensions, validate_vector_store_dimension
 from smak.storage.milvus import (
     MilvusLiteVectorSearchIndex,
     MilvusLiteVectorStore,
@@ -123,6 +124,7 @@ def build_index_registry(
     indices: dict[str, VectorSearchIndex] = {}
     for name in names:
         store = loader(name, config)
+        validate_vector_store_dimension(store, config.embedding_dimensions)
         if isinstance(store, MilvusLiteVectorStore):
             indices[name] = MilvusLiteVectorSearchIndex(
                 store=store, embedder=InternalNomicEmbedding()

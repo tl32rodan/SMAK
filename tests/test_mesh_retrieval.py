@@ -115,14 +115,14 @@ class TestMeshRetrievalTool(unittest.TestCase):
                 "code::login": {
                     "uid": "code::login",
                     "content": "login handler",
-                    "metadata": {"mesh_relations": ["issue::bug_report_502.md"]},
+                    "metadata": {"mesh_relations": ["issue:bug_report_502.md"]},
                 }
             }
         )
         issue_index = FakeIndex(
             data={
-                "issue::bug_report_502.md": {
-                    "uid": "issue::bug_report_502.md",
+                "issue:bug_report_502.md": {
+                    "uid": "issue:bug_report_502.md",
                     "content": "Bug report details",
                     "metadata": {},
                 }
@@ -133,23 +133,23 @@ class TestMeshRetrievalTool(unittest.TestCase):
 
         payload = tool.retrieve("login")
 
-        self.assertEqual(issue_index.lookups, ["issue::bug_report_502.md"])
+        self.assertEqual(issue_index.lookups, ["issue:bug_report_502.md"])
         self.assertEqual(
             payload["context"],
             [
                 {
                     "id": "code::login",
                     "content": "login handler",
-                    "metadata": {"mesh_relations": ["issue::bug_report_502.md"]},
+                    "metadata": {"mesh_relations": ["issue:bug_report_502.md"]},
                     "relation_type": "primary",
                     "relation_id": None,
                 },
                 {
-                    "id": "issue::bug_report_502.md",
+                    "id": "issue:bug_report_502.md",
                     "content": "Bug report details",
                     "metadata": {},
                     "relation_type": "related",
-                    "relation_id": "issue::bug_report_502.md",
+                    "relation_id": "issue:bug_report_502.md",
                 },
             ],
         )
