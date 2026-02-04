@@ -9,7 +9,7 @@ class TestKnowledgeUnit(unittest.TestCase):
             uid="u1",
             content="hello",
             source_type="source_code",
-            relations=("issue::1",),
+            relations=("issue:1",),
             metadata={"a": 1},
         )
 
@@ -24,9 +24,9 @@ class TestKnowledgeUnit(unittest.TestCase):
     def test_knowledge_unit_with_relations_overrides(self) -> None:
         unit = KnowledgeUnit(uid="u1", content="hello", source_type="issue")
 
-        updated = unit.with_relations(["issue::2", "issue::3"])
+        updated = unit.with_relations(["issue:2", "issue:3"])
 
-        self.assertEqual(updated.relations, ("issue::2", "issue::3"))
+        self.assertEqual(updated.relations, ("issue:2", "issue:3"))
         self.assertEqual(updated.metadata, unit.metadata)
 
 

@@ -142,6 +142,19 @@ def _iter_source_files(folder: Path) -> Iterable[Path]:
         yield path
 
 
+def _symbols_for_path(path: Path) -> list[str]:
+    parser = _parser_for_path(path)
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:  # pragma: no cover - file read failures are OS-specific
+        raise click.ClickException(f"Unable to read file: {exc}") from exc
+    try:
+        units = parser.parse(content, source=str(path))
+    except Exception as exc:  # pragma: no cover - parser errors
+        raise click.ClickException(f"Failed to parse {path}: {exc}") from exc
+    return [unit.uid for unit in units]
+
+
 def _ingest_folder(
     folder: Path,
     index: str,
@@ -273,10 +286,27 @@ def server(port: int, config: str) -> None:
         raise click.ClickException(str(exc)) from exc
 
 
+@main.command()
+@click.argument("path", type=click.Path(path_type=Path))
+def search(path: Path) -> None:
+    """Print symbols for a file to populate sidecar metadata."""
+    if not path.exists():
+        raise click.ClickException(f"Path not found: {path}")
+    if not path.is_file():
+        raise click.ClickException(f"Path must be a file: {path}")
+    symbols = _symbols_for_path(path)
+    if not symbols:
+        click.echo("No symbols found.")
+        return
+    for symbol in symbols:
+        click.echo(symbol)
+
+
 __all__ = [
     "IngestStats",
     "ingest",
     "init",
     "main",
+    "search",
     "server",
 ]

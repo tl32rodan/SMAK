@@ -39,14 +39,14 @@ class TestAdapters(unittest.TestCase):
             uid="code::login",
             content="def login(): pass",
             source_type="source_code",
-            relations=("issue::1",),
+            relations=("issue:1",),
             metadata={"language": "python"},
         )
 
         adapter.save("code", [unit])
 
         self.assertEqual(saved[0].uid, "code::login")
-        self.assertEqual(saved[0].payload["relations"], ["issue::1"])
+        self.assertEqual(saved[0].payload["relations"], ["issue:1"])
 
 
 if __name__ == "__main__":

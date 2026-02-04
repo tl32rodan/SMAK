@@ -100,9 +100,9 @@ class MeshSearchTool:
         return expanded
 
     def _lookup_relation(self, relation: str) -> dict[str, Any] | None:
-        if "::" not in relation:
+        index_name = _relation_prefix(relation)
+        if index_name is None:
             return None
-        index_name, _ = relation.split("::", 1)
         candidates = [index_name]
         if index_name.endswith("s"):
             candidates.append(index_name.rstrip("s"))
@@ -186,9 +186,9 @@ class MeshRetrievalTool:
     def _resolve_relation_index(
         self, relation: str, default_index: VectorSearchIndex
     ) -> VectorSearchIndex:
-        if "::" not in relation:
+        prefix = _relation_prefix(relation)
+        if prefix is None:
             return default_index
-        prefix = relation.split("::", 1)[0]
         candidates = [prefix]
         if prefix.endswith("s"):
             candidates.append(prefix.rstrip("s"))
@@ -223,3 +223,11 @@ class MeshRetrievalTool:
             or result.get("payload", {}).get("content")
             or result.get("metadata", {}).get("content")
         )
+
+
+def _relation_prefix(relation: str) -> str | None:
+    if "::" in relation:
+        return relation.split("::", 1)[0]
+    if ":" in relation:
+        return relation.split(":", 1)[0]
+    return None
