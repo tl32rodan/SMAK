@@ -42,7 +42,7 @@ class TestSidecarManager(unittest.TestCase):
         loader = SidecarManager()
         units = [
             KnowledgeUnit(
-                uid="python:main.py::login",
+                uid="main.py::login",
                 content="def login(): pass",
                 source_type="source_code",
                 metadata={"symbol": "login", "source": "main.py"},
@@ -72,7 +72,7 @@ class TestSidecarManager(unittest.TestCase):
         loader = SidecarManager()
         units = [
             KnowledgeUnit(
-                uid="python:main.py::logout",
+                uid="main.py::logout",
                 content="def logout(): pass",
                 source_type="source_code",
                 relations=("issue:200",),
@@ -85,6 +85,34 @@ class TestSidecarManager(unittest.TestCase):
 
         self.assertEqual(enriched[0].relations, ("issue:200",))
         self.assertEqual(enriched[0].metadata["mesh_relations"], ["issue:200"])
+
+    def test_sidecar_apply_inherits_class_relations_to_methods(self) -> None:
+        loader = SidecarManager()
+        units = [
+            KnowledgeUnit(
+                uid="src/auth.py::Auth",
+                content="class Auth: ...",
+                source_type="source_code",
+                metadata={"symbol": "Auth", "source": "src/auth.py", "symbol_type": "class"},
+            ),
+            KnowledgeUnit(
+                uid="src/auth.py::Auth.login",
+                content="def login(self): ...",
+                source_type="source_code",
+                metadata={
+                    "symbol": "Auth.login",
+                    "source": "src/auth.py",
+                    "symbol_type": "method",
+                    "parent_class": "Auth",
+                },
+            ),
+        ]
+        metadata = {"symbols": [{"name": "Auth", "relations": ["issue:101"]}]}
+
+        enriched = loader.apply(units, metadata)
+
+        self.assertEqual(enriched[1].metadata["mesh_relations"], ["issue:101"])
+        self.assertEqual(enriched[1].relations, ("issue:101",))
 
 
 if __name__ == "__main__":

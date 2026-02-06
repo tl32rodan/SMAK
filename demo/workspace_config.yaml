@@ -1,0 +1,12 @@
+storage:
+  provider: faiss
+  uri: ./smak_data
+
+llm:
+  provider: qwen
+  model: qwen3_235B_A22B
+  temperature: 0.0
+
+indices:
+  - name: source_code
+    description: Demo source code index

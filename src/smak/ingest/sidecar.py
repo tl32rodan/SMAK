@@ -60,20 +60,38 @@ class SidecarManager:
 
         annotations = metadata.get("symbols", [])
         annotation_map: dict[str, Mapping[str, Any]] = {}
+        class_relations: dict[str, list[str]] = {}
         if isinstance(annotations, Sequence) and not isinstance(
             annotations, (str, bytes, Mapping)
         ):
             for entry in annotations:
                 if isinstance(entry, Mapping) and isinstance(entry.get("name"), str):
-                    annotation_map[entry["name"]] = entry
+                    name = entry["name"]
+                    annotation_map[name] = entry
+                    rels = entry.get("relations", [])
+                    if isinstance(rels, str):
+                        rels = [rels]
+                    if (
+                        isinstance(rels, Sequence)
+                        and not isinstance(rels, (str, bytes, Mapping))
+                        and "." not in name
+                    ):
+                        class_relations[name] = [str(r) for r in rels]
         enriched_units: list[KnowledgeUnit] = []
         for unit in units:
             symbol = unit.metadata.get("symbol")
             extra = annotation_map.get(symbol, {}) if symbol else {}
+            if symbol and "." in symbol and not extra:
+                extra = annotation_map.get(symbol.rsplit(".", 1)[-1], {})
             relations = extra.get("relations", unit.relations)
             if not isinstance(relations, Sequence) or isinstance(relations, str):
                 relations = [str(relations)]
             mesh_relations = [str(relation) for relation in relations]
+            parent_class = unit.metadata.get("parent_class")
+            inherited = class_relations.get(str(parent_class), []) if parent_class else []
+            for relation in inherited:
+                if relation not in mesh_relations:
+                    mesh_relations.append(relation)
             merged_metadata = {
                 **unit.metadata,
                 **extra,

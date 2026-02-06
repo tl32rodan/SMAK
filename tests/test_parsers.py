@@ -21,7 +21,7 @@ class TestParsers(unittest.TestCase):
 
         self.assertEqual(
             [unit.uid for unit in units],
-            ["python:main.py::login", "python:main.py::User"],
+            ["main.py::login", "main.py::User"],
         )
         self.assertEqual({unit.metadata["symbol"] for unit in units}, {"login", "User"})
         self.assertTrue(all(unit.source_type == "source_code" for unit in units))
@@ -34,7 +34,7 @@ class TestParsers(unittest.TestCase):
 
         self.assertEqual(
             [unit.uid for unit in units],
-            ["perl:main.pl::login", "perl:main.pl::logout"],
+            ["main.pl::login", "main.pl::logout"],
         )
         self.assertEqual([unit.content for unit in units], ["sub login {", "sub logout {"])
 
@@ -47,6 +47,14 @@ class TestParsers(unittest.TestCase):
         self.assertEqual(units[0].uid, "issue:101")
         self.assertEqual(units[0].metadata["title"], "Login issue")
         self.assertEqual(units[0].relations, ("code::login",))
+
+    def test_python_parser_uses_relative_source_with_root(self) -> None:
+        parser = PythonParser(root_path="/repo")
+
+        units = parser.parse("def login():\n    return True\n", source="/repo/src/auth.py")
+
+        self.assertEqual(units[0].uid, "src/auth.py::login")
+        self.assertEqual(units[0].metadata["source"], "src/auth.py")
 
 
 if __name__ == "__main__":

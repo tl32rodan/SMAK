@@ -1,149 +1,102 @@
 # SMAK
 
-SMAK (Semantic Mesh Agentic Kernel) is a lightweight middleware layer that enforces
-sidecar governance and mesh retrieval across source assets. Storage and orchestration
-are delegated to Faiss and LlamaIndex. It provides:
+SMAK now stands for **Semantic Mesh Augmented Kernel** and is focused as a **passive MCP knowledge kernel**.
 
-- **Ingestion pipeline**: Parse files into structured knowledge units, validate and
-  enrich them with sidecar metadata, embed them, and persist vectors into Faiss storage.
-- **Semantic mesh tools**: Search across indices and resolve mesh relations through
-  LlamaIndex-backed retrieval.
-- **CLI workflow**: Initialize configuration, ingest folders, and run a Gradio-based
-  agent server for chat interactions.
+It is the source-of-truth layer for:
+- code symbols,
+- sidecar intent metadata,
+- issue/document relations,
+- and semantic retrieval context.
 
-## Architecture overview
+It does **not** run autonomous review/agent loops itself. Those workflows belong to MCP clients (IDE agents, CI skills, etc.) that call SMAK tools.
 
-1. **Parsing**: Language-specific parsers (Python, Perl, Markdown issues, or
-   line-based) convert file contents into `KnowledgeUnit` records.
-2. **Sidecar validation**: `.sidecar.yaml`/`.sidecar.yml` files are validated in a
-   fail-fast step before any ingestion continues.
-3. **Metadata injection**: Each knowledge unit is enriched with sidecar fields such
-   as `intent`, `mesh_relations`, and symbol metadata.
-4. **Embedding**: Internal Nomic embeddings are generated for each unit, and the
-   embedding dimension is auto-detected at runtime.
-5. **Storage**: Embeddings and payloads are stored in Faiss
-   (`uri: ./smak_data`).
-6. **Agents**: Retrieval uses LlamaIndex ReAct with a Mesh Retrieval two-pass lookup
-   to surface matches and follow mesh relations, served via a Gradio chat UI.
+## What SMAK provides
 
-## Configuration
+### 1) Ingestion kernel
+SMAK ingests files into knowledge units, enriches them with sidecar metadata, computes embeddings, and stores vectors.
 
-Use `smak init` to generate a template `workspace_config.yaml`. The schema includes:
+Key behavior:
+- **Canonical symbol IDs**: `relative/path.py::Symbol`.
+- **Context inheritance**: class-level sidecar relations are inherited by class methods.
+- **Idempotent re-ingest**: existing vectors for a source are deleted before writing fresh vectors.
 
-```yaml
-storage:
-  provider: faiss
-  uri: ./smak_data
-llm:
-  provider: qwen
-  model: qwen3_235B_A22B
-  temperature: 0.0
-  # api_base: http://localhost:11434/v1
-indices:
-  - name: source_code
-    description: Contains the project's source code (Python, Perl), function definitions, and logic.
-  - name: issues
-    description: Contains historical bug reports, GitHub issues, and Jira tickets describing known problems.
-  - name: tests
-    description: Contains unit tests, integration tests, and test cases.
-  - name: documentation
-    description: Contains architecture diagrams, API docs, and general knowledge base.
+### 2) MCP-facing API surface
+`src/smak/mcp_server.py` provides core tool methods:
+- `get_file_structure(file_path)`
+- `get_symbol_context(file_path, symbol)`
+- `upsert_sidecar(file_path, symbol, intent=None, relations=None)`
+- `link_issue(symbol_id, issue_id)`
+- `diagnose_mesh(path=None)`
+
+### 3) CLI utilities
+- `smak init`
+- `smak ingest`
+- `smak search`
+- `smak sidecar init`
+- `smak doctor`
+
+---
+
+## Quick start
+
+### Generate config
+```bash
+smak init --path workspace_config.yaml
 ```
 
-Use the Faiss `uri` to define the local vector store location. Provide the
-LLM provider details as needed for chat completion requests. SMAK auto-detects the
-embedding dimension from the configured embedding service, so it does not need to
-be listed in the config file.
-
-## Ingestion workflow
-
+### Ingest a folder
 ```bash
 smak ingest --folder ./src --index source_code --config workspace_config.yaml
 ```
 
-During ingestion, SMAK:
-
-1. Loads `workspace_config.yaml`.
-2. Parses each file in the folder (Python, Perl, Markdown issues, or line-based).
-3. Validates sidecar metadata and fails fast if invalid entries are found.
-4. Injects sidecar metadata and mesh relations.
-5. Embeds each knowledge unit with the internal Nomic model.
-6. Stores vectors in Faiss for the configured index.
-
-You can adjust concurrency with `--workers` (default 4). If `tqdm` is installed
-and stderr is a TTY, a progress bar is displayed during ingestion.
-
-## Symbol search
-
-Use `smak search` to print the symbol identifiers for a file so you can paste
-them into a sidecar YAML file. The command accepts absolute or relative paths
-and prints one symbol ID per line.
-
+### List canonical symbols from a file
 ```bash
-smak search ./src/app.py
-# python:./src/app.py::login
+smak search ./src/auth.py --config workspace_config.yaml
+# e.g. src/auth.py::Auth
+#      src/auth.py::Auth.login
 ```
 
-## Sidecar metadata
-
-Sidecar files live alongside source files and use the suffix
-`.sidecar.yaml` or `.sidecar.yml` (for example, `example.py.sidecar.yaml`).
-They let you attach metadata and mesh relations to parsed symbols. Guidelines:
-
-1. Keep sidecars next to the source file they annotate.
-2. Ensure `symbol` values match the identifiers emitted by the parser.
-3. Use `mesh_relations` to list related symbols for mesh traversal.
-4. Store intent or ownership fields under `metadata`.
-
-Keywords:
-- **Mandatory**: `symbols` (list), `symbol` (per entry).
-- **Optional but recommended**: `metadata` (per entry), `mesh_relations` (per entry).
-
-Example sidecar:
-
-```yaml
-symbols:
-  - symbol: SmakRepositoryLoader
-    metadata:
-      intent: "Ingest repository files into knowledge units"
-      owner: "platform"
-    mesh_relations:
-      - SmakRepositoryLoader.parse
-      - KnowledgeUnit
-  - symbol: ingest_folder
-    metadata:
-      intent: "CLI entry point for ingestion"
-    mesh_relations:
-      - issue:INGEST-42
-      - doc:ingestion-guide
-  - symbol: issue:INGEST-42
-    metadata:
-      intent: "Track ingestion regression in parallel workers"
-    mesh_relations:
-      - ingest_folder
-  - symbol: doc:ingestion-guide
-    metadata:
-      intent: "Explain ingestion steps and configuration"
-    mesh_relations:
-      - ingest_folder
-```
-
-## Faiss storage
-
-SMAK uses a local Faiss-backed storage adapter provided by the patched
-`faiss-storage-lib` to persist and retrieve vector documents. Mesh relations are
-resolved by first retrieving primary matches, then performing a second-pass lookup
-for related nodes referenced in `mesh_relations` so agent tooling can traverse the
-semantic mesh. Install the native dependencies with:
-
+### Generate sidecar skeleton
 ```bash
-pip install faiss-cpu numpy
-pip install -e ../faiss-storage-lib
+smak sidecar init ./src/auth.py --config workspace_config.yaml
 ```
 
-## LLM providers
+### Run mesh diagnostics
+```bash
+smak doctor --path .
+```
 
-SMAK supports internal OpenAI-compatible endpoints for Qwen and GPT-OSS models via
-the `llm.provider` setting (`qwen` or `gpt-oss`). When using other providers, SMAK
-falls back to the `llama_index.llms.openai_like` client using the configured model
-and `api_base`.
+---
+
+## Demo folder walkthrough
+
+A runnable walkthrough is included in [`demo/`](demo/).
+
+### Step-by-step CLI function demo
+
+1. Enter demo folder:
+   ```bash
+   cd demo
+   ```
+2. Create a config:
+   ```bash
+   PYTHONPATH=../src python -m smak.cli init --path workspace_config.yaml --force
+   ```
+3. Inspect canonical symbols from sample code:
+   ```bash
+   PYTHONPATH=../src python -m smak.cli search ./src/auth.py --config workspace_config.yaml
+   ```
+4. Generate sidecar draft for all symbols:
+   ```bash
+   PYTHONPATH=../src python -m smak.cli sidecar init ./src/auth.py --config workspace_config.yaml
+   ```
+5. Run doctor to verify mesh integrity:
+   ```bash
+   PYTHONPATH=../src python -m smak.cli doctor --path .
+   ```
+6. Ingest demo source into vector index:
+   ```bash
+   PYTHONPATH=../src python -m smak.cli ingest --folder ./src --index source_code --config workspace_config.yaml --workers 1
+   ```
+
+You can compare outputs and expected files in `demo/README.md`.
