@@ -13,13 +13,12 @@ from typing import Callable, Iterable
 
 import click
 
-from smak.bridge.models import InternalNomicEmbedding
 from smak.config import SmakConfig, load_config
 from smak.embedding import initialize_embedding_dimensions, validate_vector_store_dimension
 from smak.ingest.parsers import IssueParser, Parser, PerlParser, PythonParser, SimpleLineParser
 from smak.ingest.pipeline import Embedder, IngestPipeline, IntegrityError
 from smak.ingest.sidecar import SidecarManager
-from smak.server import launch_server
+from smak.models import InternalNomicEmbedding
 
 SIDECAR_SUFFIXES = (".sidecar.yaml", ".sidecar.yml")
 DEFAULT_MAX_WORKERS = 4
@@ -117,12 +116,12 @@ def _default_config_template() -> str:
     )
 
 
-def _parser_for_path(path: Path) -> Parser:
+def _parser_for_path(path: Path, *, root_path: Path | None = None) -> Parser:
     suffix = path.suffix.lower()
     if suffix == ".py":
-        return PythonParser()
+        return PythonParser(root_path=str(root_path) if root_path else None)
     if suffix in {".pl", ".pm"}:
-        return PerlParser()
+        return PerlParser(root_path=str(root_path) if root_path else None)
     if suffix in {".md", ".markdown"}:
         return IssueParser()
     return SimpleLineParser()
@@ -145,8 +144,8 @@ def _iter_source_files(folder: Path) -> Iterable[Path]:
         yield path
 
 
-def _symbols_for_path(path: Path) -> list[str]:
-    parser = _parser_for_path(path)
+def _symbols_for_path(path: Path, *, root_path: Path | None = None) -> list[str]:
+    parser = _parser_for_path(path, root_path=root_path)
     try:
         content = path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:  # pragma: no cover - file read failures are OS-specific
@@ -168,6 +167,7 @@ def _ingest_folder(
     *,
     max_workers: int = DEFAULT_MAX_WORKERS,
     show_progress: bool = False,
+    workspace_root: Path | None = None,
 ) -> IngestStats:
     embedder_factory = embedder_loader or InternalNomicEmbedding
     embedder = embedder_factory()
@@ -186,7 +186,7 @@ def _ingest_folder(
     lock = threading.Lock()
 
     def process_file(file_path: Path) -> tuple[Path, int]:
-        parser = _parser_for_path(file_path)
+        parser = _parser_for_path(file_path, root_path=workspace_root)
         pipeline = IngestPipeline(
             parser=parser,
             embedder=embedder,
@@ -210,6 +210,13 @@ def _ingest_folder(
             node.embedding = vector
             nodes.append(node)
         with lock:
+            if hasattr(vector_store, "delete_by_metadata"):
+                source_key = (
+                    str(file_path.relative_to(workspace_root))
+                    if workspace_root
+                    else str(file_path)
+                )
+                vector_store.delete_by_metadata("source", source_key)
             if nodes:
                 vector_store.add(nodes)
         return file_path, len(result.units)
@@ -254,7 +261,14 @@ def ingest(folder: Path, index: str, config: str, workers: int) -> None:
 
     click.echo(f"Starting ingestion for '{folder}' -> Index: '{index}'...")
     try:
-        stats = _ingest_folder(folder, index, cfg, max_workers=workers, show_progress=True)
+        stats = _ingest_folder(
+            folder,
+            index,
+            cfg,
+            max_workers=workers,
+            show_progress=True,
+            workspace_root=Path(config).resolve().parent,
+        )
     except IntegrityError as exc:
         raise click.ClickException(f"Sidecar integrity error: {exc}") from exc
     except Exception as exc:
@@ -278,31 +292,85 @@ def init(config_path: str, force: bool) -> None:
 
 
 @main.command()
-@click.option("--port", default=7860, help="Port to run the server on")
-@click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
-def server(port: int, config: str) -> None:
-    """Launch the SMAK Agent Server."""
-    click.echo(f"Launching SMAK Agent Server on port {port}...")
-    try:
-        launch_server(port=port, config_path=config)
-    except ModuleNotFoundError as exc:
-        raise click.ClickException(str(exc)) from exc
-
-
-@main.command()
 @click.argument("path", type=click.Path(path_type=Path))
-def search(path: Path) -> None:
+@click.option(
+    "--config",
+    "config_path",
+    default="workspace_config.yaml",
+    help="Path to workspace config",
+)
+def search(path: Path, config_path: str) -> None:
     """Print symbols for a file to populate sidecar metadata."""
     if not path.exists():
         raise click.ClickException(f"Path not found: {path}")
     if not path.is_file():
         raise click.ClickException(f"Path must be a file: {path}")
-    symbols = _symbols_for_path(path)
+    workspace_root = Path(config_path).resolve().parent if Path(config_path).exists() else None
+    symbols = _symbols_for_path(path, root_path=workspace_root)
     if not symbols:
         click.echo("No symbols found.")
         return
     for symbol in symbols:
         click.echo(symbol)
+
+
+@main.group()
+def sidecar() -> None:
+    """Manage sidecar files."""
+
+
+@sidecar.command("init")
+@click.argument("file_path", type=click.Path(path_type=Path))
+@click.option(
+    "--config",
+    "config_path",
+    default="workspace_config.yaml",
+    help="Path to workspace config",
+)
+def sidecar_init(file_path: Path, config_path: str) -> None:
+    """Generate a sidecar skeleton for a source file."""
+    if not file_path.exists() or not file_path.is_file():
+        raise click.ClickException(f"Path must be a file: {file_path}")
+    workspace_root = Path(config_path).resolve().parent if Path(config_path).exists() else None
+    parser = _parser_for_path(file_path, root_path=workspace_root)
+    units = parser.parse(
+        file_path.read_text(encoding="utf-8", errors="replace"),
+        source=str(file_path),
+    )
+    lines = ["symbols:"]
+    for unit in units:
+        lines.extend(
+            [
+                f"  - name: {unit.metadata.get('symbol')}",
+                '    intent: ""',
+                "    relations: []",
+            ]
+        )
+    payload = "\n".join(lines) + "\n" if units else "symbols: []\n"
+    output = file_path.with_name(f"{file_path.name}.sidecar.yaml")
+    output.write_text(payload, encoding="utf-8")
+    click.echo(f"Wrote sidecar template to {output}")
+
+
+@main.command("doctor")
+@click.option("--path", "target_path", default=".", type=click.Path(path_type=Path))
+def doctor(target_path: Path) -> None:
+    """Check sidecar integrity across a path."""
+    issues: list[str] = []
+    root = target_path if target_path.is_dir() else target_path.parent
+    for sidecar in root.rglob("*.sidecar.yaml"):
+        source = sidecar.with_name(sidecar.name.replace(".sidecar.yaml", ""))
+        if not source.exists():
+            issues.append(f"Orphaned sidecar: {sidecar}")
+    for sidecar in root.rglob("*.sidecar.yml"):
+        source = sidecar.with_name(sidecar.name.replace(".sidecar.yml", ""))
+        if not source.exists():
+            issues.append(f"Orphaned sidecar: {sidecar}")
+    if issues:
+        for issue in issues:
+            click.echo(issue)
+        raise click.ClickException("Mesh diagnostics found problems.")
+    click.echo("Mesh diagnostics passed.")
 
 
 __all__ = [
@@ -311,5 +379,7 @@ __all__ = [
     "init",
     "main",
     "search",
-    "server",
+    "sidecar",
+    "sidecar_init",
+    "doctor",
 ]

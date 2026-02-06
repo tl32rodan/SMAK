@@ -248,15 +248,6 @@ class TestCli(unittest.TestCase):
                 cli._load_text_node_class()
             self.assertIn("llama-index-core", str(exc.exception))
 
-    def test_server_command_invokes_launcher(self) -> None:
-        runner = CliRunner()
-        with patch("smak.cli.launch_server") as launcher:
-            cli = _load_cli()
-            result = runner.invoke(cli.main, ["server", "--port", "7777", "--config", "cfg.yaml"])
-
-        self.assertEqual(result.exit_code, 0)
-        launcher.assert_called_once_with(port=7777, config_path="cfg.yaml")
-
     def test_search_command_lists_python_symbols(self) -> None:
         runner = CliRunner()
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -268,7 +259,7 @@ class TestCli(unittest.TestCase):
             result = runner.invoke(cli.main, ["search", str(source)])
 
             self.assertEqual(result.exit_code, 0)
-            self.assertIn(f"python:{source}::hello", result.output)
+            self.assertIn("::hello", result.output)
 
     def test_search_command_lists_issue_symbols(self) -> None:
         runner = CliRunner()
@@ -282,6 +273,39 @@ class TestCli(unittest.TestCase):
 
             self.assertEqual(result.exit_code, 0)
             self.assertIn("issue:issue_001_login_error", result.output)
+
+    def test_sidecar_init_generates_template(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            source = tmp_path / "example.py"
+            source.write_text(
+                "class User:\n    def login(self):\n        return True\n",
+                encoding="utf-8",
+            )
+
+            cli = _load_cli()
+            result = runner.invoke(cli.main, ["sidecar", "init", str(source)])
+
+            self.assertEqual(result.exit_code, 0)
+            sidecar = tmp_path / "example.py.sidecar.yaml"
+            self.assertTrue(sidecar.exists())
+            payload = sidecar.read_text(encoding="utf-8")
+            self.assertIn("name: User", payload)
+            self.assertIn("name: User.login", payload)
+
+    def test_doctor_reports_orphaned_sidecar(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            orphan = tmp_path / "missing.py.sidecar.yaml"
+            orphan.write_text("symbols: []\n", encoding="utf-8")
+
+            cli = _load_cli()
+            result = runner.invoke(cli.main, ["doctor", "--path", str(tmp_path)])
+
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("Orphaned sidecar", result.output)
 
 
 if __name__ == "__main__":

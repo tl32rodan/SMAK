@@ -33,12 +33,16 @@ class FakeFaissEngine:
         self.dim = dim
         self.docs: list[FakeVectorDocument] = []
         self.persisted = False
+        self.deleted: list[tuple[str, object]] = []
 
     def add(self, docs: list[FakeVectorDocument]) -> None:
         self.docs.extend(docs)
 
     def persist(self) -> None:
         self.persisted = True
+
+    def delete_by_metadata(self, key: str, value: object) -> None:
+        self.deleted.append((key, value))
 
     def search(self, embedding: list[float], top_k: int) -> list[FakeResult]:
         return [
@@ -138,6 +142,14 @@ class TestFaissAdapter(unittest.TestCase):
             with self.assertRaises(ModuleNotFoundError) as exc:
                 load_faiss_store(uri="memory", collection_name="code", dim=3)
         self.assertIn("faiss-storage-lib", str(exc.exception))
+
+    def test_delete_by_metadata_calls_engine(self) -> None:
+        store = FaissVectorStore(uri="memory", collection_name="code", dim=3)
+
+        store.delete_by_metadata("source", "src/a.py")
+
+        self.assertEqual(store._engine.deleted, [("source", "src/a.py")])
+        self.assertTrue(store._engine.persisted)
 
 
 if __name__ == "__main__":

@@ -94,6 +94,17 @@ class FaissVectorStore:
             self._engine.add(docs)
             self._engine.persist()
 
+
+    def delete_by_metadata(self, key: str, value: Any) -> None:
+        delete_method = getattr(self._engine, "delete_by_metadata", None)
+        if callable(delete_method):
+            delete_method(key, value)
+            persist = getattr(self._engine, "persist", None)
+            if callable(persist):
+                persist()
+            return
+        logger.debug("Vector engine does not support delete_by_metadata; skipping cleanup.")
+
     def search(self, embedding: Sequence[float], *, top_k: int = 5) -> list[dict[str, Any]]:
         results = self._engine.search(list(embedding), top_k)
         return [

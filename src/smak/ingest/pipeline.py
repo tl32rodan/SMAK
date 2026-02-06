@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol, Sequence
 
-from smak.bridge.models import InternalNomicEmbedding
 from smak.core.domain import KnowledgeUnit
 from smak.ingest.parsers import Parser
 from smak.ingest.sidecar import IntegrityError, SidecarManager
+from smak.models import InternalNomicEmbedding
 
 
 class Embedder(Protocol):
