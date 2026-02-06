@@ -31,7 +31,8 @@ class LLMConfig:
 class StorageConfig:
     """Configuration for vector storage."""
 
-    base_path: str = "vault"
+    provider: str = "faiss"
+    uri: str = "./smak_data"
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,7 @@ class SmakConfig:
     indices: list[IndexConfig] = field(default_factory=list)
     llm: LLMConfig = field(default_factory=LLMConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
-    embedding_dimensions: int = 3
+    embedding_dimensions: int | None = None
 
 
 def load_config(path: str | Path) -> SmakConfig:
@@ -72,16 +73,14 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
         api_base=llm_data.get("api_base"),
     )
     storage_data = data.get("storage", {}) if isinstance(data, Mapping) else {}
-    storage = StorageConfig(base_path=str(storage_data.get("base_path", "vault")))
-    if isinstance(data, Mapping):
-        embedding_dimensions = int(data.get("embedding_dimensions", 3))
-    else:
-        embedding_dimensions = 3
+    storage = StorageConfig(
+        provider=str(storage_data.get("provider", "faiss")),
+        uri=str(storage_data.get("uri", storage_data.get("base_path", "./smak_data"))),
+    )
     return SmakConfig(
         indices=indices,
         llm=llm,
         storage=storage,
-        embedding_dimensions=embedding_dimensions,
     )
 
 

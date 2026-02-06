@@ -13,12 +13,13 @@ from typing import Callable, Iterable
 
 import click
 
+from smak.bridge.models import InternalNomicEmbedding
 from smak.config import SmakConfig, load_config
-from smak.db.adapter import VectorAdapter
-from smak.ingest.embedder import SimpleEmbedder
+from smak.embedding import initialize_embedding_dimensions, validate_vector_store_dimension
 from smak.ingest.parsers import IssueParser, Parser, PerlParser, PythonParser, SimpleLineParser
-from smak.ingest.pipeline import IngestPipeline, IntegrityError
+from smak.ingest.pipeline import Embedder, IngestPipeline, IntegrityError
 from smak.ingest.sidecar import SidecarManager
+from smak.server import launch_server
 
 SIDECAR_SUFFIXES = (".sidecar.yaml", ".sidecar.yml")
 DEFAULT_MAX_WORKERS = 4
@@ -51,16 +52,31 @@ class IngestStats:
     vectors: int
 
 
-def _load_registry(base_path: str):
-    spec = importlib.util.find_spec("faiss_storage_lib.engine.registry")
+def _load_text_node_class():
+    spec = importlib.util.find_spec("llama_index.core.schema")
     if spec is None:  # pragma: no cover - guard for missing dependency
         raise click.ClickException(
-            "Critical dependency 'faiss-storage-lib' not found. "
-            "Did you run pip install -e ../faiss-storage-lib?"
+            "Critical dependency 'llama-index-core' not found. "
+            "Did you run pip install llama-index-core?"
         )
-    module = importlib.import_module("faiss_storage_lib.engine.registry")
-    registry_class = getattr(module, "IndexRegistry")
-    return registry_class(base_path)
+    module = importlib.import_module("llama_index.core.schema")
+    return getattr(module, "TextNode")
+
+
+def _load_vector_store(index_name: str, config: SmakConfig):
+    from smak.storage.faiss_adapter import load_faiss_store
+
+    try:
+        provider = (config.storage.provider or "faiss").lower()
+        if provider != "faiss":
+            raise click.ClickException(f"Unsupported vector store provider: {provider}")
+        return load_faiss_store(
+            uri=config.storage.uri,
+            collection_name=index_name,
+            dim=config.embedding_dimensions,
+        )
+    except ModuleNotFoundError as exc:  # pragma: no cover - guard for missing dependency
+        raise click.ClickException(str(exc)) from exc
 
 
 def _default_config_template() -> str:
@@ -69,7 +85,14 @@ def _default_config_template() -> str:
             "# SMAK Workspace Configuration",
             "",
             "storage:",
-            "  base_path: ./data/faiss_indexes",
+            "  provider: faiss",
+            "  uri: ./smak_data",
+            "",
+            "llm:",
+            "  provider: qwen",
+            "  model: qwen3_235B_A22B",
+            "  temperature: 0.0",
+            "  # api_base: http://localhost:11434/v1",
             "",
             "indices:",
             "  - name: source_code",
@@ -89,14 +112,6 @@ def _default_config_template() -> str:
                 "    description: Contains architecture diagrams, API docs, and general "
                 "knowledge base."
             ),
-            "",
-            "llm:",
-            "  provider: openai",
-            "  model: gpt-4o",
-            "  temperature: 0.0",
-            "  # api_base: http://localhost:11434/v1",
-            "",
-            "embedding_dimensions: 3",
             "",
         ]
     )
@@ -130,20 +145,39 @@ def _iter_source_files(folder: Path) -> Iterable[Path]:
         yield path
 
 
+def _symbols_for_path(path: Path) -> list[str]:
+    parser = _parser_for_path(path)
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:  # pragma: no cover - file read failures are OS-specific
+        raise click.ClickException(f"Unable to read file: {exc}") from exc
+    try:
+        units = parser.parse(content, source=str(path))
+    except Exception as exc:  # pragma: no cover - parser errors
+        raise click.ClickException(f"Failed to parse {path}: {exc}") from exc
+    return [unit.uid for unit in units]
+
+
 def _ingest_folder(
     folder: Path,
     index: str,
     config: SmakConfig,
-    registry_loader: Callable[[str], object] | None = None,
+    vector_store_loader: Callable[[str, SmakConfig], object] | None = None,
+    node_class_loader: Callable[[], type] | None = None,
+    embedder_loader: Callable[[], Embedder] | None = None,
     *,
     max_workers: int = DEFAULT_MAX_WORKERS,
     show_progress: bool = False,
 ) -> IngestStats:
-    loader = registry_loader or _load_registry
-    registry = loader(config.storage.base_path)
-    embedder = SimpleEmbedder()
+    embedder_factory = embedder_loader or InternalNomicEmbedding
+    embedder = embedder_factory()
+    config = initialize_embedding_dimensions(config, embedder)
+    vector_store_factory = vector_store_loader or _load_vector_store
+    node_factory = node_class_loader or _load_text_node_class
+    vector_store = vector_store_factory(index, config)
+    node_class = node_factory()
+    validate_vector_store_dimension(vector_store, config.embedding_dimensions)
     sidecar_manager = SidecarManager()
-    adapter = VectorAdapter(registry=registry, embedder=embedder)
 
     paths = list(_iter_source_files(folder))
     file_count = 0
@@ -160,9 +194,24 @@ def _ingest_folder(
         )
         content = file_path.read_text(encoding="utf-8", errors="replace")
         sidecar = _sidecar_payload(file_path)
-        result = pipeline.run(content, source=str(file_path), sidecar_payload=sidecar)
+        result = pipeline.run(
+            content,
+            source=str(file_path),
+            sidecar_payload=sidecar,
+            compute_embeddings=True,
+        )
+        nodes = []
+        for unit, vector in zip(result.units, result.embeddings):
+            node = node_class(
+                text=unit.content,
+                id_=unit.uid,
+                metadata={"relations": list(unit.relations), "meta": unit.metadata},
+            )
+            node.embedding = vector
+            nodes.append(node)
         with lock:
-            adapter.save(index, result.units)
+            if nodes:
+                vector_store.add(nodes)
         return file_path, len(result.units)
 
     max_workers = max(1, min(max_workers, os.cpu_count() or max_workers))
@@ -230,14 +279,30 @@ def init(config_path: str, force: bool) -> None:
 
 @main.command()
 @click.option("--port", default=7860, help="Port to run the server on")
-def server(port: int) -> None:
-    """Launch the Agent Demo Server."""
-    try:
-        from examples.demo_server import demo
-    except ImportError as exc:
-        raise click.ClickException("Demo server module not available.") from exc
+@click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
+def server(port: int, config: str) -> None:
+    """Launch the SMAK Agent Server."""
     click.echo(f"Launching SMAK Agent Server on port {port}...")
-    demo.launch(server_name="0.0.0.0", server_port=port, share=False)
+    try:
+        launch_server(port=port, config_path=config)
+    except ModuleNotFoundError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@main.command()
+@click.argument("path", type=click.Path(path_type=Path))
+def search(path: Path) -> None:
+    """Print symbols for a file to populate sidecar metadata."""
+    if not path.exists():
+        raise click.ClickException(f"Path not found: {path}")
+    if not path.is_file():
+        raise click.ClickException(f"Path must be a file: {path}")
+    symbols = _symbols_for_path(path)
+    if not symbols:
+        click.echo("No symbols found.")
+        return
+    for symbol in symbols:
+        click.echo(symbol)
 
 
 __all__ = [
@@ -245,5 +310,6 @@ __all__ = [
     "ingest",
     "init",
     "main",
+    "search",
     "server",
 ]

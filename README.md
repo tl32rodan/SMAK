@@ -1,43 +1,59 @@
 # SMAK
 
-SMAK (Semantic Mesh Agentic Kernel) is a lightweight prototype for ingesting source
-assets into vector storage and querying them through agent tools. It provides:
+SMAK (Semantic Mesh Agentic Kernel) is a lightweight middleware layer that enforces
+sidecar governance and mesh retrieval across source assets. Storage and orchestration
+are delegated to Faiss and LlamaIndex. It provides:
 
-- **Ingestion pipeline**: Parse files into structured knowledge units, enrich them
-  with sidecar metadata, embed them, and persist vectors into an index.
-- **Semantic mesh tools**: Search across indices and expand relations between
-  related entities.
-- **CLI workflow**: Initialize configuration, ingest folders, and run a demo server
-  for agent interactions.
+- **Ingestion pipeline**: Parse files into structured knowledge units, validate and
+  enrich them with sidecar metadata, embed them, and persist vectors into Faiss storage.
+- **Semantic mesh tools**: Search across indices and resolve mesh relations through
+  LlamaIndex-backed retrieval.
+- **CLI workflow**: Initialize configuration, ingest folders, and run a Gradio-based
+  agent server for chat interactions.
 
 ## Architecture overview
 
-1. **Parsing**: Language-specific parsers (Python, Perl, Markdown issues, or line-based)
-   convert file contents into `KnowledgeUnit` records.
-2. **Sidecar metadata**: Optional `.sidecar.yaml`/`.sidecar.yml` files provide
-   structured metadata and relations keyed by symbols.
-3. **Embedding**: The embedder turns each knowledge unit into vector embeddings.
-4. **Storage**: The vector adapter persists embeddings and payloads into a registry-backed
-   vector index (for example, `faiss-storage-lib`).
-5. **Agents**: Tools can query indices and follow relations in the semantic mesh.
+1. **Parsing**: Language-specific parsers (Python, Perl, Markdown issues, or
+   line-based) convert file contents into `KnowledgeUnit` records.
+2. **Sidecar validation**: `.sidecar.yaml`/`.sidecar.yml` files are validated in a
+   fail-fast step before any ingestion continues.
+3. **Metadata injection**: Each knowledge unit is enriched with sidecar fields such
+   as `intent`, `mesh_relations`, and symbol metadata.
+4. **Embedding**: Internal Nomic embeddings are generated for each unit, and the
+   embedding dimension is auto-detected at runtime.
+5. **Storage**: Embeddings and payloads are stored in Faiss
+   (`uri: ./smak_data`).
+6. **Agents**: Retrieval uses LlamaIndex ReAct with a Mesh Retrieval two-pass lookup
+   to surface matches and follow mesh relations, served via a Gradio chat UI.
 
 ## Configuration
 
 Use `smak init` to generate a template `workspace_config.yaml`. The schema includes:
 
 ```yaml
+storage:
+  provider: faiss
+  uri: ./smak_data
+llm:
+  provider: qwen
+  model: qwen3_235B_A22B
+  temperature: 0.0
+  # api_base: http://localhost:11434/v1
 indices:
   - name: source_code
-    description: Source code files
-llm:
-  provider: openai
-  model: llama3
-storage:
-  base_path: vault
-embedding_dimensions: 3
+    description: Contains the project's source code (Python, Perl), function definitions, and logic.
+  - name: issues
+    description: Contains historical bug reports, GitHub issues, and Jira tickets describing known problems.
+  - name: tests
+    description: Contains unit tests, integration tests, and test cases.
+  - name: documentation
+    description: Contains architecture diagrams, API docs, and general knowledge base.
 ```
 
-The CLI uses the `storage.base_path` when creating the vector index registry.
+Use the Faiss `uri` to define the local vector store location. Provide the
+LLM provider details as needed for chat completion requests. SMAK auto-detects the
+embedding dimension from the configured embedding service, so it does not need to
+be listed in the config file.
 
 ## Ingestion workflow
 
@@ -48,42 +64,86 @@ smak ingest --folder ./src --index source_code --config workspace_config.yaml
 During ingestion, SMAK:
 
 1. Loads `workspace_config.yaml`.
-2. Creates a registry instance (see protocol below).
-3. Parses each file in the folder.
-4. Applies sidecar metadata if a `file.ext.sidecar.yaml` exists.
-5. Embeds each knowledge unit.
-6. Adds vector documents to the specified index.
+2. Parses each file in the folder (Python, Perl, Markdown issues, or line-based).
+3. Validates sidecar metadata and fails fast if invalid entries are found.
+4. Injects sidecar metadata and mesh relations.
+5. Embeds each knowledge unit with the internal Nomic model.
+6. Stores vectors in Faiss for the configured index.
 
-## Registry protocol for vector storage libraries
+You can adjust concurrency with `--workers` (default 4). If `tqdm` is installed
+and stderr is a TTY, a progress bar is displayed during ingestion.
 
-SMAK relies on an index registry abstraction so you can plug in backends such as
-`faiss-storage-lib`. The CLI defaults to:
+## Symbol search
 
-```python
-from faiss_storage_lib.engine.registry import IndexRegistry
-registry = IndexRegistry(base_path)
+Use `smak search` to print the symbol identifiers for a file so you can paste
+them into a sidecar YAML file. The command accepts absolute or relative paths
+and prints one symbol ID per line.
+
+```bash
+smak search ./src/app.py
+# python:./src/app.py::login
 ```
 
-For alternative libraries, provide an object that implements the following protocol:
+## Sidecar metadata
 
-```python
-class IndexRegistry(Protocol):
-    def get_index(self, name: str) -> VectorIndex: ...
+Sidecar files live alongside source files and use the suffix
+`.sidecar.yaml` or `.sidecar.yml` (for example, `example.py.sidecar.yaml`).
+They let you attach metadata and mesh relations to parsed symbols. Guidelines:
 
-class VectorIndex(Protocol):
-    def add(self, docs: Sequence[VectorDocument]) -> None: ...
+1. Keep sidecars next to the source file they annotate.
+2. Ensure `symbol` values match the identifiers emitted by the parser.
+3. Use `mesh_relations` to list related symbols for mesh traversal.
+4. Store intent or ownership fields under `metadata`.
+
+Keywords:
+- **Mandatory**: `symbols` (list), `symbol` (per entry).
+- **Optional but recommended**: `metadata` (per entry), `mesh_relations` (per entry).
+
+Example sidecar:
+
+```yaml
+symbols:
+  - symbol: SmakRepositoryLoader
+    metadata:
+      intent: "Ingest repository files into knowledge units"
+      owner: "platform"
+    mesh_relations:
+      - SmakRepositoryLoader.parse
+      - KnowledgeUnit
+  - symbol: ingest_folder
+    metadata:
+      intent: "CLI entry point for ingestion"
+    mesh_relations:
+      - issue:INGEST-42
+      - doc:ingestion-guide
+  - symbol: issue:INGEST-42
+    metadata:
+      intent: "Track ingestion regression in parallel workers"
+    mesh_relations:
+      - ingest_folder
+  - symbol: doc:ingestion-guide
+    metadata:
+      intent: "Explain ingestion steps and configuration"
+    mesh_relations:
+      - ingest_folder
 ```
 
-`VectorDocument` is a structure containing a unique ID, a vector, and a payload
-with metadata and relations. For agent search operations, the registry should also
-expose search-capable indices:
+## Faiss storage
 
-```python
-class VectorSearchIndex(Protocol):
-    def search(self, query: str) -> Sequence[dict[str, Any]]: ...
-    def get_by_id(self, uid: str) -> dict[str, Any] | None: ...
+SMAK uses a local Faiss-backed storage adapter provided by the patched
+`faiss-storage-lib` to persist and retrieve vector documents. Mesh relations are
+resolved by first retrieving primary matches, then performing a second-pass lookup
+for related nodes referenced in `mesh_relations` so agent tooling can traverse the
+semantic mesh. Install the native dependencies with:
+
+```bash
+pip install faiss-cpu numpy
+pip install -e ../faiss-storage-lib
 ```
 
-To wire in a custom registry for libraries like `faiss-storage-lib`, keep the same
-`get_index` contract and ensure the returned index implements `add`, `search`, and
-`get_by_id` as needed by the ingestion pipeline and agent tools.
+## LLM providers
+
+SMAK supports internal OpenAI-compatible endpoints for Qwen and GPT-OSS models via
+the `llm.provider` setting (`qwen` or `gpt-oss`). When using other providers, SMAK
+falls back to the `llama_index.llms.openai_like` client using the configured model
+and `api_base`.
