@@ -16,7 +16,7 @@ class Embedder(Protocol):
 
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
 
-    def get_text_embeddings(self, texts: list[str]) -> list[list[float]]: ...
+    def get_text_embedding_batch(self, texts: list[str]) -> list[list[float]]: ...
 
 
 @dataclass
@@ -70,8 +70,8 @@ class IngestPipeline:
             return embedder.embed_documents(texts)
         if hasattr(embedder, "embed"):
             return embedder.embed(texts)
-        if hasattr(embedder, "get_text_embeddings"):
-            return embedder.get_text_embeddings(list(texts))
+        if hasattr(embedder, "get_text_embedding_batch"):
+            return embedder.get_text_embedding_batch(list(texts))
         raise AttributeError("Embedder does not support embedding documents.")
 
 

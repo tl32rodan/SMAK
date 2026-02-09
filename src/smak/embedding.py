@@ -88,6 +88,10 @@ class InternalNomicEmbedding(BaseEmbedding):
     def _get_text_embeddings(self, texts: list[str]) -> list[list[float]]:
         return self._post_embeddings(texts)
 
+
+    def get_text_embedding_batch(self, texts: list[str]) -> list[list[float]]:
+        return self._post_embeddings(texts)
+
     async def _aget_query_embedding(self, query: str) -> list[float]:
         return await self._aget_text_embedding(query)
 
@@ -106,7 +110,7 @@ class EmbeddingProbe(Protocol):
 
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
 
-    def get_text_embeddings(self, texts: list[str]) -> list[list[float]]: ...
+    def get_text_embedding_batch(self, texts: list[str]) -> list[list[float]]: ...
 
     def get_embedding_dimension(self) -> int: ...
 
@@ -131,8 +135,8 @@ def _probe_embeddings(embedder: EmbeddingProbe, probe_text: str) -> list[list[fl
         vectors = embedder.embed_documents([probe_text])
     elif hasattr(embedder, "embed"):
         vectors = embedder.embed([probe_text])
-    elif hasattr(embedder, "get_text_embeddings"):
-        vectors = embedder.get_text_embeddings([probe_text])
+    elif hasattr(embedder, "get_text_embedding_batch"):
+        vectors = embedder.get_text_embedding_batch([probe_text])
     else:
         raise AttributeError("Embedder does not support embedding documents.")
     if not vectors or not vectors[0]:
