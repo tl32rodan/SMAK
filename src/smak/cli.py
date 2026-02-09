@@ -14,11 +14,14 @@ from typing import Callable, Iterable
 import click
 
 from smak.config import SmakConfig, load_config
-from smak.embedding import initialize_embedding_dimensions, validate_vector_store_dimension
+from smak.embedding import (
+    InternalNomicEmbedding,
+    initialize_embedding_dimensions,
+    validate_vector_store_dimension,
+)
 from smak.ingest.parsers import IssueParser, Parser, PerlParser, PythonParser, SimpleLineParser
 from smak.ingest.pipeline import Embedder, IngestPipeline, IntegrityError
 from smak.ingest.sidecar import SidecarManager
-from smak.models import InternalNomicEmbedding
 
 SIDECAR_SUFFIXES = (".sidecar.yaml", ".sidecar.yml")
 DEFAULT_MAX_WORKERS = 4

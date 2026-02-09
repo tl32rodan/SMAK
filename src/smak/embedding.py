@@ -1,11 +1,107 @@
-"""Embedding dimension helpers for SMAK."""
+"""Embedding helpers and internal embedding adapters for SMAK."""
 
 from __future__ import annotations
 
+import asyncio
+import os
 from dataclasses import replace
 from typing import Any, Mapping, Protocol, Sequence
 
 from smak.config import SmakConfig
+
+try:  # pragma: no cover - dependency may be unavailable in minimal environments
+    import requests
+except ModuleNotFoundError:  # pragma: no cover
+    requests = None  # type: ignore[assignment]
+
+try:  # pragma: no cover - dependency may be unavailable in minimal environments
+    from llama_index.core.embeddings import BaseEmbedding
+except ModuleNotFoundError:  # pragma: no cover
+    class BaseEmbedding:  # type: ignore[override]
+        def __init__(self, model_name: str, embed_batch_size: int) -> None:
+            self.model_name = model_name
+            self.embed_batch_size = embed_batch_size
+
+
+_DEFAULT_NOMIC_API_BASE = "http://f15dtpai1:11436"
+_DEFAULT_NOMIC_MODEL = "nomic_embed_text:latest"
+
+
+class InternalNomicEmbedding(BaseEmbedding):
+    """Embedding adapter for the internal Nomic server."""
+
+    api_base: str
+    model: str
+    timeout: float
+    headers: dict[str, str]
+    session: Any | None
+    model_name: str
+    embed_batch_size: int
+
+    def __init__(
+        self,
+        *,
+        api_base: str | None = None,
+        model: str | None = None,
+        timeout: float = 30.0,
+        headers: dict[str, str] | None = None,
+        session: Any | None = None,
+        embed_batch_size: int = 64,
+    ) -> None:
+        resolved_base = (
+            api_base or os.environ.get("SMAK_NOMIC_API_BASE", _DEFAULT_NOMIC_API_BASE)
+        ).rstrip("/")
+        resolved_model = model or os.environ.get("SMAK_NOMIC_MODEL", _DEFAULT_NOMIC_MODEL)
+        super().__init__(model_name=resolved_model, embed_batch_size=embed_batch_size)
+        self.api_base = resolved_base
+        self.model = resolved_model
+        self.timeout = timeout
+        self.headers = dict(headers or {})
+        self.session = session or (requests.Session() if requests else None)
+        self.model_name = resolved_model
+        self.embed_batch_size = embed_batch_size
+
+    def _embedding_endpoint(self) -> str:
+        return f"{self.api_base}/api/embed"
+
+    def _post_embeddings(self, texts: Sequence[str]) -> list[list[float]]:
+        if self.session is None:
+            raise ModuleNotFoundError("requests is required for InternalNomicEmbedding")
+        response = self.session.post(
+            self._embedding_endpoint(),
+            json={"model": self.model, "input": list(texts)},
+            headers=self.headers,
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if "data" in payload:
+            ordered = sorted(payload["data"], key=lambda d: d.get("index", 0))
+            return [item["embedding"] for item in ordered]
+        if "embeddings" in payload:
+            return list(payload["embeddings"])
+        raise ValueError("Unexpected response format from Nomic embedding service.")
+
+    def _get_query_embedding(self, query: str) -> list[float]:
+        return self._post_embeddings([query])[0]
+
+    def _get_text_embedding(self, text: str) -> list[float]:
+        return self._post_embeddings([text])[0]
+
+    def _get_text_embeddings(self, texts: list[str]) -> list[list[float]]:
+        return self._post_embeddings(texts)
+
+    async def _aget_query_embedding(self, query: str) -> list[float]:
+        return await self._aget_text_embedding(query)
+
+    async def _aget_text_embedding(self, text: str) -> list[float]:
+        return (await self._aget_text_embeddings([text]))[0]
+
+    async def _aget_text_embeddings(self, texts: list[str]) -> list[list[float]]:
+        return await asyncio.to_thread(self._post_embeddings, texts)
+
+    def get_embedding_dimension(self, probe_text: str = "hello") -> int:
+        return len(self._post_embeddings([probe_text])[0])
 
 
 class EmbeddingProbe(Protocol):
@@ -132,3 +228,11 @@ def _coerce_dimension(value: Any) -> int | None:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return None
+
+
+__all__ = [
+    "InternalNomicEmbedding",
+    "detect_embedding_dimension",
+    "initialize_embedding_dimensions",
+    "validate_vector_store_dimension",
+]

@@ -65,38 +65,3 @@ smak sidecar init ./src/csv_editor.py --config workspace_config.yaml
 ```bash
 smak doctor --path .
 ```
-
----
-
-## Demo folder walkthrough
-
-A runnable walkthrough is included in [`demo/`](demo/).
-
-### Step-by-step CLI function demo
-
-1. Enter demo folder:
-   ```bash
-   cd demo
-   ```
-2. Create a config:
-   ```bash
-   PYTHONPATH=../src python -m smak.cli init --path workspace_config.yaml --force
-   ```
-3. Inspect canonical symbols from sample code:
-   ```bash
-   PYTHONPATH=../src python -m smak.cli search ./src/csv_editor.py --config workspace_config.yaml
-   ```
-4. Generate sidecar draft for all symbols:
-   ```bash
-   PYTHONPATH=../src python -m smak.cli sidecar init ./src/csv_editor.py --config workspace_config.yaml
-   ```
-5. Run doctor to verify mesh integrity:
-   ```bash
-   PYTHONPATH=../src python -m smak.cli doctor --path .
-   ```
-6. Ingest demo source into vector index:
-   ```bash
-   PYTHONPATH=../src python -m smak.cli ingest --folder ./src --index source_code --config workspace_config.yaml --workers 1
-   ```
-
-You can compare outputs and expected files in `demo/README.md`.

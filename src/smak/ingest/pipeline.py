@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from typing import Any, Protocol, Sequence
 
 from smak.core.domain import KnowledgeUnit
+from smak.embedding import InternalNomicEmbedding
 from smak.ingest.parsers import Parser
 from smak.ingest.sidecar import IntegrityError, SidecarManager
-from smak.models import InternalNomicEmbedding
 
 
 class Embedder(Protocol):

@@ -15,21 +15,21 @@ This folder demonstrates a minimal end-to-end CLI flow for the passive SMAK kern
 ### 1) Ingest all three folders first
 ```bash
 cd demo
-PYTHONPATH=../src python -c "from smak.cli import main; main()" ingest --folder ./src --index source_code --config workspace_config.yaml --workers 1
-PYTHONPATH=../src python -c "from smak.cli import main; main()" ingest --folder ./issues --index issues --config workspace_config.yaml --workers 1
-PYTHONPATH=../src python -c "from smak.cli import main; main()" ingest --folder ./documentation --index documentation --config workspace_config.yaml --workers 1
+smak ingest --folder ./src --index source_code --config workspace_config.yaml --workers 1
+smak ingest --folder ./issues --index issues --config workspace_config.yaml --workers 1
+smak ingest --folder ./documentation --index documentation --config workspace_config.yaml --workers 1
 ```
 
 ### 2) Fetch symbols from several file paths
 ```bash
-PYTHONPATH=../src python -c "from smak.cli import main; main()" search ./src/csv_editor.py --config workspace_config.yaml
-PYTHONPATH=../src python -c "from smak.cli import main; main()" search ./src/tests/test_csv_editor.py --config workspace_config.yaml
-PYTHONPATH=../src python -c "from smak.cli import main; main()" search ./documentation/csv-editor-usage.md --config workspace_config.yaml
+smak search ./src/csv_editor.py --config workspace_config.yaml
+smak search ./src/tests/test_csv_editor.py --config workspace_config.yaml
+smak search ./documentation/csv-editor-usage.md --config workspace_config.yaml
 ```
 
 ### 3) Create sidecar and add content
 ```bash
-PYTHONPATH=../src python -c "from smak.cli import main; main()" sidecar init ./src/csv_editor.py --config workspace_config.yaml
+smak sidecar init ./src/csv_editor.py --config workspace_config.yaml
 cat > ./src/csv_editor.py.sidecar.yaml <<'YAML'
 symbols:
   - name: CsvEditor
@@ -45,7 +45,7 @@ YAML
 
 ### 4) Run doctor
 ```bash
-PYTHONPATH=../src python -c "from smak.cli import main; main()" doctor --path .
+smak doctor --path .
 ```
 
 ## Expected artifacts
