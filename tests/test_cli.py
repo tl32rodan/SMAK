@@ -32,9 +32,8 @@ def _install_fake_dependencies() -> None:
     fake_embeddings = ModuleType("llama_index.core.embeddings")
 
     class FakeBaseEmbedding:
-        def __init__(self, model_name: str, embed_batch_size: int) -> None:
-            self.model_name = model_name
-            self.embed_batch_size = embed_batch_size
+        def __init__(self, **kwargs: object) -> None:
+            self.__dict__.update(kwargs)
 
         def get_text_embedding(self, text: str) -> list[float]:
             return [0.0]
@@ -240,13 +239,12 @@ class TestCli(unittest.TestCase):
                 cli._load_vector_store("code", SmakConfig())
             self.assertIn("Vector store dependency missing", str(exc.exception))
 
-    def test_load_text_node_missing_dependency(self) -> None:
+    def test_load_text_node_class_returns_text_node(self) -> None:
         from smak import cli
 
-        with patch.object(cli.importlib.util, "find_spec", return_value=None):
-            with self.assertRaises(Exception) as exc:
-                cli._load_text_node_class()
-            self.assertIn("llama-index-core", str(exc.exception))
+        text_node = cli._load_text_node_class()
+
+        self.assertIsNotNone(text_node)
 
     def test_search_command_lists_python_symbols(self) -> None:
         runner = CliRunner()

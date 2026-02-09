@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 import os
 import sys
 import threading
@@ -12,6 +11,8 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 import click
+from llama_index.core.schema import TextNode
+from tqdm import tqdm
 
 from smak.config import SmakConfig, load_config
 from smak.embedding import (
@@ -27,25 +28,6 @@ SIDECAR_SUFFIXES = (".sidecar.yaml", ".sidecar.yml")
 DEFAULT_MAX_WORKERS = 4
 
 
-class _NoopProgress:
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        self.disable = True
-
-    def update(self, n: int = 1) -> None:
-        return None
-
-    def close(self) -> None:
-        return None
-
-
-def _get_tqdm():
-    spec = importlib.util.find_spec("tqdm")
-    if spec is None:
-        return _NoopProgress
-    module = importlib.import_module("tqdm")
-    return getattr(module, "tqdm")
-
-
 @dataclass(frozen=True)
 class IngestStats:
     """Statistics returned after ingesting a folder."""
@@ -55,30 +37,20 @@ class IngestStats:
 
 
 def _load_text_node_class():
-    spec = importlib.util.find_spec("llama_index.core.schema")
-    if spec is None:  # pragma: no cover - guard for missing dependency
-        raise click.ClickException(
-            "Critical dependency 'llama-index-core' not found. "
-            "Did you run pip install llama-index-core?"
-        )
-    module = importlib.import_module("llama_index.core.schema")
-    return getattr(module, "TextNode")
+    return TextNode
 
 
 def _load_vector_store(index_name: str, config: SmakConfig):
     from smak.storage.faiss_adapter import load_faiss_store
 
-    try:
-        provider = (config.storage.provider or "faiss").lower()
-        if provider != "faiss":
-            raise click.ClickException(f"Unsupported vector store provider: {provider}")
-        return load_faiss_store(
-            uri=config.storage.uri,
-            collection_name=index_name,
-            dim=config.embedding_dimensions,
-        )
-    except ModuleNotFoundError as exc:  # pragma: no cover - guard for missing dependency
-        raise click.ClickException(str(exc)) from exc
+    provider = (config.storage.provider or "faiss").lower()
+    if provider != "faiss":
+        raise click.ClickException(f"Unsupported vector store provider: {provider}")
+    return load_faiss_store(
+        uri=config.storage.uri,
+        collection_name=index_name,
+        dim=config.embedding_dimensions,
+    )
 
 
 def _default_config_template() -> str:
@@ -225,8 +197,7 @@ def _ingest_folder(
         return file_path, len(result.units)
 
     max_workers = max(1, min(max_workers, os.cpu_count() or max_workers))
-    tqdm_factory = _get_tqdm()
-    progress = tqdm_factory(
+    progress = tqdm(
         total=len(paths),
         disable=not show_progress or not sys.stderr.isatty(),
         desc="Ingesting",

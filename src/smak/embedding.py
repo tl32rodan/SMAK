@@ -7,21 +7,10 @@ import os
 from dataclasses import replace
 from typing import Any, Mapping, Protocol, Sequence
 
+import requests
+from llama_index.core.embeddings import BaseEmbedding
+
 from smak.config import SmakConfig
-
-try:  # pragma: no cover - dependency may be unavailable in minimal environments
-    import requests
-except ModuleNotFoundError:  # pragma: no cover
-    requests = None  # type: ignore[assignment]
-
-try:  # pragma: no cover - dependency may be unavailable in minimal environments
-    from llama_index.core.embeddings import BaseEmbedding
-except ModuleNotFoundError:  # pragma: no cover
-    class BaseEmbedding:  # type: ignore[override]
-        def __init__(self, **kwargs: Any) -> None:
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-
 
 _DEFAULT_NOMIC_API_BASE = "http://f15dtpai1:11436"
 _DEFAULT_NOMIC_MODEL = "nomic_embed_text:latest"
@@ -34,7 +23,7 @@ class InternalNomicEmbedding(BaseEmbedding):
     model: str
     timeout: float
     headers: dict[str, str]
-    session: Any | None
+    session: Any
     model_name: str
     embed_batch_size: int
 
@@ -53,19 +42,16 @@ class InternalNomicEmbedding(BaseEmbedding):
         ).rstrip("/")
         resolved_model = model or os.environ.get("SMAK_NOMIC_MODEL", _DEFAULT_NOMIC_MODEL)
         resolved_headers = dict(headers or {})
-        resolved_session = session or (requests.Session() if requests else None)
-        try:
-            super().__init__(
-                model_name=resolved_model,
-                embed_batch_size=embed_batch_size,
-                api_base=resolved_base,
-                model=resolved_model,
-                timeout=timeout,
-                headers=resolved_headers,
-                session=resolved_session,
-            )
-        except TypeError:
-            super().__init__(model_name=resolved_model, embed_batch_size=embed_batch_size)
+        resolved_session = session or requests.Session()
+        super().__init__(
+            model_name=resolved_model,
+            embed_batch_size=embed_batch_size,
+            api_base=resolved_base,
+            model=resolved_model,
+            timeout=timeout,
+            headers=resolved_headers,
+            session=resolved_session,
+        )
         self.api_base = resolved_base
         self.model = resolved_model
         self.timeout = timeout
@@ -78,8 +64,6 @@ class InternalNomicEmbedding(BaseEmbedding):
         return f"{self.api_base}/api/embed"
 
     def _post_embeddings(self, texts: Sequence[str]) -> list[list[float]]:
-        if self.session is None:
-            raise ModuleNotFoundError("requests is required for InternalNomicEmbedding")
         response = self.session.post(
             self._embedding_endpoint(),
             json={"model": self.model, "input": list(texts)},

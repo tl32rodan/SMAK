@@ -5,24 +5,11 @@ from __future__ import annotations
 import importlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+
+from mcp.server.fastmcp import FastMCP
 
 import smak.cli as smak_cli
-
-try:
-    FastMCP = importlib.import_module("mcp.server.fastmcp").FastMCP
-except ModuleNotFoundError:  # pragma: no cover - fallback when MCP SDK is absent
-    class FastMCP:  # type: ignore[no-redef]
-        def __init__(self, name: str) -> None:
-            self.name = name
-            self._tools: dict[str, Callable[..., Any]] = {}
-
-        def tool(self) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-            def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-                self._tools[func.__name__] = func
-                return func
-
-            return decorator
 
 
 @dataclass

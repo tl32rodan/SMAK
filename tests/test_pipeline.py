@@ -37,9 +37,8 @@ def _install_fake_dependencies() -> None:
     fake_embeddings = ModuleType("llama_index.core.embeddings")
 
     class FakeBaseEmbedding:
-        def __init__(self, model_name: str, embed_batch_size: int) -> None:
-            self.model_name = model_name
-            self.embed_batch_size = embed_batch_size
+        def __init__(self, **kwargs: object) -> None:
+            self.__dict__.update(kwargs)
 
         def get_text_embedding(self, text: str) -> list[float]:
             return [0.0]

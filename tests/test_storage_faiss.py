@@ -4,7 +4,6 @@ import sys
 import unittest
 from dataclasses import dataclass
 from types import ModuleType
-from unittest.mock import patch
 
 from smak.storage.faiss_adapter import (
     FaissVectorSearchIndex,
@@ -134,14 +133,10 @@ class TestFaissAdapter(unittest.TestCase):
         self.assertEqual(results[0]["uid"], "doc-1")
         self.assertEqual(index.get_by_id("doc-1")["uid"], "doc-1")
 
-    def test_load_faiss_store_raises_clear_error(self) -> None:
-        with patch(
-            "smak.storage.faiss_adapter.importlib.import_module",
-            side_effect=ModuleNotFoundError("faiss missing"),
-        ):
-            with self.assertRaises(ModuleNotFoundError) as exc:
-                load_faiss_store(uri="memory", collection_name="code", dim=3)
-        self.assertIn("faiss-storage-lib", str(exc.exception))
+    def test_load_faiss_store_creates_store(self) -> None:
+        store = load_faiss_store(uri="memory", collection_name="code", dim=3)
+
+        self.assertEqual(store.collection_name, "code")
 
     def test_delete_by_metadata_calls_engine(self) -> None:
         store = FaissVectorStore(uri="memory", collection_name="code", dim=3)
