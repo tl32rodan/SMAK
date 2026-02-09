@@ -2,34 +2,15 @@
 
 from __future__ import annotations
 
-import importlib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
 
+from faiss_storage_lib.core.schema import VectorDocument
+from faiss_storage_lib.engine.faiss_engine import FaissEngine
+
 logger = logging.getLogger(__name__)
-
-
-def _load_faiss_dependencies() -> tuple[type[Any], type[Any]]:
-    candidates = [
-        ("src.engine.faiss_engine", "src.core.schema"),
-        ("faiss_storage_lib.engine.faiss_engine", "faiss_storage_lib.core.schema"),
-    ]
-    for engine_path, schema_path in candidates:
-        try:
-            engine_module = importlib.import_module(engine_path)
-            schema_module = importlib.import_module(schema_path)
-        except ModuleNotFoundError:
-            continue
-        engine_cls = getattr(engine_module, "FaissEngine", None)
-        doc_cls = getattr(schema_module, "VectorDocument", None)
-        if engine_cls and doc_cls:
-            return engine_cls, doc_cls
-    raise ModuleNotFoundError(
-        "Critical dependency 'faiss-storage-lib' not found. "
-        "Install faiss-storage-lib to use the Faiss storage adapter."
-    )
 
 
 def _node_value(node: Any, attribute: str, fallback: str | None = None) -> Any:
@@ -70,11 +51,10 @@ class FaissVectorStore:
     _doc_cls: type[Any] = field(init=False)
 
     def __post_init__(self) -> None:
-        engine_cls, doc_cls = _load_faiss_dependencies()
-        self._doc_cls = doc_cls
+        self._doc_cls = VectorDocument
         full_path = Path(self.uri) / self.collection_name
         logger.info("Initializing FaissEngine at %s", full_path)
-        self._engine = engine_cls(str(full_path), self.dim)
+        self._engine = FaissEngine(str(full_path), self.dim)
 
     def add(self, nodes: Sequence[Any]) -> None:
         docs = []
@@ -93,7 +73,6 @@ class FaissVectorStore:
         if docs:
             self._engine.add(docs)
             self._engine.persist()
-
 
     def delete_by_metadata(self, key: str, value: Any) -> None:
         delete_method = getattr(self._engine, "delete_by_metadata", None)

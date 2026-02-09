@@ -51,52 +51,17 @@ smak ingest --folder ./src --index source_code --config workspace_config.yaml
 
 ### List canonical symbols from a file
 ```bash
-smak search ./src/auth.py --config workspace_config.yaml
+smak search ./src/csv_editor.py --config workspace_config.yaml
 # e.g. src/auth.py::Auth
 #      src/auth.py::Auth.login
 ```
 
 ### Generate sidecar skeleton
 ```bash
-smak sidecar init ./src/auth.py --config workspace_config.yaml
+smak sidecar init ./src/csv_editor.py --config workspace_config.yaml
 ```
 
 ### Run mesh diagnostics
 ```bash
 smak doctor --path .
 ```
-
----
-
-## Demo folder walkthrough
-
-A runnable walkthrough is included in [`demo/`](demo/).
-
-### Step-by-step CLI function demo
-
-1. Enter demo folder:
-   ```bash
-   cd demo
-   ```
-2. Create a config:
-   ```bash
-   PYTHONPATH=../src python -m smak.cli init --path workspace_config.yaml --force
-   ```
-3. Inspect canonical symbols from sample code:
-   ```bash
-   PYTHONPATH=../src python -m smak.cli search ./src/auth.py --config workspace_config.yaml
-   ```
-4. Generate sidecar draft for all symbols:
-   ```bash
-   PYTHONPATH=../src python -m smak.cli sidecar init ./src/auth.py --config workspace_config.yaml
-   ```
-5. Run doctor to verify mesh integrity:
-   ```bash
-   PYTHONPATH=../src python -m smak.cli doctor --path .
-   ```
-6. Ingest demo source into vector index:
-   ```bash
-   PYTHONPATH=../src python -m smak.cli ingest --folder ./src --index source_code --config workspace_config.yaml --workers 1
-   ```
-
-You can compare outputs and expected files in `demo/README.md`.

@@ -4,6 +4,7 @@ import unittest
 
 from smak.config import SmakConfig
 from smak.embedding import (
+    InternalNomicEmbedding,
     detect_embedding_dimension,
     initialize_embedding_dimensions,
     validate_vector_store_dimension,
@@ -29,6 +30,27 @@ class DummyEmbedderWithEmbeddings:
 class DummyVectorStore:
     def __init__(self, dimension: int) -> None:
         self.dim = dimension
+
+
+class DummyResponse:
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class DummySession:
+    def __init__(self) -> None:
+        self.last_json: dict | None = None
+
+    def post(self, _url: str, json: dict, headers: dict, timeout: float) -> DummyResponse:
+        _ = headers, timeout
+        self.last_json = json
+        return DummyResponse({"data": [{"index": 0, "embedding": [0.1, 0.2, 0.3]}]})
 
 
 class TestEmbeddingHelpers(unittest.TestCase):
@@ -59,6 +81,36 @@ class TestEmbeddingHelpers(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             validate_vector_store_dimension(vector_store, 3)
+
+    def test_internal_nomic_embedding_initializes_all_members(self) -> None:
+        session = DummySession()
+
+        embedder = InternalNomicEmbedding(
+            api_base="http://localhost:1234",
+            model="nomic-test",
+            timeout=5.0,
+            headers={"x-test": "1"},
+            session=session,
+            embed_batch_size=16,
+        )
+
+        self.assertEqual(embedder.api_base, "http://localhost:1234")
+        self.assertEqual(embedder.model, "nomic-test")
+        self.assertEqual(embedder.timeout, 5.0)
+        self.assertEqual(embedder.headers, {"x-test": "1"})
+        self.assertIs(embedder.session, session)
+        self.assertEqual(embedder.model_name, "nomic-test")
+        self.assertEqual(embedder.embed_batch_size, 16)
+
+    def test_internal_nomic_embedding_gets_embeddings(self) -> None:
+        session = DummySession()
+        embedder = InternalNomicEmbedding(session=session)
+
+        vectors = embedder._get_text_embeddings(["hello"])
+
+        self.assertEqual(vectors, [[0.1, 0.2, 0.3]])
+        self.assertIsNotNone(session.last_json)
+        self.assertEqual(session.last_json["input"], ["hello"])
 
 
 if __name__ == "__main__":

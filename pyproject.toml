@@ -17,6 +17,7 @@ dependencies = [
     "numpy",
     "llama-index-core",
     "llama-index-llms-openai-like",
+    "mcp",
 ]
 
 [project.scripts]

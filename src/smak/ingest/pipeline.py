@@ -3,20 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, Sequence
+from typing import Any
 
 from smak.core.domain import KnowledgeUnit
+from smak.embedding import EmbeddingProbe, InternalNomicEmbedding
 from smak.ingest.parsers import Parser
 from smak.ingest.sidecar import IntegrityError, SidecarManager
-from smak.models import InternalNomicEmbedding
 
-
-class Embedder(Protocol):
-    def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
-
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
-
-    def get_text_embeddings(self, texts: list[str]) -> list[list[float]]: ...
+Embedder = EmbeddingProbe
 
 
 @dataclass
@@ -70,8 +64,8 @@ class IngestPipeline:
             return embedder.embed_documents(texts)
         if hasattr(embedder, "embed"):
             return embedder.embed(texts)
-        if hasattr(embedder, "get_text_embeddings"):
-            return embedder.get_text_embeddings(list(texts))
+        if hasattr(embedder, "get_text_embedding_batch"):
+            return embedder.get_text_embedding_batch(list(texts))
         raise AttributeError("Embedder does not support embedding documents.")
 
 
