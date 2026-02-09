@@ -16,12 +16,13 @@ from tqdm import tqdm
 
 from smak.config import SmakConfig, load_config
 from smak.embedding import (
+    EmbeddingProbe,
     InternalNomicEmbedding,
     initialize_embedding_dimensions,
     validate_vector_store_dimension,
 )
 from smak.ingest.parsers import IssueParser, Parser, PerlParser, PythonParser, SimpleLineParser
-from smak.ingest.pipeline import Embedder, IngestPipeline, IntegrityError
+from smak.ingest.pipeline import IngestPipeline, IntegrityError
 from smak.ingest.sidecar import SidecarManager
 
 SIDECAR_SUFFIXES = (".sidecar.yaml", ".sidecar.yml")
@@ -138,7 +139,7 @@ def _ingest_folder(
     config: SmakConfig,
     vector_store_loader: Callable[[str, SmakConfig], object] | None = None,
     node_class_loader: Callable[[], type] | None = None,
-    embedder_loader: Callable[[], Embedder] | None = None,
+    embedder_loader: Callable[[], EmbeddingProbe] | None = None,
     *,
     max_workers: int = DEFAULT_MAX_WORKERS,
     show_progress: bool = False,

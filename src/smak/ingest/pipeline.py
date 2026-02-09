@@ -3,20 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, Sequence
+from typing import Any
 
 from smak.core.domain import KnowledgeUnit
-from smak.embedding import InternalNomicEmbedding
+from smak.embedding import EmbeddingProbe, InternalNomicEmbedding
 from smak.ingest.parsers import Parser
 from smak.ingest.sidecar import IntegrityError, SidecarManager
 
-
-class Embedder(Protocol):
-    def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
-
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
-
-    def get_text_embedding_batch(self, texts: list[str]) -> list[list[float]]: ...
+Embedder = EmbeddingProbe
 
 
 @dataclass
