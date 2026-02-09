@@ -51,14 +51,14 @@ smak ingest --folder ./src --index source_code --config workspace_config.yaml
 
 ### List canonical symbols from a file
 ```bash
-smak search ./src/auth.py --config workspace_config.yaml
+smak search ./src/csv_editor.py --config workspace_config.yaml
 # e.g. src/auth.py::Auth
 #      src/auth.py::Auth.login
 ```
 
 ### Generate sidecar skeleton
 ```bash
-smak sidecar init ./src/auth.py --config workspace_config.yaml
+smak sidecar init ./src/csv_editor.py --config workspace_config.yaml
 ```
 
 ### Run mesh diagnostics
@@ -84,11 +84,11 @@ A runnable walkthrough is included in [`demo/`](demo/).
    ```
 3. Inspect canonical symbols from sample code:
    ```bash
-   PYTHONPATH=../src python -m smak.cli search ./src/auth.py --config workspace_config.yaml
+   PYTHONPATH=../src python -m smak.cli search ./src/csv_editor.py --config workspace_config.yaml
    ```
 4. Generate sidecar draft for all symbols:
    ```bash
-   PYTHONPATH=../src python -m smak.cli sidecar init ./src/auth.py --config workspace_config.yaml
+   PYTHONPATH=../src python -m smak.cli sidecar init ./src/csv_editor.py --config workspace_config.yaml
    ```
 5. Run doctor to verify mesh integrity:
    ```bash
