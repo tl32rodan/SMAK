@@ -18,9 +18,9 @@ try:  # pragma: no cover - dependency may be unavailable in minimal environments
     from llama_index.core.embeddings import BaseEmbedding
 except ModuleNotFoundError:  # pragma: no cover
     class BaseEmbedding:  # type: ignore[override]
-        def __init__(self, model_name: str, embed_batch_size: int) -> None:
-            self.model_name = model_name
-            self.embed_batch_size = embed_batch_size
+        def __init__(self, **kwargs: Any) -> None:
+            for key, value in kwargs.items():
+                setattr(self, key, value)
 
 
 _DEFAULT_NOMIC_API_BASE = "http://f15dtpai1:11436"
@@ -52,12 +52,25 @@ class InternalNomicEmbedding(BaseEmbedding):
             api_base or os.environ.get("SMAK_NOMIC_API_BASE", _DEFAULT_NOMIC_API_BASE)
         ).rstrip("/")
         resolved_model = model or os.environ.get("SMAK_NOMIC_MODEL", _DEFAULT_NOMIC_MODEL)
-        super().__init__(model_name=resolved_model, embed_batch_size=embed_batch_size)
+        resolved_headers = dict(headers or {})
+        resolved_session = session or (requests.Session() if requests else None)
+        try:
+            super().__init__(
+                model_name=resolved_model,
+                embed_batch_size=embed_batch_size,
+                api_base=resolved_base,
+                model=resolved_model,
+                timeout=timeout,
+                headers=resolved_headers,
+                session=resolved_session,
+            )
+        except TypeError:
+            super().__init__(model_name=resolved_model, embed_batch_size=embed_batch_size)
         self.api_base = resolved_base
         self.model = resolved_model
         self.timeout = timeout
-        self.headers = dict(headers or {})
-        self.session = session or (requests.Session() if requests else None)
+        self.headers = resolved_headers
+        self.session = resolved_session
         self.model_name = resolved_model
         self.embed_batch_size = embed_batch_size
 
