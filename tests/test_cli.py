@@ -96,6 +96,9 @@ class FakeVectorStore:
     def add(self, nodes: list) -> None:
         self._saved.extend(nodes)
 
+    def delete_by_metadata(self, key: str, value: str) -> None:
+        return None
+
 
 class TestCli(unittest.TestCase):
     class DummyEmbedder:
@@ -180,6 +183,37 @@ class TestCli(unittest.TestCase):
             )
 
             self.assertEqual(observed["dim"], 5)
+
+    def test_ingest_folder_uses_absolute_source_key_outside_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            source_folder = root / "external_src"
+            source_folder.mkdir()
+            source = source_folder / "example.py"
+            source.write_text("def foo():\n    return 1\n", encoding="utf-8")
+
+            observed: dict[str, str] = {}
+
+            class TrackingVectorStore(FakeVectorStore):
+                def delete_by_metadata(self, key: str, value: str) -> None:
+                    observed["key"] = key
+                    observed["value"] = value
+
+            cli = _load_cli()
+            cli._ingest_folder(
+                source_folder,
+                "code",
+                SmakConfig(storage=StorageConfig(uri="vault.db")),
+                vector_store_loader=lambda index_name, config: TrackingVectorStore([], index_name),
+                node_class_loader=lambda: FakeNode,
+                embedder_loader=self.DummyEmbedder,
+                workspace_root=workspace,
+            )
+
+            self.assertEqual(observed["key"], "source")
+            self.assertEqual(observed["value"], str(source))
 
     def test_cli_init_and_ingest(self) -> None:
         runner = CliRunner()
@@ -291,6 +325,25 @@ class TestCli(unittest.TestCase):
             payload = sidecar.read_text(encoding="utf-8")
             self.assertIn("name: User", payload)
             self.assertIn("name: User.login", payload)
+
+    def test_sidecar_init_generates_directory_sidecar_template(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            source_dir = tmp_path / "src"
+            source_dir.mkdir()
+            source = source_dir / "example.py"
+            source.write_text("def hello():\n    return True\n", encoding="utf-8")
+
+            cli = _load_cli()
+            result = runner.invoke(cli.main, ["sidecar", "init", str(source_dir)])
+
+            self.assertEqual(result.exit_code, 0)
+            sidecar = source_dir / "sidecar.yaml"
+            self.assertTrue(sidecar.exists())
+            payload = sidecar.read_text(encoding="utf-8")
+            self.assertIn("name:", payload)
+            self.assertIn("example.py::hello", payload)
 
     def test_doctor_reports_orphaned_sidecar(self) -> None:
         runner = CliRunner()
