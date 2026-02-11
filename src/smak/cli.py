@@ -133,6 +133,17 @@ def _symbols_for_path(path: Path, *, root_path: Path | None = None) -> list[str]
     return [unit.uid for unit in units]
 
 
+def _source_key(path: Path, workspace_root: Path | None = None) -> str:
+    """Render a stable source identifier, relative to workspace root when possible."""
+
+    if workspace_root is None:
+        return str(path)
+    try:
+        return str(path.resolve().relative_to(workspace_root.resolve()))
+    except ValueError:
+        return str(path)
+
+
 def _ingest_folder(
     folder: Path,
     index: str,
@@ -187,11 +198,7 @@ def _ingest_folder(
             nodes.append(node)
         with lock:
             if hasattr(vector_store, "delete_by_metadata"):
-                source_key = (
-                    str(file_path.relative_to(workspace_root))
-                    if workspace_root
-                    else str(file_path)
-                )
+                source_key = _source_key(file_path, workspace_root)
                 vector_store.delete_by_metadata("source", source_key)
             if nodes:
                 vector_store.add(nodes)
@@ -295,22 +302,42 @@ def sidecar() -> None:
 
 
 @sidecar.command("init")
-@click.argument("file_path", type=click.Path(path_type=Path))
+@click.argument("target_path", type=click.Path(path_type=Path))
 @click.option(
     "--config",
     "config_path",
     default="workspace_config.yaml",
     help="Path to workspace config",
 )
-def sidecar_init(file_path: Path, config_path: str) -> None:
-    """Generate a sidecar skeleton for a source file."""
-    if not file_path.exists() or not file_path.is_file():
-        raise click.ClickException(f"Path must be a file: {file_path}")
+def sidecar_init(target_path: Path, config_path: str) -> None:
+    """Generate a sidecar skeleton for a source file or directory."""
+    if not target_path.exists():
+        raise click.ClickException(f"Path not found: {target_path}")
     workspace_root = Path(config_path).resolve().parent if Path(config_path).exists() else None
-    parser = _parser_for_path(file_path, root_path=workspace_root)
+    if target_path.is_dir():
+        symbols: list[str] = []
+        for source_path in sorted(_iter_source_files(target_path)):
+            symbols.extend(_symbols_for_path(source_path, root_path=workspace_root))
+        lines = ["symbols:"]
+        for symbol in symbols:
+            lines.extend(
+                [
+                    f"  - name: {symbol}",
+                    '    intent: ""',
+                    "    relations: []",
+                ]
+            )
+        payload = "\n".join(lines) + "\n" if symbols else "symbols: []\n"
+        output = target_path / "sidecar.yaml"
+        output.write_text(payload, encoding="utf-8")
+        click.echo(f"Wrote sidecar template to {output}")
+        return
+    if not target_path.is_file():
+        raise click.ClickException(f"Path must be a file or directory: {target_path}")
+    parser = _parser_for_path(target_path, root_path=workspace_root)
     units = parser.parse(
-        file_path.read_text(encoding="utf-8", errors="replace"),
-        source=str(file_path),
+        target_path.read_text(encoding="utf-8", errors="replace"),
+        source=str(target_path),
     )
     lines = ["symbols:"]
     for unit in units:
@@ -322,7 +349,7 @@ def sidecar_init(file_path: Path, config_path: str) -> None:
             ]
         )
     payload = "\n".join(lines) + "\n" if units else "symbols: []\n"
-    output = file_path.with_name(f"{file_path.name}.sidecar.yaml")
+    output = target_path.with_name(f"{target_path.name}.sidecar.yaml")
     output.write_text(payload, encoding="utf-8")
     click.echo(f"Wrote sidecar template to {output}")
 
