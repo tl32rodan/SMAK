@@ -1,51 +1,55 @@
+from __future__ import annotations
+
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from smak.mcp_server import SmakMcpServer, build_mcp_server
 
 
 class TestMcpServer(unittest.TestCase):
-    def test_get_symbol_context_and_upsert(self) -> None:
+    def test_refresh_knowledge_uses_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            src = root / "src"
-            src.mkdir()
-            file_path = src / "csv_editor.py"
-            file_path.write_text(
-                "class CsvEditor:\n    def read_rows(self):\n        return []\n",
-                encoding="utf-8",
-            )
-            server = SmakMcpServer(workspace_root=root)
-            server.upsert_sidecar(
-                file_path="src/csv_editor.py",
-                symbol="CsvEditor.read_rows",
-                intent="read csv rows",
-                relations=["issue:101"],
-            )
+            server = SmakMcpServer(workspace_root=Path(tmp_dir))
+            with patch.object(server, "_run_cli", return_value="ok") as run_cli:
+                output = server.refresh_knowledge(folder="src", index="source_code")
 
-            context = server.get_symbol_context("src/csv_editor.py", "CsvEditor.read_rows")
+            self.assertEqual(output, "ok")
+            run_cli.assert_called_once()
+            self.assertIn("ingest", run_cli.call_args.args[0])
 
-            self.assertIn("Inherited Issue Links", context)
-            self.assertIn("issue:101", context)
-            self.assertIn("read csv rows", context)
-
-    def test_diagnose_mesh_orphan(self) -> None:
+    def test_inspect_file_symbols_parses_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            orphan = root / "ghost.py.sidecar.yaml"
-            orphan.write_text("symbols: []\n", encoding="utf-8")
-            server = SmakMcpServer(workspace_root=root)
+            server = SmakMcpServer(workspace_root=Path(tmp_dir))
+            with patch.object(server, "_run_cli", return_value='["a.py::A"]'):
+                symbols = server.inspect_file_symbols("a.py")
 
-            problems = server.diagnose_mesh()
+            self.assertEqual(symbols, ["a.py::A"])
 
-            self.assertEqual(len(problems), 1)
-            self.assertIn("Orphaned sidecar", problems[0])
+    def test_semantic_search_parses_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            server = SmakMcpServer(workspace_root=Path(tmp_dir))
+            with patch.object(server, "_run_cli", return_value='[{"uid":"1","score":0.9}]'):
+                result = server.semantic_search("auth")
+
+            self.assertEqual(result[0]["uid"], "1")
+
+    def test_update_sidecar_metadata_parses_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            server = SmakMcpServer(workspace_root=Path(tmp_dir))
+            payload = '{"applied_updates":1,"total_symbols":2}'
+            with patch.object(server, "_run_cli", return_value=payload):
+                result = server.update_sidecar_metadata(
+                    file_path="src/a.py",
+                    updates=[{"symbol": "src/a.py::foo", "intent": "x", "relations": []}],
+                )
+
+            self.assertEqual(result["applied_updates"], 1)
 
     def test_build_mcp_server_returns_sdk_server(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             mcp = build_mcp_server(tmp_dir)
-
             self.assertEqual(mcp.name, "SMAK")
 
 

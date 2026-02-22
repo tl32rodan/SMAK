@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -104,6 +105,23 @@ class FaissVectorStore:
                 "content": doc.payload.get("content"),
                 "metadata": doc.payload.get("metadata"),
             }
+        return None
+
+    def count(self) -> int | None:
+        count_method = getattr(self._engine, "count", None)
+        if callable(count_method):
+            return int(count_method())
+        docs = getattr(self._engine, "docs", None)
+        if isinstance(docs, Sequence):
+            return len(docs)
+        return None
+
+    def last_update(self) -> str | None:
+        value = getattr(self._engine, "last_update", None)
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, str):
+            return value
         return None
 
 

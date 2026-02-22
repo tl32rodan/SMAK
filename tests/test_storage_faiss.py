@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 from dataclasses import dataclass
+from datetime import datetime
 from types import ModuleType
 
 from smak.storage.faiss_adapter import (
@@ -33,6 +34,7 @@ class FakeFaissEngine:
         self.docs: list[FakeVectorDocument] = []
         self.persisted = False
         self.deleted: list[tuple[str, object]] = []
+        self.last_update = datetime(2024, 1, 1)
 
     def add(self, docs: list[FakeVectorDocument]) -> None:
         self.docs.extend(docs)
@@ -145,6 +147,13 @@ class TestFaissAdapter(unittest.TestCase):
 
         self.assertEqual(store._engine.deleted, [("source", "src/a.py")])
         self.assertTrue(store._engine.persisted)
+
+    def test_store_stats_helpers(self) -> None:
+        store = FaissVectorStore(uri="memory", collection_name="code", dim=3)
+        store._engine.last_update = datetime(2024, 1, 1)
+
+        self.assertEqual(store.count(), 0)
+        self.assertEqual(store.last_update(), "2024-01-01T00:00:00")
 
 
 if __name__ == "__main__":
