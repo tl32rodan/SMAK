@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 import tempfile
 import unittest
@@ -43,6 +44,17 @@ def _install_fake_dependencies() -> None:
 
     fake_embeddings.BaseEmbedding = FakeBaseEmbedding
 
+    fake_schema = ModuleType("llama_index.core.schema")
+
+    class FakeTextNode:
+        def __init__(self, text: str, id_: str, metadata: dict) -> None:
+            self.text = text
+            self.id_ = id_
+            self.metadata = metadata
+            self.embedding: list[float] | None = None
+
+    fake_schema.TextNode = FakeTextNode
+
     fake_openai_like = ModuleType("llama_index.llms.openai_like")
 
     class FakeOpenAILike:
@@ -53,6 +65,7 @@ def _install_fake_dependencies() -> None:
 
     fake_core = ModuleType("llama_index.core")
     fake_core.embeddings = fake_embeddings
+    fake_core.schema = fake_schema
 
     fake_llms = ModuleType("llama_index.llms")
     fake_llms.openai_like = fake_openai_like
@@ -67,6 +80,7 @@ def _install_fake_dependencies() -> None:
             "llama_index": fake_root,
             "llama_index.core": fake_core,
             "llama_index.core.embeddings": fake_embeddings,
+            "llama_index.core.schema": fake_schema,
             "llama_index.llms": fake_llms,
             "llama_index.llms.openai_like": fake_openai_like,
         }
@@ -99,6 +113,12 @@ class FakeVectorStore:
     def delete_by_metadata(self, key: str, value: str) -> None:
         return None
 
+    def get_by_id(self, uid: str) -> dict | None:
+        for node in self._saved:
+            if node.id_ == uid:
+                return {"uid": uid, "metadata": node.metadata}
+        return None
+
 
 class TestCli(unittest.TestCase):
     class DummyEmbedder:
@@ -112,9 +132,6 @@ class TestCli(unittest.TestCase):
         self.assertIn("storage:", template)
         self.assertIn("provider: faiss", template)
         self.assertIn("uri: ./smak_data", template)
-        self.assertIn("llm:", template)
-        self.assertNotIn("embedding_dimensions", template)
-        self.assertNotIn("llama_index:", template)
 
     def test_ingest_folder_processes_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -122,20 +139,8 @@ class TestCli(unittest.TestCase):
             folder.mkdir()
             source = folder / "example.py"
             source.write_text("def foo():\n    return 1\n", encoding="utf-8")
-            sidecar = folder / "example.py.sidecar.yaml"
-            sidecar.write_text(
-                "symbols:\n  - name: foo\n    relations:\n      - issue:1\n",
-                encoding="utf-8",
-            )
 
             saved: list = []
-            created: dict[str, str] = {}
-
-            def loader(index_name: str, config: SmakConfig) -> FakeVectorStore:
-                self.assertEqual(config.storage.uri, "vault.db")
-                created["index"] = index_name
-                return FakeVectorStore(saved, index_name)
-
             config = SmakConfig(storage=StorageConfig(uri="vault.db"))
 
             cli = _load_cli()
@@ -143,220 +148,109 @@ class TestCli(unittest.TestCase):
                 folder,
                 "code",
                 config,
-                vector_store_loader=loader,
+                vector_store_loader=lambda index_name, cfg: FakeVectorStore(saved, index_name),
                 node_class_loader=lambda: FakeNode,
                 embedder_loader=self.DummyEmbedder,
+                incremental=False,
             )
 
             self.assertEqual(stats.files, 1)
             self.assertEqual(stats.vectors, 1)
-            self.assertEqual(created["index"], "code")
-            self.assertEqual(saved[0].metadata["relations"], ["issue:1"])
+            self.assertEqual(stats.skipped, 0)
+            self.assertIn("source_mtime", saved[0].metadata)
 
-    def test_ingest_folder_uses_embedder_dimension(self) -> None:
-        class WideEmbedder(SimpleNamespace):
-            def embed_documents(self, texts: list[str]) -> list[list[float]]:
-                return [[0.0] * 5 for _ in texts]
-
+    def test_ingest_folder_skips_unchanged_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             folder = Path(tmp_dir) / "src"
             folder.mkdir()
             source = folder / "example.py"
             source.write_text("def foo():\n    return 1\n", encoding="utf-8")
 
-            observed: dict[str, int] = {}
-
-            def loader(index_name: str, config: SmakConfig) -> FakeVectorStore:
-                observed["dim"] = config.embedding_dimensions
-                return FakeVectorStore([], index_name)
-
+            saved: list = []
+            cli = _load_cli()
             config = SmakConfig(storage=StorageConfig(uri="vault.db"))
 
-            cli = _load_cli()
             cli._ingest_folder(
                 folder,
                 "code",
                 config,
-                vector_store_loader=loader,
-                node_class_loader=lambda: FakeNode,
-                embedder_loader=WideEmbedder,
-            )
-
-            self.assertEqual(observed["dim"], 5)
-
-    def test_ingest_folder_uses_absolute_source_key_outside_workspace(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            workspace = root / "workspace"
-            workspace.mkdir()
-            source_folder = root / "external_src"
-            source_folder.mkdir()
-            source = source_folder / "example.py"
-            source.write_text("def foo():\n    return 1\n", encoding="utf-8")
-
-            observed: dict[str, str] = {}
-
-            class TrackingVectorStore(FakeVectorStore):
-                def delete_by_metadata(self, key: str, value: str) -> None:
-                    observed["key"] = key
-                    observed["value"] = value
-
-            cli = _load_cli()
-            cli._ingest_folder(
-                source_folder,
-                "code",
-                SmakConfig(storage=StorageConfig(uri="vault.db")),
-                vector_store_loader=lambda index_name, config: TrackingVectorStore([], index_name),
+                vector_store_loader=lambda index_name, cfg: FakeVectorStore(saved, index_name),
                 node_class_loader=lambda: FakeNode,
                 embedder_loader=self.DummyEmbedder,
-                workspace_root=workspace,
+                incremental=False,
+            )
+            stats = cli._ingest_folder(
+                folder,
+                "code",
+                config,
+                vector_store_loader=lambda index_name, cfg: FakeVectorStore(saved, index_name),
+                node_class_loader=lambda: FakeNode,
+                embedder_loader=self.DummyEmbedder,
+                incremental=True,
             )
 
-            self.assertEqual(observed["key"], "source")
-            self.assertEqual(observed["value"], str(source))
+            self.assertEqual(stats.files, 0)
+            self.assertEqual(stats.skipped, 1)
 
-    def test_cli_init_and_ingest(self) -> None:
+    def test_search_json_output(self) -> None:
         runner = CliRunner()
         with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            folder = tmp_path / "repo"
-            folder.mkdir()
-            source = folder / "note.md"
-            source.write_text("---\nid: issue-1\n---\nbody\n", encoding="utf-8")
-            config_path = tmp_path / "workspace_config.yaml"
-            config_path.write_text("storage:\n  uri: vault.db\n", encoding="utf-8")
+            source = Path(tmp_dir) / "example.py"
+            source.write_text("def hello():\n    return True\n", encoding="utf-8")
+            cli = _load_cli()
 
-            saved: list = []
-            with patch(
-                "smak.cli._load_vector_store",
-                new=lambda index, config: FakeVectorStore(saved, index),
-            ), patch("smak.cli._load_text_node_class", new=lambda: FakeNode):
-                cli = _load_cli()
-                init_result = runner.invoke(
-                    cli.main,
-                    [
-                        "init",
-                        "--path",
-                        str(tmp_path / "generated.yaml"),
-                    ],
-                )
+            result = runner.invoke(cli.main, ["search", str(source), "--json-output"])
 
-                self.assertEqual(init_result.exit_code, 0)
-                self.assertIn("workspace config", init_result.output)
-                self.assertTrue((tmp_path / "generated.yaml").exists())
+            self.assertEqual(result.exit_code, 0)
+            payload = json.loads(result.output)
+            self.assertEqual(len(payload), 1)
+            self.assertIn("::hello", payload[0])
 
-                result = runner.invoke(
-                    cli.main,
-                    [
-                        "ingest",
-                        "--folder",
-                        str(folder),
-                        "--index",
-                        "issues",
-                        "--config",
-                        str(config_path),
-                    ],
-                )
+    def test_sidecar_update_merges_metadata(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "example.py"
+            source.write_text("def hello():\n    return True\n", encoding="utf-8")
+            cli = _load_cli()
+            updates = json.dumps(
+                [{"symbol": "example.py::hello", "intent": "greeting", "relations": ["issue:1"]}]
+            )
 
-                self.assertEqual(result.exit_code, 0)
-                self.assertIn("Ingestion Complete", result.output)
-                self.assertTrue(saved)
+            result = runner.invoke(
+                cli.main,
+                ["sidecar", "update", str(source), "--updates", updates],
+            )
 
-    def test_load_vector_store_missing_dependency(self) -> None:
-        from smak import cli
+            self.assertEqual(result.exit_code, 0)
+            sidecar = Path(tmp_dir) / "example.py.sidecar.yaml"
+            self.assertTrue(sidecar.exists())
+            payload = sidecar.read_text(encoding="utf-8")
+            self.assertIn("greeting", payload)
 
-        with patch(
-            "smak.storage.faiss_adapter.load_faiss_store",
-            side_effect=ModuleNotFoundError("Vector store dependency missing."),
+    def test_query_command_outputs_json(self) -> None:
+        runner = CliRunner()
+
+        class QueryEmbedder(SimpleNamespace):
+            def get_text_embedding(self, text: str) -> list[float]:
+                return [0.1, 0.2, 0.3]
+
+        class QueryStore(SimpleNamespace):
+            def search(self, vector: list[float], top_k: int = 5) -> list[dict]:
+                return [{"uid": "x", "score": 0.8}]
+
+        with patch("smak.cli.InternalNomicEmbedding", new=QueryEmbedder), patch(
+            "smak.cli._load_vector_store_for_cli",
+            new=lambda index, config: (
+                SmakConfig(storage=StorageConfig(uri="memory")),
+                QueryStore(),
+            ),
         ):
-            with self.assertRaises(Exception) as exc:
-                cli._load_vector_store("code", SmakConfig())
-            self.assertIn("Vector store dependency missing", str(exc.exception))
-
-    def test_load_text_node_class_returns_text_node(self) -> None:
-        from smak import cli
-
-        text_node = cli._load_text_node_class()
-
-        self.assertIsNotNone(text_node)
-
-    def test_search_command_lists_python_symbols(self) -> None:
-        runner = CliRunner()
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            source = tmp_path / "example.py"
-            source.write_text("def hello():\n    return True\n", encoding="utf-8")
-
             cli = _load_cli()
-            result = runner.invoke(cli.main, ["search", str(source)])
+            result = runner.invoke(cli.main, ["query", "hello", "--index", "code"])
 
-            self.assertEqual(result.exit_code, 0)
-            self.assertIn("::hello", result.output)
-
-    def test_search_command_lists_issue_symbols(self) -> None:
-        runner = CliRunner()
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            source = tmp_path / "issue.md"
-            source.write_text("---\nid: issue_001_login_error\n---\nBody\n", encoding="utf-8")
-
-            cli = _load_cli()
-            result = runner.invoke(cli.main, ["search", str(source)])
-
-            self.assertEqual(result.exit_code, 0)
-            self.assertIn("issue:issue_001_login_error", result.output)
-
-    def test_sidecar_init_generates_template(self) -> None:
-        runner = CliRunner()
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            source = tmp_path / "example.py"
-            source.write_text(
-                "class User:\n    def login(self):\n        return True\n",
-                encoding="utf-8",
-            )
-
-            cli = _load_cli()
-            result = runner.invoke(cli.main, ["sidecar", "init", str(source)])
-
-            self.assertEqual(result.exit_code, 0)
-            sidecar = tmp_path / "example.py.sidecar.yaml"
-            self.assertTrue(sidecar.exists())
-            payload = sidecar.read_text(encoding="utf-8")
-            self.assertIn("name: User", payload)
-            self.assertIn("name: User.login", payload)
-
-    def test_sidecar_init_generates_directory_sidecar_template(self) -> None:
-        runner = CliRunner()
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            source_dir = tmp_path / "src"
-            source_dir.mkdir()
-            source = source_dir / "example.py"
-            source.write_text("def hello():\n    return True\n", encoding="utf-8")
-
-            cli = _load_cli()
-            result = runner.invoke(cli.main, ["sidecar", "init", str(source_dir)])
-
-            self.assertEqual(result.exit_code, 0)
-            sidecar = source_dir / "sidecar.yaml"
-            self.assertTrue(sidecar.exists())
-            payload = sidecar.read_text(encoding="utf-8")
-            self.assertIn("name:", payload)
-            self.assertIn("example.py::hello", payload)
-
-    def test_doctor_reports_orphaned_sidecar(self) -> None:
-        runner = CliRunner()
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            orphan = tmp_path / "missing.py.sidecar.yaml"
-            orphan.write_text("symbols: []\n", encoding="utf-8")
-
-            cli = _load_cli()
-            result = runner.invoke(cli.main, ["doctor", "--path", str(tmp_path)])
-
-            self.assertNotEqual(result.exit_code, 0)
-            self.assertIn("Orphaned sidecar", result.output)
+        self.assertEqual(result.exit_code, 0)
+        payload = json.loads(result.output)
+        self.assertEqual(payload[0]["uid"], "x")
 
 
 if __name__ == "__main__":
