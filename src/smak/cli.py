@@ -13,7 +13,7 @@ from typing import Any, Callable, Iterable
 import click
 from tqdm import tqdm
 
-from smak.config import SmakConfig, load_config
+from smak.config import IndexConfig, SmakConfig, load_config
 from smak.db.adapter import VectorDocument
 from smak.embedding import (
     EmbeddingProbe,
@@ -39,14 +39,11 @@ class IngestStats:
     skipped: int
 
 
-def _load_vector_store(index_name: str, config: SmakConfig):
+def _load_vector_store(index_name: str, config: SmakConfig, uri: str):
     from smak.storage.faiss_adapter import load_faiss_store
 
-    provider = (config.storage.provider or "faiss").lower()
-    if provider != "faiss":
-        raise click.ClickException(f"Unsupported vector store provider: {provider}")
     return load_faiss_store(
-        uri=config.storage.uri,
+        uri=uri,
         collection_name=index_name,
         dim=config.embedding_dimensions,
     )
@@ -56,10 +53,6 @@ def _default_config_template() -> str:
     return "\n".join(
         [
             "# SMAK Workspace Configuration",
-            "",
-            "storage:",
-            "  provider: faiss",
-            "  uri: ./smak_data",
             "",
             "llm:",
             "  provider: qwen",
@@ -73,6 +66,8 @@ def _default_config_template() -> str:
                 "    description: Contains the project's source code (Python, Perl), "
                 "function definitions, and logic."
             ),
+            "    # optional uri override; default is ./smak_data/<name>",
+            "    # uri: ./smak_data/source_code",
             "  - name: issues",
             (
                 "    description: Contains historical bug reports, GitHub issues, and Jira "
@@ -177,7 +172,7 @@ def _ingest_folder(
     embedder_factory = embedder_loader or InternalNomicEmbedding
     embedder = embedder_factory()
     config = initialize_embedding_dimensions(config, embedder)
-    vector_store_factory = vector_store_loader or _load_vector_store
+    vector_store_factory = vector_store_loader or _load_vector_store_for_index
     vector_store = vector_store_factory(index, config)
     validate_vector_store_dimension(vector_store, config.embedding_dimensions)
     sidecar_manager = SidecarManager()
@@ -244,6 +239,27 @@ def _ingest_folder(
     return IngestStats(files=file_count, vectors=vector_count, skipped=skipped_count)
 
 
+
+
+def _index_base_uri(index_config: IndexConfig) -> str:
+    return index_config.uri or f"./smak_data/{index_config.name}"
+
+
+def _resolve_index_config(config: SmakConfig, index_name: str) -> IndexConfig:
+    for index_config in config.indices:
+        if index_config.name == index_name:
+            return index_config
+    raise click.ClickException(
+        "Index out of bounds: "
+        f"'{index_name}' is not defined in config.indices. "
+        "Please verify your config.yaml."
+    )
+
+
+def _load_vector_store_for_index(index_name: str, config: SmakConfig) -> object:
+    index_config = _resolve_index_config(config, index_name)
+    return _load_vector_store(index_name, config, _index_base_uri(index_config))
+
 def _load_workspace_root(config_path: str) -> Path | None:
     config_file = Path(config_path)
     return config_file.resolve().parent if config_file.exists() else None
@@ -253,7 +269,7 @@ def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig
     cfg = load_config(config_path)
     embedder = InternalNomicEmbedding()
     cfg = initialize_embedding_dimensions(cfg, embedder)
-    vector_store = _load_vector_store(index, cfg)
+    vector_store = _load_vector_store_for_index(index, cfg)
     validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
     return cfg, vector_store
 
@@ -333,12 +349,18 @@ def ingest(folder: Path, index: str, config: str, workers: int, incremental: boo
     except Exception as exc:
         raise click.ClickException(f"Error loading config: {exc}") from exc
 
+    _resolve_index_config(cfg, index)
+
     click.echo(f"Starting ingestion for '{folder}' -> Index: '{index}'...")
     try:
         stats = _ingest_folder(
             folder,
             index,
             cfg,
+            vector_store_loader=lambda index_name, loaded_cfg: _load_vector_store_for_index(
+                index_name,
+                loaded_cfg,
+            ),
             max_workers=workers,
             show_progress=True,
             workspace_root=_load_workspace_root(config),
@@ -490,10 +512,15 @@ def sidecar_update(file_path: Path, updates: str, reingest: bool, index: str, co
     )
     if reingest:
         cfg = load_config(config)
+        _resolve_index_config(cfg, index)
         _ingest_folder(
             file_path.parent,
             index,
             cfg,
+            vector_store_loader=lambda index_name, loaded_cfg: _load_vector_store_for_index(
+                index_name,
+                loaded_cfg,
+            ),
             max_workers=1,
             show_progress=False,
             workspace_root=_load_workspace_root(config),

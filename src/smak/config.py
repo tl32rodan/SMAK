@@ -15,6 +15,7 @@ class IndexConfig:
 
     name: str
     description: str
+    uri: str | None = None
 
 
 @dataclass(frozen=True)
@@ -28,20 +29,11 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
-class StorageConfig:
-    """Configuration for vector storage."""
-
-    provider: str = "faiss"
-    uri: str = "./smak_data"
-
-
-@dataclass(frozen=True)
 class SmakConfig:
     """Typed configuration container."""
 
     indices: list[IndexConfig] = field(default_factory=list)
     llm: LLMConfig = field(default_factory=LLMConfig)
-    storage: StorageConfig = field(default_factory=StorageConfig)
     embedding_dimensions: int | None = None
 
 
@@ -59,10 +51,12 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
     if isinstance(indices_data, list):
         for entry in indices_data:
             if isinstance(entry, Mapping):
+                uri = entry.get("uri")
                 indices.append(
                     IndexConfig(
                         name=str(entry.get("name", "")),
                         description=str(entry.get("description", "")),
+                        uri=str(uri) if uri is not None else None,
                     )
                 )
     llm_data = data.get("llm", {}) if isinstance(data, Mapping) else {}
@@ -72,16 +66,10 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
         temperature=float(llm_data.get("temperature", 0.0)),
         api_base=llm_data.get("api_base"),
     )
-    storage_data = data.get("storage", {}) if isinstance(data, Mapping) else {}
-    storage = StorageConfig(
-        provider=str(storage_data.get("provider", "faiss")),
-        uri=str(storage_data.get("uri", storage_data.get("base_path", "./smak_data"))),
-    )
     return SmakConfig(
         indices=indices,
         llm=llm,
-        storage=storage,
     )
 
 
-__all__ = ["IndexConfig", "LLMConfig", "SmakConfig", "StorageConfig", "load_config"]
+__all__ = ["IndexConfig", "LLMConfig", "SmakConfig", "load_config"]

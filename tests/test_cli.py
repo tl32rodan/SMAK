@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
-from smak.config import SmakConfig, StorageConfig
+from smak.config import IndexConfig, SmakConfig
 
 
 def _install_fake_dependencies() -> None:
@@ -153,9 +153,9 @@ class TestCli(unittest.TestCase):
         cli = _load_cli()
         template = cli._default_config_template()
 
-        self.assertIn("storage:", template)
-        self.assertIn("provider: faiss", template)
-        self.assertIn("uri: ./smak_data", template)
+        self.assertNotIn("storage:", template)
+        self.assertIn("indices:", template)
+        self.assertIn("# optional uri override", template)
 
     def test_ingest_folder_processes_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -165,7 +165,9 @@ class TestCli(unittest.TestCase):
             source.write_text("def foo():\n    return 1\n", encoding="utf-8")
 
             saved: list = []
-            config = SmakConfig(storage=StorageConfig(uri="vault.db"))
+            config = SmakConfig(
+                indices=[IndexConfig(name="code", description="Code", uri="vault.db")]
+            )
 
             cli = _load_cli()
             stats = cli._ingest_folder(
@@ -192,7 +194,9 @@ class TestCli(unittest.TestCase):
 
             saved: list = []
             cli = _load_cli()
-            config = SmakConfig(storage=StorageConfig(uri="vault.db"))
+            config = SmakConfig(
+                indices=[IndexConfig(name="code", description="Code", uri="vault.db")]
+            )
 
             cli._ingest_folder(
                 folder,
@@ -226,7 +230,9 @@ class TestCli(unittest.TestCase):
 
             saved: list = []
             cli = _load_cli()
-            config = SmakConfig(storage=StorageConfig(uri="vault.db"))
+            config = SmakConfig(
+                indices=[IndexConfig(name="code", description="Code", uri="vault.db")]
+            )
             main_thread_id = threading.get_ident()
             store_holder: dict[str, ThreadAwareVectorStore] = {}
 
@@ -287,6 +293,111 @@ class TestCli(unittest.TestCase):
             payload = sidecar.read_text(encoding="utf-8")
             self.assertIn("greeting", payload)
 
+
+    def test_load_vector_store_for_cli_uses_index_uri_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "workspace.yaml"
+            config_path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code\n"
+                "    uri: ./brain/source_code\n",
+                encoding="utf-8",
+            )
+            cli = _load_cli()
+
+            with patch("smak.cli.InternalNomicEmbedding", new=self.DummyEmbedder), patch(
+                "smak.cli._load_vector_store",
+                new=lambda index_name, cfg, uri: {"index": index_name, "uri": uri},
+            ), patch("smak.cli.validate_vector_store_dimension", new=lambda *args, **kwargs: None):
+                _, vector_store = cli._load_vector_store_for_cli("source_code", str(config_path))
+
+            self.assertEqual(vector_store["uri"], "./brain/source_code")
+
+    def test_load_vector_store_for_cli_rejects_unknown_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "workspace.yaml"
+            config_path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code\n",
+                encoding="utf-8",
+            )
+            cli = _load_cli()
+
+            with self.assertRaises(Exception) as ctx:
+                cli._load_vector_store_for_cli("forbidden", str(config_path))
+
+            self.assertIn("config.indices", str(ctx.exception))
+
+    def test_query_command_rejects_unknown_index(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "workspace.yaml"
+            config_path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code\n",
+                encoding="utf-8",
+            )
+            cli = _load_cli()
+            result = runner.invoke(
+                cli.main,
+                ["query", "hello", "--index", "forbidden", "--config", str(config_path)],
+            )
+
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("config.indices", result.output)
+
+    def test_ingest_command_rejects_unknown_index(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "workspace.yaml"
+            source_dir = Path(tmp_dir) / "src"
+            source_dir.mkdir()
+            (source_dir / "a.py").write_text("def a():\n    return 1\n", encoding="utf-8")
+            config_path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code\n",
+                encoding="utf-8",
+            )
+            cli = _load_cli()
+            result = runner.invoke(
+                cli.main,
+                [
+                    "ingest",
+                    "--folder",
+                    str(source_dir),
+                    "--index",
+                    "forbidden",
+                    "--config",
+                    str(config_path),
+                ],
+            )
+
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("config.indices", result.output)
+
+    def test_stats_command_rejects_unknown_index(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "workspace.yaml"
+            config_path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code\n",
+                encoding="utf-8",
+            )
+            cli = _load_cli()
+            result = runner.invoke(
+                cli.main,
+                ["stats", "--index", "forbidden", "--config", str(config_path)],
+            )
+
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("config.indices", result.output)
+
     def test_query_command_outputs_json(self) -> None:
         runner = CliRunner()
 
@@ -301,7 +412,7 @@ class TestCli(unittest.TestCase):
         with patch("smak.cli.InternalNomicEmbedding", new=QueryEmbedder), patch(
             "smak.cli._load_vector_store_for_cli",
             new=lambda index, config: (
-                SmakConfig(storage=StorageConfig(uri="memory")),
+                SmakConfig(indices=[IndexConfig(name="code", description="Code", uri="memory")]),
                 QueryStore(),
             ),
         ):

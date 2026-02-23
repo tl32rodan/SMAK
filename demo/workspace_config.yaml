@@ -1,7 +1,3 @@
-storage:
-  provider: faiss
-  uri: ./smak_data
-
 llm:
   provider: qwen
   model: qwen3_235B_A22B
@@ -10,3 +6,4 @@ llm:
 indices:
   - name: source_code
     description: Demo source code index
+    uri: ./smak_data/source_code

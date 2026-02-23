@@ -14,8 +14,7 @@ class TestConfig(unittest.TestCase):
         self.assertIsNone(config.embedding_dimensions)
         self.assertEqual(config.llm.provider, "openai")
         self.assertEqual(config.llm.temperature, 0.0)
-        self.assertEqual(config.storage.provider, "faiss")
-        self.assertEqual(config.storage.uri, "./smak_data")
+        self.assertEqual(config.indices, [])
 
     def test_load_config_reads_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -24,6 +23,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
+                "    uri: ./shared/source_code\n"
                 "llm:\n"
                 "  provider: ollama\n"
                 "  model: llama3\n"
@@ -36,32 +36,26 @@ class TestConfig(unittest.TestCase):
             config = load_config(path)
 
             self.assertEqual(config.indices[0].name, "source_code")
+            self.assertEqual(config.indices[0].uri, "./shared/source_code")
             self.assertEqual(config.llm.provider, "ollama")
             self.assertEqual(config.llm.temperature, 0.4)
             self.assertEqual(config.llm.api_base, "http://localhost:11434/v1")
             self.assertIsNone(config.embedding_dimensions)
 
-    def test_load_config_reads_storage(self) -> None:
+    def test_load_config_index_uri_is_optional(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "workspace.yaml"
             path.write_text(
-                "storage:\n  provider: faiss\n  uri: data/vault.db\n",
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code files\n",
                 encoding="utf-8",
             )
 
             config = load_config(path)
 
-            self.assertEqual(config.storage.provider, "faiss")
-            self.assertEqual(config.storage.uri, "data/vault.db")
-
-    def test_load_config_reads_legacy_base_path(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workspace.yaml"
-            path.write_text("storage:\n  base_path: data/legacy\n", encoding="utf-8")
-
-            config = load_config(path)
-
-            self.assertEqual(config.storage.uri, "data/legacy")
+            self.assertEqual(config.indices[0].name, "source_code")
+            self.assertIsNone(config.indices[0].uri)
 
 
 if __name__ == "__main__":

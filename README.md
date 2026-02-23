@@ -44,6 +44,11 @@ Key behavior:
 smak init --path workspace_config.yaml
 ```
 
+### Config notes (strict index scope)
+- `indices` is the single source of truth for allowed `--index` values.
+- CLI commands that accept `--index` reject names not present in `config.indices`.
+- Each index may define `uri`; if omitted, storage path defaults to `./smak_data/<index_name>`.
+
 ### Ingest a folder
 ```bash
 smak ingest --folder ./src --index source_code --config workspace_config.yaml

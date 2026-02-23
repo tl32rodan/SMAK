@@ -12,6 +12,10 @@ This folder demonstrates a minimal end-to-end CLI flow for the passive SMAK kern
 
 ## Run step by step
 
+> Note: `--index` is strictly validated against `workspace_config.yaml` `indices`.
+> Set per-index storage path with `indices[].uri` (or fallback to `./smak_data/<name>`).
+
+
 ### 1) Ingest all three folders first
 ```bash
 cd demo
