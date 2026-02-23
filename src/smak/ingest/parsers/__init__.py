@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from smak.core.domain import KnowledgeUnit
@@ -38,10 +39,24 @@ class SimpleLineParser:
         return units
 
 
+def get_parser_for_path(path: Path, root_path: Path | None = None) -> Parser:
+    """Return a parser implementation based on a file path."""
+
+    suffix = path.suffix.lower()
+    if suffix == ".py":
+        return PythonParser(root_path=str(root_path) if root_path else None)
+    if suffix in {".pl", ".pm"}:
+        return PerlParser(root_path=str(root_path) if root_path else None)
+    if suffix in {".md", ".markdown"}:
+        return IssueParser()
+    return SimpleLineParser()
+
+
 __all__ = [
     "IssueParser",
     "Parser",
     "PerlParser",
     "PythonParser",
     "SimpleLineParser",
+    "get_parser_for_path",
 ]

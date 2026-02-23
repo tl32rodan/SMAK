@@ -6,7 +6,6 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from smak.config import SmakConfig, StorageConfig
 from smak.services.doctor import DoctorService
 from smak.services.ingest import IngestService
 from smak.services.query import QueryService
@@ -51,13 +50,9 @@ class TestServices(unittest.TestCase):
             src = Path(tmp_dir) / "a.py"
             src.write_text("def foo():\n    return 1\n", encoding="utf-8")
             store = FakeVectorStore()
-            service = IngestService(
-                SmakConfig(storage=StorageConfig(uri="memory")),
-                vector_store_loader=lambda index, cfg: store,
-            )
+            service = IngestService(vector_store=store)
             stats = service.ingest_folder(
                 Path(tmp_dir),
-                "code",
                 incremental=False,
                 node_class_loader=lambda: FakeNode,
                 embedder_loader=self.DummyEmbedder,

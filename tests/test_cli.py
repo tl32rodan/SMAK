@@ -9,6 +9,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
+import click
 from click.testing import CliRunner
 
 
@@ -76,10 +77,49 @@ _install_fake_dependencies()
 
 
 class TestCli(unittest.TestCase):
-    def test_default_config_template_includes_storage(self) -> None:
+    def test_default_config_template_includes_index_uri(self) -> None:
         cli = importlib.import_module("smak.cli")
         template = cli._default_config_template()
-        self.assertIn("storage:", template)
+        self.assertIn("uri: ./smak_data/source_code", template)
+        self.assertNotIn("storage:", template)
+
+    def test_load_vector_store_for_cli_raises_for_unknown_index(self) -> None:
+        cli = importlib.import_module("smak.cli")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "workspace.yaml"
+            config_path.write_text(
+                "indices:\n  - name: source_code\n    description: source\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(click.ClickException) as context:
+                cli._load_vector_store_for_cli("missing", str(config_path))
+            self.assertIn("not found", str(context.exception))
+
+
+    def test_load_vector_store_for_cli_uses_index_uri_fallback(self) -> None:
+        cli = importlib.import_module("smak.cli")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "workspace.yaml"
+            config_path.write_text(
+                "indices:\n  - name: docs\n    description: docs index\n",
+                encoding="utf-8",
+            )
+            captured: dict[str, str] = {}
+
+            def fake_loader(index_name: str, index_uri: str, config: object) -> object:
+                captured["index_name"] = index_name
+                captured["index_uri"] = index_uri
+                return SimpleNamespace(dimension=1)
+
+            with (
+                patch("smak.cli._load_vector_store", new=fake_loader),
+                patch("smak.cli.validate_vector_store_dimension", new=lambda store, dim: None),
+                patch("smak.cli.initialize_embedding_dimensions", new=lambda cfg, emb: cfg),
+            ):
+                cli._load_vector_store_for_cli("docs", str(config_path))
+
+            self.assertEqual(captured["index_name"], "docs")
+            self.assertEqual(captured["index_uri"], "./smak_data/docs")
 
     def test_sidecar_inspect_json_output(self) -> None:
         runner = CliRunner()
