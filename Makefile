@@ -7,4 +7,4 @@ clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache .coverage
 
 test:
-	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests
+	PYTHONPATH=tests:src $(PYTHON) -m unittest discover -s tests
