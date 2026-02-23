@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from faiss_storage_lib.core.schema import VectorDocument
-from faiss_storage_lib.engine.faiss_engine import FaissEngine
+
+from smak.storage.faiss_engine import FaissEngine
 
 logger = logging.getLogger(__name__)
 
