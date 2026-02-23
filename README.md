@@ -8,60 +8,59 @@ It is the source-of-truth layer for:
 - issue/document relations,
 - and semantic retrieval context.
 
-It does **not** run autonomous review/agent loops itself. Those workflows belong to MCP clients (IDE agents, CI skills, etc.) that call SMAK tools.
-
 ## What SMAK provides
 
 ### 1) Ingestion kernel
 SMAK ingests files into knowledge units, enriches them with sidecar metadata, computes embeddings, and stores vectors.
 
-Key behavior:
-- **Canonical symbol IDs**: `relative/path.py::Symbol`.
-- **Context inheritance**: class-level sidecar relations are inherited by class methods.
-- **Idempotent re-ingest**: existing vectors for a source are deleted before writing fresh vectors.
-
 ### 2) MCP-facing API surface
-`src/smak/mcp_server.py` provides core tool methods:
-- `get_file_structure(file_path)`
-- `get_symbol_context(file_path, symbol)`
-- `upsert_sidecar(file_path, symbol, intent=None, relations=None)`
-- `link_issue(symbol_id, issue_id)`
-- `diagnose_mesh(path=None)`
+`src/smak/mcp_server.py` exposes the 4 core tools:
+- `refresh_knowledge`
+- `semantic_search`
+- `manage_sidecar` (`init` / `update` / `inspect`)
+- `validate_mesh`
 
 ### 3) CLI utilities
 - `smak init`
 - `smak ingest`
-- `smak search`
-- `smak sidecar init`
+- `smak query`
+- `smak sidecar init|update|inspect`
 - `smak doctor`
+
+> Deprecated commands removed: `search`, `stats`.
+
+---
+
+## Query JSON output
+
+`smak query` returns structured JSON with semantic and relational context separated:
+
+```json
+{
+  "hits": [
+    {"uid": "func_A", "match_type": "semantic", "score": 0.89, "content": "..."}
+  ],
+  "related_context": [
+    {"uid": "issue_12", "match_type": "relation", "source_hit": "func_A", "content": "..."}
+  ]
+}
+```
+
+### 1-Hop Semantic Mesh Traversal
+1. Run vector search for `top_k` semantic hits.
+2. Read `relations` metadata on those hits.
+3. Fetch each related UID with `vector_store.get_by_id(uid)`.
+4. Append those nodes under `related_context` (strictly one hop).
 
 ---
 
 ## Quick start
 
-### Generate config
 ```bash
 smak init --path workspace_config.yaml
-```
-
-### Ingest a folder
-```bash
 smak ingest --folder ./src --index source_code --config workspace_config.yaml
-```
-
-### List canonical symbols from a file
-```bash
-smak search ./src/csv_editor.py --config workspace_config.yaml
-# e.g. src/auth.py::Auth
-#      src/auth.py::Auth.login
-```
-
-### Generate sidecar skeleton
-```bash
+smak sidecar inspect ./src/csv_editor.py --config workspace_config.yaml
 smak sidecar init ./src/csv_editor.py --config workspace_config.yaml
-```
-
-### Run mesh diagnostics
-```bash
-smak doctor --path .
+smak query "csv editor bug" --index source_code --config workspace_config.yaml
+smak doctor --path . --index source_code --config workspace_config.yaml
 ```

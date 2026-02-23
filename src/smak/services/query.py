@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+from typing import Any
+
+from smak.embedding import InternalNomicEmbedding
+
+
+class QueryService:
+    def __init__(self, vector_store: object, embedder: object | None = None) -> None:
+        self.vector_store = vector_store
+        self.embedder = embedder or InternalNomicEmbedding()
+
+    def search(self, text: str, top_k: int = 5) -> dict[str, list[dict[str, Any]]]:
+        query_vector = self.embedder.get_text_embedding(text)
+        semantic_hits = self.vector_store.search(query_vector, top_k=max(top_k, 1))
+
+        hits: list[dict[str, Any]] = []
+        related_context: list[dict[str, Any]] = []
+        seen_related: set[str] = set()
+
+        for hit in semantic_hits:
+            if not isinstance(hit, dict):
+                continue
+            uid = str(hit.get("uid", ""))
+            metadata = hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
+            hits.append(
+                {
+                    "uid": uid,
+                    "match_type": "semantic",
+                    "score": hit.get("score"),
+                    "content": hit.get("content"),
+                }
+            )
+            relations = metadata.get("relations", [])
+            if isinstance(relations, str):
+                relations = [relations]
+            if not isinstance(relations, list):
+                continue
+            for target_uid in relations:
+                target_uid = str(target_uid)
+                if not target_uid or target_uid in seen_related:
+                    continue
+                seen_related.add(target_uid)
+                related_payload = self.vector_store.get_by_id(target_uid)
+                if not isinstance(related_payload, dict):
+                    continue
+                related_context.append(
+                    {
+                        "uid": str(related_payload.get("uid", target_uid)),
+                        "match_type": "relation",
+                        "source_hit": uid,
+                        "content": related_payload.get("content"),
+                    }
+                )
+
+        return {"hits": hits, "related_context": related_context}

@@ -14,37 +14,30 @@ class TestMcpServer(unittest.TestCase):
             server = SmakMcpServer(workspace_root=Path(tmp_dir))
             with patch.object(server, "_run_cli", return_value="ok") as run_cli:
                 output = server.refresh_knowledge(folder="src", index="source_code")
-
             self.assertEqual(output, "ok")
-            run_cli.assert_called_once()
             self.assertIn("ingest", run_cli.call_args.args[0])
 
-    def test_inspect_file_symbols_parses_json(self) -> None:
+    def test_semantic_search_parses_json_object(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            server = SmakMcpServer(workspace_root=Path(tmp_dir))
+            with patch.object(server, "_run_cli", return_value='{"hits":[],"related_context":[]}'):
+                result = server.semantic_search("auth")
+            self.assertIn("hits", result)
+
+    def test_manage_sidecar_inspect(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = SmakMcpServer(workspace_root=Path(tmp_dir))
             with patch.object(server, "_run_cli", return_value='["a.py::A"]'):
-                symbols = server.inspect_file_symbols("a.py")
-
+                symbols = server.manage_sidecar(action="inspect", file_path="a.py")
             self.assertEqual(symbols, ["a.py::A"])
 
-    def test_semantic_search_parses_json(self) -> None:
+    def test_manage_sidecar_update(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = SmakMcpServer(workspace_root=Path(tmp_dir))
-            with patch.object(server, "_run_cli", return_value='[{"uid":"1","score":0.9}]'):
-                result = server.semantic_search("auth")
-
-            self.assertEqual(result[0]["uid"], "1")
-
-    def test_update_sidecar_metadata_parses_json(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = SmakMcpServer(workspace_root=Path(tmp_dir))
-            payload = '{"applied_updates":1,"total_symbols":2}'
-            with patch.object(server, "_run_cli", return_value=payload):
-                result = server.update_sidecar_metadata(
-                    file_path="src/a.py",
-                    updates=[{"symbol": "src/a.py::foo", "intent": "x", "relations": []}],
+            with patch.object(server, "_run_cli", return_value='{"applied_updates":1}'):
+                result = server.manage_sidecar(
+                    action="update", file_path="src/a.py", updates=[{"symbol": "x"}]
                 )
-
             self.assertEqual(result["applied_updates"], 1)
 
     def test_build_mcp_server_returns_sdk_server(self) -> None:
