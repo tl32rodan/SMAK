@@ -1,6 +1,13 @@
 import unittest
+from pathlib import Path
 
-from smak.ingest.parsers import IssueParser, PerlParser, PythonParser, SimpleLineParser
+from smak.ingest.parsers import (
+    IssueParser,
+    PerlParser,
+    PythonParser,
+    SimpleLineParser,
+    get_parser_for_path,
+)
 
 
 class TestParsers(unittest.TestCase):
@@ -42,6 +49,13 @@ class TestParsers(unittest.TestCase):
     def test_issue_parser_falls_back_to_filename_slug(self) -> None:
         units = IssueParser().parse("No markdown header", source="docs/My Issue.md")
         self.assertEqual(units[0].uid, "my-issue")
+
+
+    def test_get_parser_for_path_routes_by_suffix(self) -> None:
+        self.assertIsInstance(get_parser_for_path(Path("a.py")), PythonParser)
+        self.assertIsInstance(get_parser_for_path(Path("a.pm")), PerlParser)
+        self.assertIsInstance(get_parser_for_path(Path("a.md")), IssueParser)
+        self.assertIsInstance(get_parser_for_path(Path("a.txt")), SimpleLineParser)
 
     def test_python_parser_uses_relative_source_with_root(self) -> None:
         parser = PythonParser(root_path="/repo")

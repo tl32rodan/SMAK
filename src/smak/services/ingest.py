@@ -8,14 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
-from smak.config import SmakConfig
-from smak.embedding import (
-    EmbeddingProbe,
-    InternalNomicEmbedding,
-    initialize_embedding_dimensions,
-    validate_vector_store_dimension,
-)
-from smak.ingest.parsers import IssueParser, Parser, PerlParser, PythonParser, SimpleLineParser
+from smak.embedding import EmbeddingProbe, InternalNomicEmbedding
+from smak.ingest.parsers import get_parser_for_path
 from smak.ingest.pipeline import IngestPipeline
 from smak.ingest.sidecar import SidecarManager
 
@@ -34,27 +28,6 @@ def _load_text_node_class():
 
     return TextNode
 
-
-def _load_vector_store(index_name: str, config: SmakConfig):
-    from smak.storage.faiss_adapter import load_faiss_store
-
-    provider = (config.storage.provider or "faiss").lower()
-    if provider != "faiss":
-        raise ValueError(f"Unsupported vector store provider: {provider}")
-    return load_faiss_store(
-        uri=config.storage.uri, collection_name=index_name, dim=config.embedding_dimensions
-    )
-
-
-def _parser_for_path(path: Path, *, root_path: Path | None = None) -> Parser:
-    suffix = path.suffix.lower()
-    if suffix == ".py":
-        return PythonParser(root_path=str(root_path) if root_path else None)
-    if suffix in {".pl", ".pm"}:
-        return PerlParser(root_path=str(root_path) if root_path else None)
-    if suffix in {".md", ".markdown"}:
-        return IssueParser()
-    return SimpleLineParser()
 
 
 def _sidecar_payload(path: Path) -> str | None:
@@ -101,18 +74,12 @@ def _unit_up_to_date(vector_store: object, unit_id: str, file_mtime: float) -> b
 
 
 class IngestService:
-    def __init__(
-        self,
-        config: SmakConfig,
-        vector_store_loader: Callable[[str, SmakConfig], object] | None = None,
-    ) -> None:
-        self.config = config
-        self._vector_store_loader = vector_store_loader or _load_vector_store
+    def __init__(self, vector_store: object) -> None:
+        self.vector_store = vector_store
 
     def ingest_folder(
         self,
         folder: Path,
-        index: str,
         *,
         max_workers: int = 4,
         workspace_root: Path | None = None,
@@ -121,10 +88,8 @@ class IngestService:
         embedder_loader: Callable[[], EmbeddingProbe] | None = None,
     ) -> IngestStats:
         embedder = (embedder_loader or InternalNomicEmbedding)()
-        config = initialize_embedding_dimensions(self.config, embedder)
-        vector_store = self._vector_store_loader(index, config)
-        validate_vector_store_dimension(vector_store, config.embedding_dimensions)
         node_class = (node_class_loader or _load_text_node_class)()
+        vector_store = self.vector_store
         sidecar_manager = SidecarManager()
 
         paths = list(_iter_source_files(folder))
@@ -132,7 +97,7 @@ class IngestService:
         file_count = vector_count = skipped_count = 0
 
         def process(file_path: Path) -> tuple[int, bool]:
-            parser = _parser_for_path(file_path, root_path=workspace_root)
+            parser = get_parser_for_path(file_path, root_path=workspace_root)
             content = file_path.read_text(encoding="utf-8", errors="replace")
             parsed_units = parser.parse(content, source=str(file_path))
             source_mtime = _source_mtime(file_path)

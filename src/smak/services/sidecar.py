@@ -4,21 +4,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from smak.ingest.parsers import IssueParser, Parser, PerlParser, PythonParser, SimpleLineParser
+from smak.ingest.parsers import get_parser_for_path
 from smak.utils.yaml import safe_dump, safe_load
 
 SIDECAR_SUFFIX = ".sidecar.yaml"
 
-
-def _parser_for_path(path: Path, *, root_path: Path | None = None) -> Parser:
-    suffix = path.suffix.lower()
-    if suffix == ".py":
-        return PythonParser(root_path=str(root_path) if root_path else None)
-    if suffix in {".pl", ".pm"}:
-        return PerlParser(root_path=str(root_path) if root_path else None)
-    if suffix in {".md", ".markdown"}:
-        return IssueParser()
-    return SimpleLineParser()
 
 
 def _iter_source_files(folder: Path):
@@ -29,7 +19,7 @@ def _iter_source_files(folder: Path):
 
 class SidecarService:
     def inspect(self, path: Path, *, workspace_root: Path | None = None) -> list[str]:
-        parser = _parser_for_path(path, root_path=workspace_root)
+        parser = get_parser_for_path(path, root_path=workspace_root)
         content = path.read_text(encoding="utf-8", errors="replace")
         return [unit.uid for unit in parser.parse(content, source=str(path))]
 
@@ -46,7 +36,7 @@ class SidecarService:
             output.write_text(payload, encoding="utf-8")
             return output
 
-        parser = _parser_for_path(target_path, root_path=workspace_root)
+        parser = get_parser_for_path(target_path, root_path=workspace_root)
         units = parser.parse(
             target_path.read_text(encoding="utf-8", errors="replace"), source=str(target_path)
         )
