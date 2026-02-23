@@ -118,6 +118,22 @@ class TestFaissAdapter(unittest.TestCase):
         self.assertIsNotNone(fetched)
         self.assertEqual(fetched["uid"], "unit-1")
 
+
+    def test_store_accepts_vector_documents(self) -> None:
+        store = FaissVectorStore(uri="memory", collection_name="code", dim=3)
+        doc = FakeVectorDocument(
+            uid="unit-2",
+            vector=[0.3, 0.2, 0.1],
+            payload={"content": "doc payload", "metadata": {"source": "src/a.py"}},
+        )
+
+        store.add([doc])
+
+        fetched = store.get_by_id("unit-2")
+        self.assertIsNotNone(fetched)
+        self.assertEqual(fetched["content"], "doc payload")
+        self.assertEqual(fetched["metadata"]["source"], "src/a.py")
+
     def test_search_index_uses_embedder(self) -> None:
         store = FaissVectorStore(uri="memory", collection_name="docs", dim=3)
         store.add(

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from smak.core.domain import KnowledgeUnit
+from smak.db.adapter import VectorDocument
 from smak.embedding import EmbeddingProbe, InternalNomicEmbedding
 from smak.ingest.parsers import Parser
 from smak.ingest.sidecar import IntegrityError, SidecarManager
@@ -67,6 +69,35 @@ class IngestPipeline:
         if hasattr(embedder, "get_text_embedding_batch"):
             return embedder.get_text_embedding_batch(list(texts))
         raise AttributeError("Embedder does not support embedding documents.")
+
+    def to_vector_documents(
+        self,
+        result: IngestResult,
+        *,
+        source: str,
+        source_mtime: float,
+    ) -> list[VectorDocument]:
+        """Convert ingest result into vector documents for storage write."""
+        updated_at = datetime.now(timezone.utc).isoformat()
+        docs: list[VectorDocument] = []
+        for unit, vector in zip(result.units, result.embeddings):
+            docs.append(
+                VectorDocument(
+                    uid=unit.uid,
+                    vector=vector,
+                    payload={
+                        "content": unit.content,
+                        "metadata": {
+                            "relations": list(unit.relations),
+                            "meta": unit.metadata,
+                            "source": source,
+                            "source_mtime": source_mtime,
+                            "updated_at": updated_at,
+                        },
+                    },
+                )
+            )
+        return docs
 
 
 __all__ = ["Embedder", "IngestPipeline", "IngestResult", "IntegrityError"]

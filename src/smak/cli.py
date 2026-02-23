@@ -5,18 +5,16 @@ from __future__ import annotations
 import json
 import os
 import sys
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
 import click
-from llama_index.core.schema import TextNode
 from tqdm import tqdm
 
 from smak.config import SmakConfig, load_config
+from smak.db.adapter import VectorDocument
 from smak.embedding import (
     EmbeddingProbe,
     InternalNomicEmbedding,
@@ -39,10 +37,6 @@ class IngestStats:
     files: int
     vectors: int
     skipped: int
-
-
-def _load_text_node_class():
-    return TextNode
 
 
 def _load_vector_store(index_name: str, config: SmakConfig):
@@ -179,13 +173,12 @@ def _ingest_folder(
     workspace_root: Path | None = None,
     incremental: bool = True,
 ) -> IngestStats:
+    _ = node_class_loader
     embedder_factory = embedder_loader or InternalNomicEmbedding
     embedder = embedder_factory()
     config = initialize_embedding_dimensions(config, embedder)
     vector_store_factory = vector_store_loader or _load_vector_store
-    node_factory = node_class_loader or _load_text_node_class
     vector_store = vector_store_factory(index, config)
-    node_class = node_factory()
     validate_vector_store_dimension(vector_store, config.embedding_dimensions)
     sidecar_manager = SidecarManager()
 
@@ -194,16 +187,14 @@ def _ingest_folder(
     vector_count = 0
     skipped_count = 0
 
-    lock = threading.Lock()
-
-    def process_file(file_path: Path) -> tuple[int, bool]:
+    def process_file(file_path: Path) -> tuple[list[VectorDocument], str | None, bool]:
         parser = _parser_for_path(file_path, root_path=workspace_root)
         content = file_path.read_text(encoding="utf-8", errors="replace")
         parsed_units = parser.parse(content, source=str(file_path))
         source_mtime = _source_mtime(file_path)
         if incremental and parsed_units:
             if _unit_up_to_date(vector_store, parsed_units[0].uid, source_mtime):
-                return 0, True
+                return [], None, True
 
         pipeline = IngestPipeline(parser=parser, embedder=embedder, sidecar_manager=sidecar_manager)
         sidecar = _sidecar_payload(file_path)
@@ -213,27 +204,13 @@ def _ingest_folder(
             sidecar_payload=sidecar,
             compute_embeddings=True,
         )
-        nodes = []
-        for unit, vector in zip(result.units, result.embeddings):
-            node = node_class(
-                text=unit.content,
-                id_=unit.uid,
-                metadata={
-                    "relations": list(unit.relations),
-                    "meta": unit.metadata,
-                    "source": _source_key(file_path, workspace_root),
-                    "source_mtime": source_mtime,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                },
-            )
-            node.embedding = vector
-            nodes.append(node)
-        with lock:
-            if hasattr(vector_store, "delete_by_metadata"):
-                vector_store.delete_by_metadata("source", _source_key(file_path, workspace_root))
-            if nodes:
-                vector_store.add(nodes)
-        return len(result.units), False
+        source_key = _source_key(file_path, workspace_root)
+        docs = pipeline.to_vector_documents(
+            result,
+            source=source_key,
+            source_mtime=source_mtime,
+        )
+        return docs, source_key, False
 
     max_workers = max(1, min(max_workers, os.cpu_count() or max_workers))
     progress = tqdm(
@@ -241,17 +218,29 @@ def _ingest_folder(
         disable=not show_progress or not sys.stderr.isatty(),
         desc="Ingesting",
     )
+    pending_docs: list[VectorDocument] = []
+    refreshed_sources: set[str] = set()
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(process_file, path) for path in paths]
         for future in as_completed(futures):
-            units_count, skipped = future.result()
+            docs, source_key, skipped = future.result()
             if skipped:
                 skipped_count += 1
             else:
                 file_count += 1
-            vector_count += units_count
+                if source_key:
+                    refreshed_sources.add(source_key)
+                pending_docs.extend(docs)
+                vector_count += len(docs)
             progress.update(1)
     progress.close()
+
+    if hasattr(vector_store, "delete_by_metadata"):
+        for source_key in sorted(refreshed_sources):
+            vector_store.delete_by_metadata("source", source_key)
+    if pending_docs:
+        vector_store.add(pending_docs)
+
     return IngestStats(files=file_count, vectors=vector_count, skipped=skipped_count)
 
 

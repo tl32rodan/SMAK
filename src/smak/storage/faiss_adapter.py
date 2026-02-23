@@ -26,6 +26,9 @@ def _node_text(node: Any) -> str | None:
     value = _node_value(node, "text")
     if value:
         return value
+    payload = _node_value(node, "payload")
+    if isinstance(payload, dict) and isinstance(payload.get("content"), str):
+        return payload["content"]
     getter = getattr(node, "get_text", None)
     if callable(getter):
         return getter()
@@ -33,14 +36,22 @@ def _node_text(node: Any) -> str | None:
 
 
 def _node_id(node: Any) -> str | None:
+    uid = _node_value(node, "uid")
+    if isinstance(uid, str):
+        return uid
     return _node_value(node, "id_", "node_id")
 
 
 def _node_metadata(node: Any) -> dict[str, Any]:
-    metadata = _node_value(node, "metadata") or {}
+    metadata = _node_value(node, "metadata")
     if isinstance(metadata, dict):
         return metadata
-    return {"metadata": metadata}
+    payload = _node_value(node, "payload")
+    if isinstance(payload, dict):
+        payload_metadata = payload.get("metadata")
+        if isinstance(payload_metadata, dict):
+            return payload_metadata
+    return {"metadata": metadata} if metadata is not None else {}
 
 
 @dataclass
@@ -61,7 +72,7 @@ class FaissVectorStore:
         docs = []
         for node in nodes:
             uid = _node_id(node)
-            vector = _node_value(node, "embedding")
+            vector = _node_value(node, "embedding") or _node_value(node, "vector")
             if uid is None or vector is None:
                 continue
             docs.append(

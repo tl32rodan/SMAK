@@ -4,6 +4,7 @@ import importlib
 import json
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -115,9 +116,32 @@ class FakeVectorStore:
 
     def get_by_id(self, uid: str) -> dict | None:
         for node in self._saved:
-            if node.id_ == uid:
-                return {"uid": uid, "metadata": node.metadata}
+            node_id = getattr(node, "id_", getattr(node, "uid", None))
+            if node_id != uid:
+                continue
+            metadata = getattr(node, "metadata", None)
+            if metadata is None and isinstance(getattr(node, "payload", None), dict):
+                metadata = node.payload.get("metadata")
+            return {"uid": uid, "metadata": metadata}
         return None
+
+
+
+
+class ThreadAwareVectorStore(FakeVectorStore):
+    def __init__(self, saved: list, index_name: str, main_thread_id: int) -> None:
+        super().__init__(saved, index_name)
+        self.main_thread_id = main_thread_id
+        self.add_thread_ids: list[int] = []
+        self.delete_thread_ids: list[int] = []
+
+    def add(self, nodes: list) -> None:
+        self.add_thread_ids.append(threading.get_ident())
+        super().add(nodes)
+
+    def delete_by_metadata(self, key: str, value: str) -> None:
+        self.delete_thread_ids.append(threading.get_ident())
+        super().delete_by_metadata(key, value)
 
 
 class TestCli(unittest.TestCase):
@@ -157,7 +181,7 @@ class TestCli(unittest.TestCase):
             self.assertEqual(stats.files, 1)
             self.assertEqual(stats.vectors, 1)
             self.assertEqual(stats.skipped, 0)
-            self.assertIn("source_mtime", saved[0].metadata)
+            self.assertIn("source_mtime", saved[0].payload["metadata"])
 
     def test_ingest_folder_skips_unchanged_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -191,6 +215,42 @@ class TestCli(unittest.TestCase):
 
             self.assertEqual(stats.files, 0)
             self.assertEqual(stats.skipped, 1)
+
+
+    def test_ingest_folder_writes_storage_on_main_thread(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            folder = Path(tmp_dir) / "src"
+            folder.mkdir()
+            source = folder / "example.py"
+            source.write_text("def foo():\n    return 1\n", encoding="utf-8")
+
+            saved: list = []
+            cli = _load_cli()
+            config = SmakConfig(storage=StorageConfig(uri="vault.db"))
+            main_thread_id = threading.get_ident()
+            store_holder: dict[str, ThreadAwareVectorStore] = {}
+
+            def load_store(index_name: str, cfg: SmakConfig) -> ThreadAwareVectorStore:
+                store = ThreadAwareVectorStore(saved, index_name, main_thread_id)
+                store_holder["store"] = store
+                return store
+
+            stats = cli._ingest_folder(
+                folder,
+                "code",
+                config,
+                vector_store_loader=load_store,
+                embedder_loader=self.DummyEmbedder,
+                incremental=False,
+            )
+
+            store = store_holder["store"]
+            self.assertEqual(stats.files, 1)
+            self.assertEqual(stats.vectors, 1)
+            self.assertTrue(store.add_thread_ids)
+            self.assertTrue(store.delete_thread_ids)
+            self.assertEqual(store.add_thread_ids, [main_thread_id])
+            self.assertEqual(store.delete_thread_ids, [main_thread_id])
 
     def test_search_json_output(self) -> None:
         runner = CliRunner()

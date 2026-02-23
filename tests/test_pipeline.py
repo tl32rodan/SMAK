@@ -152,6 +152,25 @@ class TestIngestPipeline(unittest.TestCase):
 
         self.assertEqual(result.embeddings, [[28.0, 1.0, 2.0]])
 
+
+    def test_to_vector_documents_builds_storage_payload(self) -> None:
+        pipeline = _load_pipeline().IngestPipeline(
+            parser=PythonParser(),
+            embedder=DummyEmbedder(),
+            sidecar_manager=SidecarManager(),
+        )
+
+        result = pipeline.run("def login():\n    return True\n", compute_embeddings=True)
+        docs = pipeline.to_vector_documents(result, source="src/example.py", source_mtime=123.0)
+
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0].uid, result.units[0].uid)
+        self.assertEqual(list(docs[0].vector), [28.0, 1.0, 2.0])
+        self.assertEqual(docs[0].payload["content"], result.units[0].content)
+        self.assertEqual(docs[0].payload["metadata"]["source"], "src/example.py")
+        self.assertEqual(docs[0].payload["metadata"]["source_mtime"], 123.0)
+        self.assertIn("updated_at", docs[0].payload["metadata"])
+
     def test_ingest_pipeline_skips_embedding_on_sidecar_integrity_error(self) -> None:
         embedder = SimpleNamespace(embed_documents=unittest.mock.Mock())
         embedder.embed_documents.side_effect = AssertionError("Embedding should not run")
