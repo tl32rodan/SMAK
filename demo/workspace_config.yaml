@@ -7,3 +7,9 @@ indices:
   - name: source_code
     description: Demo source code index
     uri: ./smak_data/source_code
+  - name: issues
+    description: Demo issues index
+    uri: ./smak_data/issues
+  - name: documentation
+    description: Demo documentation index
+    uri: ./smak_data/documentation
