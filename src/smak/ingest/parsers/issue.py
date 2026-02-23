@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Sequence
 
 from smak.core.domain import KnowledgeUnit
@@ -20,8 +22,9 @@ class IssueParser:
             metadata = {}
         if not isinstance(metadata, dict):
             metadata = {"value": metadata}
-        issue_id = metadata.get("id") or metadata.get("title") or source or "issue"
-        uid = f"issue:{issue_id}"
+
+        uid = _resolve_uid(metadata, body, source)
+
         relations = metadata.get("relations", [])
         if isinstance(relations, str):
             relations = [relations]
@@ -32,10 +35,36 @@ class IssueParser:
                 uid=uid,
                 content=body.strip() or (content or "").strip(),
                 source_type="issue",
-                relations=tuple(relations),
+                relations=tuple(str(item) for item in relations),
                 metadata={"source": source, **metadata},
             )
         ]
+
+
+def _resolve_uid(metadata: dict[str, object], body: str, source: str | None) -> str:
+    symbol = metadata.get("symbol")
+    if isinstance(symbol, str) and symbol.strip():
+        return symbol.strip()
+
+    header = _first_header(body)
+    if header:
+        return _slugify(header)
+
+    if source:
+        return _slugify(Path(source).stem)
+    return "issue"
+
+
+def _first_header(body: str) -> str | None:
+    for line in body.splitlines():
+        if line.startswith("#"):
+            return line.lstrip("#").strip()
+    return None
+
+
+def _slugify(value: str) -> str:
+    normalized = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
+    return normalized or "issue"
 
 
 def _split_frontmatter(content: str) -> tuple[str, str]:

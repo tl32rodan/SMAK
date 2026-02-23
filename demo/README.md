@@ -2,17 +2,9 @@
 
 This folder demonstrates a minimal end-to-end CLI flow for the passive SMAK kernel using a CSV editor sample.
 
-## Included structure
-- `src/` source code folder
-  - `csv_editor.py` demo code
-  - `tests/test_csv_editor.py` behavioral unit tests
-- `issues/` issue notes and known limitations
-- `documentation/` usage notes
-- `workspace_config.yaml` sample config
-
 ## Run step by step
 
-### 1) Ingest all three folders first
+### 1) Ingest folders
 ```bash
 cd demo
 smak ingest --folder ./src --index source_code --config workspace_config.yaml --workers 1
@@ -20,14 +12,14 @@ smak ingest --folder ./issues --index issues --config workspace_config.yaml --wo
 smak ingest --folder ./documentation --index documentation --config workspace_config.yaml --workers 1
 ```
 
-### 2) Fetch symbols from several file paths
+### 2) Inspect canonical symbols
 ```bash
-smak search ./src/csv_editor.py --config workspace_config.yaml
-smak search ./src/tests/test_csv_editor.py --config workspace_config.yaml
-smak search ./documentation/csv-editor-usage.md --config workspace_config.yaml
+smak sidecar inspect ./src/csv_editor.py --config workspace_config.yaml
+smak sidecar inspect ./src/tests/test_csv_editor.py --config workspace_config.yaml
+smak sidecar inspect ./documentation/csv-editor-usage.md --config workspace_config.yaml
 ```
 
-### 3) Create sidecar and add content
+### 3) Create sidecar and add relations
 ```bash
 smak sidecar init ./src/csv_editor.py --config workspace_config.yaml
 cat > ./src/csv_editor.py.sidecar.yaml <<'YAML'
@@ -35,20 +27,23 @@ symbols:
   - name: CsvEditor
     intent: "Manage CSV rows for lightweight fixture editing"
     relations:
-      - ISSUE-001
+      - csv-editor-known-issues
   - name: CsvEditor.update_cell
     intent: "Update one cell by row/column index"
     relations:
-      - ISSUE-002
+      - csv-editor-known-issues
 YAML
 ```
 
-### 4) Run doctor
+### 4) Re-ingest and query mesh context
 ```bash
-smak doctor --path .
+smak ingest --folder ./src --index source_code --config workspace_config.yaml --workers 1
+smak query "why update_cell fails" --index source_code --config workspace_config.yaml
 ```
 
-## Expected artifacts
-- `src/csv_editor.py.sidecar.yaml` created and enriched
-- doctor returns `Mesh diagnostics passed.`
-- ingest reports processed files and vectors added
+You should see semantic hits from `csv_editor.py` and `related_context` entries that include `csv-editor-known-issues.md` content due to 1-hop relation traversal.
+
+### 5) Run doctor
+```bash
+smak doctor --path . --index source_code --config workspace_config.yaml
+```

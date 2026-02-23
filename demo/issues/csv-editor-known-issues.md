@@ -1,3 +1,7 @@
+---
+symbol: csv-editor-known-issues
+---
+
 # CSV Editor Demo Issues
 
 - ISSUE-001: `update_cell` raises `IndexError` if row or column is out of range.
