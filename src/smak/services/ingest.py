@@ -30,11 +30,19 @@ def _load_text_node_class():
 
 
 
+def _read_text_with_fallback(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return path.read_text(encoding="utf-8", errors="replace")
+
+
+
 def _sidecar_payload(path: Path) -> str | None:
     for suffix in SIDECAR_SUFFIXES:
         candidate = path.with_name(f"{path.name}{suffix}")
         if candidate.exists():
-            return candidate.read_text(encoding="utf-8")
+            return _read_text_with_fallback(candidate)
     return None
 
 
@@ -98,7 +106,7 @@ class IngestService:
 
         def process(file_path: Path) -> tuple[int, bool]:
             parser = get_parser_for_path(file_path, root_path=workspace_root)
-            content = file_path.read_text(encoding="utf-8", errors="replace")
+            content = _read_text_with_fallback(file_path)
             parsed_units = parser.parse(content, source=str(file_path))
             source_mtime = _source_mtime(file_path)
             if (

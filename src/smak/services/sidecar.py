@@ -11,6 +11,14 @@ SIDECAR_SUFFIX = ".sidecar.yaml"
 
 
 
+def _read_text_with_fallback(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return path.read_text(encoding="utf-8", errors="replace")
+
+
+
 def _iter_source_files(folder: Path):
     for path in folder.rglob("*"):
         if path.is_file() and not path.name.endswith((".sidecar.yaml", ".sidecar.yml")):
@@ -20,7 +28,7 @@ def _iter_source_files(folder: Path):
 class SidecarService:
     def inspect(self, path: Path, *, workspace_root: Path | None = None) -> list[str]:
         parser = get_parser_for_path(path, root_path=workspace_root)
-        content = path.read_text(encoding="utf-8", errors="replace")
+        content = _read_text_with_fallback(path)
         return [unit.uid for unit in parser.parse(content, source=str(path))]
 
     def init(self, target_path: Path, *, workspace_root: Path | None = None) -> Path:
@@ -38,7 +46,7 @@ class SidecarService:
 
         parser = get_parser_for_path(target_path, root_path=workspace_root)
         units = parser.parse(
-            target_path.read_text(encoding="utf-8", errors="replace"), source=str(target_path)
+            _read_text_with_fallback(target_path), source=str(target_path)
         )
         lines = ["symbols:"]
         for unit in units:
@@ -89,7 +97,7 @@ class SidecarService:
 
     def _merge_updates(self, sidecar_path: Path, updates: list[dict[str, Any]]) -> int:
         payload = (
-            safe_load(sidecar_path.read_text(encoding="utf-8")) if sidecar_path.exists() else {}
+            safe_load(_read_text_with_fallback(sidecar_path)) if sidecar_path.exists() else {}
         )
         if not isinstance(payload, dict):
             payload = {}

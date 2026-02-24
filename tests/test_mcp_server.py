@@ -3,7 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from smak.mcp_server import SmakMcpServer, build_mcp_server
 
@@ -39,6 +39,18 @@ class TestMcpServer(unittest.TestCase):
                     action="update", file_path="src/a.py", updates=[{"symbol": "x"}]
                 )
             self.assertEqual(result["applied_updates"], 1)
+
+
+    def test_run_cli_forces_utf8_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            server = SmakMcpServer(workspace_root=Path(tmp_dir))
+            completed = MagicMock(returncode=0, stdout="ok", stderr="")
+            with patch("smak.mcp_server.subprocess.run", return_value=completed) as run_mock:
+                output = server._run_cli(["query", "hello"])
+            self.assertEqual(output, "ok")
+            kwargs = run_mock.call_args.kwargs
+            self.assertEqual(kwargs["encoding"], "utf-8")
+            self.assertEqual(kwargs["env"]["PYTHONIOENCODING"], "utf-8")
 
     def test_build_mcp_server_returns_sdk_server(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

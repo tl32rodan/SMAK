@@ -1,14 +1,42 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
+from smak.config import SmakConfig
 from smak.embedding import InternalNomicEmbedding
 
 
 class QueryService:
-    def __init__(self, vector_store: object, embedder: object | None = None) -> None:
+    def __init__(
+        self,
+        vector_store: object,
+        config: SmakConfig,
+        vector_store_loader: Callable[[str, str, SmakConfig], object],
+        embedder: object | None = None,
+    ) -> None:
         self.vector_store = vector_store
+        self.config = config
+        self.vector_store_loader = vector_store_loader
         self.embedder = embedder or InternalNomicEmbedding()
+        self._vector_store_cache: dict[str, object] = {}
+
+    def _get_payload_globally(self, uid: str) -> dict[str, Any] | None:
+        payload = self.vector_store.get_by_id(uid)
+        if isinstance(payload, dict):
+            return payload
+
+        for index in self.config.indices:
+            if index.name in self._vector_store_cache:
+                store = self._vector_store_cache[index.name]
+            else:
+                index_uri = index.uri or f"./smak_data/{index.name}"
+                store = self.vector_store_loader(index.name, index_uri, self.config)
+                self._vector_store_cache[index.name] = store
+            payload = store.get_by_id(uid)
+            if isinstance(payload, dict):
+                return payload
+        return None
 
     def search(self, text: str, top_k: int = 5) -> dict[str, list[dict[str, Any]]]:
         query_vector = self.embedder.get_text_embedding(text)
@@ -41,7 +69,7 @@ class QueryService:
                 if not target_uid or target_uid in seen_related:
                     continue
                 seen_related.add(target_uid)
-                related_payload = self.vector_store.get_by_id(target_uid)
+                related_payload = self._get_payload_globally(target_uid)
                 if not isinstance(related_payload, dict):
                     continue
                 related_context.append(

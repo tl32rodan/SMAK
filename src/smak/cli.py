@@ -125,8 +125,12 @@ def init(config_path: str, force: bool) -> None:
 @click.option("--top-k", default=5, show_default=True, type=int, help="Result count")
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 def query_command(text: str, index: str, top_k: int, config: str) -> None:
-    _, vector_store = _load_vector_store_for_cli(index, config)
-    service = QueryService(vector_store=vector_store)
+    cfg, vector_store = _load_vector_store_for_cli(index, config)
+    service = QueryService(
+        vector_store=vector_store,
+        config=cfg,
+        vector_store_loader=_load_vector_store,
+    )
     click.echo(json.dumps(service.search(text, top_k=top_k), ensure_ascii=False))
 
 

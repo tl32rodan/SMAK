@@ -12,6 +12,8 @@ from unittest.mock import patch
 import click
 from click.testing import CliRunner
 
+from smak.config import IndexConfig, SmakConfig
+
 
 def _install_fake_dependencies() -> None:
     fake_requests = ModuleType("requests")
@@ -167,7 +169,12 @@ class TestCli(unittest.TestCase):
         with (
             patch(
                 "smak.cli._load_vector_store_for_cli",
-                new=lambda index, config: (object(), QueryStore()),
+                new=lambda index, config: (
+                    SmakConfig(
+                        indices=[IndexConfig(name="source_code", description="source")]
+                    ),
+                    QueryStore(),
+                ),
             ),
             patch(
                 "smak.services.query.InternalNomicEmbedding",
