@@ -5,7 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
+from smak.config import IndexConfig, SmakConfig
 from smak.services.doctor import DoctorService
 from smak.services.ingest import IngestService
 from smak.services.query import QueryService
@@ -72,9 +74,77 @@ class TestServices(unittest.TestCase):
             ],
             get_by_id=lambda uid: {"uid": uid, "content": "Issue body"},
         )
-        payload = QueryService(store, embedder=self.DummyEmbedder()).search("query", top_k=1)
+        config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
+        payload = QueryService(
+            store,
+            config=config,
+            vector_store_loader=lambda name, uri, cfg: store,
+            embedder=self.DummyEmbedder(),
+        ).search("query", top_k=1)
         self.assertEqual(payload["hits"][0]["match_type"], "semantic")
         self.assertEqual(payload["related_context"][0]["source_hit"], "func_A")
+        self.assertEqual(payload["hits"][0]["content"], "A")
+
+    def test_query_service_resolves_relations_across_indices_without_extra_search(self) -> None:
+        class PrimaryStore:
+            def __init__(self) -> None:
+                self.search_calls = 0
+                self.get_by_id_calls: list[str] = []
+
+            def search(self, vector: list[float], top_k: int = 5) -> list[dict]:
+                self.search_calls += 1
+                return [
+                    {
+                        "uid": "func_A",
+                        "score": 0.95,
+                        "content": "def A(): pass",
+                        "metadata": {"relations": ["issue:42"]},
+                    }
+                ]
+
+            def get_by_id(self, uid: str) -> dict | None:
+                self.get_by_id_calls.append(uid)
+                return None
+
+        class SecondaryStore:
+            def __init__(self) -> None:
+                self.get_by_id_calls: list[str] = []
+
+            def get_by_id(self, uid: str) -> dict | None:
+                self.get_by_id_calls.append(uid)
+                if uid == "issue:42":
+                    return {"uid": uid, "content": "Fix login bug"}
+                return None
+
+        primary = PrimaryStore()
+        secondary = SecondaryStore()
+        loader_calls: list[str] = []
+
+        def loader(name: str, uri: str, config: SmakConfig) -> object:
+            loader_calls.append(name)
+            if name == "issues":
+                return secondary
+            return primary
+
+        config = SmakConfig(
+            indices=[
+                IndexConfig(name="source_code", description="source"),
+                IndexConfig(name="issues", description="issues"),
+            ]
+        )
+
+        payload = QueryService(
+            primary,
+            config=config,
+            vector_store_loader=loader,
+            embedder=self.DummyEmbedder(),
+        ).search("query", top_k=1)
+
+        self.assertEqual(primary.search_calls, 1)
+        self.assertEqual(loader_calls, ["source_code", "issues"])
+        self.assertEqual(payload["hits"][0]["content"], "def A(): pass")
+        self.assertEqual(payload["related_context"][0]["content"], "Fix login bug")
+        self.assertEqual(payload["related_context"][0]["match_type"], "relation")
 
     def test_sidecar_service_update(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -85,6 +155,37 @@ class TestServices(unittest.TestCase):
                 source, json.dumps([{"symbol": "main.py::hello", "relations": ["issue-1"]}])
             )
             self.assertEqual(result["applied_updates"], 1)
+
+
+    def test_ingest_read_text_fallback_replaces_invalid_bytes(self) -> None:
+        from smak.services import ingest as ingest_module
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "bad.py"
+            path.write_bytes(b"ok\x80")
+            self.assertEqual(ingest_module._read_text_with_fallback(path), "ok�")
+
+    def test_sidecar_read_text_fallback_replaces_invalid_bytes(self) -> None:
+        from smak.services import sidecar as sidecar_module
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "bad.py"
+            path.write_bytes(b"ok\x80")
+            self.assertEqual(sidecar_module._read_text_with_fallback(path), "ok�")
+
+
+    def test_ingest_read_text_fallback_handles_unicode_decode_error(self) -> None:
+        from smak.services import ingest as ingest_module
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "any.py"
+            path.write_text("ok", encoding="utf-8")
+            with patch.object(
+                Path,
+                "read_text",
+                side_effect=[UnicodeDecodeError("utf-8", b"", 0, 1, "boom"), "ok"],
+            ):
+                self.assertEqual(ingest_module._read_text_with_fallback(path), "ok")
 
     def test_doctor_service_detects_dangling_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

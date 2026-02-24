@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,8 @@ class SmakMcpServer:
             [self.smak_binary, *args],
             cwd=self.workspace_root,
             text=True,
+            encoding="utf-8",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
             capture_output=True,
             check=False,
         )
