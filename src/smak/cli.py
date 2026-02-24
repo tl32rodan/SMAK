@@ -19,14 +19,13 @@ from smak.services import DoctorService, IngestService, QueryService, SidecarSer
 DEFAULT_MAX_WORKERS = 4
 
 
-def _load_vector_store(index_name: str, config: SmakConfig):
+def _load_vector_store(index_name: str, index_uri: str, config: SmakConfig):
     from smak.storage.faiss_adapter import load_faiss_store
 
-    provider = (config.storage.provider or "faiss").lower()
-    if provider != "faiss":
-        raise click.ClickException(f"Unsupported vector store provider: {provider}")
     return load_faiss_store(
-        uri=config.storage.uri, collection_name=index_name, dim=config.embedding_dimensions
+        uri=index_uri,
+        collection_name=index_name,
+        dim=config.embedding_dimensions,
     )
 
 
@@ -34,10 +33,6 @@ def _default_config_template() -> str:
     return "\n".join(
         [
             "# SMAK Workspace Configuration",
-            "",
-            "storage:",
-            "  provider: faiss",
-            "  uri: ./smak_data",
             "",
             "llm:",
             "  provider: qwen",
@@ -49,6 +44,7 @@ def _default_config_template() -> str:
             "  - name: source_code",
             "    description: Contains the project's source code (Python, Perl), "
             "function definitions, and logic.",
+            "    uri: ./smak_data/source_code",
             "  - name: issues",
             "    description: Contains historical bug reports, GitHub issues, "
             "and Jira tickets describing known problems.",
@@ -69,9 +65,13 @@ def _load_workspace_root(config_path: str) -> Path | None:
 
 def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig, object]:
     cfg = load_config(config_path)
+    index_config = next((entry for entry in cfg.indices if entry.name == index), None)
+    if index_config is None:
+        raise click.ClickException(f"Index '{index}' not found in configuration.")
     embedder = InternalNomicEmbedding()
     cfg = initialize_embedding_dimensions(cfg, embedder)
-    vector_store = _load_vector_store(index, cfg)
+    index_uri = index_config.uri or f"./smak_data/{index}"
+    vector_store = _load_vector_store(index, index_uri, cfg)
     validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
     return cfg, vector_store
 
@@ -90,13 +90,12 @@ def main() -> None:
 def ingest(folder: Path, index: str, config: str, workers: int, incremental: bool) -> None:
     if not folder.exists() or not folder.is_dir():
         raise click.ClickException(f"Folder not found: {folder}")
-    cfg = load_config(config)
-    service = IngestService(config=cfg)
+    _, vector_store = _load_vector_store_for_cli(index, config)
+    service = IngestService(vector_store=vector_store)
     click.echo(f"Starting ingestion for '{folder}' -> Index: '{index}'...")
     try:
         stats = service.ingest_folder(
             folder,
-            index,
             max_workers=workers,
             workspace_root=_load_workspace_root(config),
             incremental=incremental,
@@ -182,10 +181,9 @@ def sidecar_update(file_path: Path, updates: str, reingest: bool, index: str, co
         raise click.ClickException(str(exc)) from exc
     click.echo(json.dumps(result, ensure_ascii=False))
     if reingest:
-        cfg = load_config(config)
-        IngestService(cfg).ingest_folder(
+        _, vector_store = _load_vector_store_for_cli(index, config)
+        IngestService(vector_store=vector_store).ingest_folder(
             file_path.parent,
-            index,
             max_workers=1,
             workspace_root=_load_workspace_root(config),
             incremental=True,
