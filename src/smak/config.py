@@ -19,21 +19,10 @@ class IndexConfig:
 
 
 @dataclass(frozen=True)
-class LLMConfig:
-    """Configuration for LLM providers."""
-
-    provider: str = "openai"
-    model: str | None = None
-    temperature: float = 0.0
-    api_base: str | None = None
-
-
-@dataclass(frozen=True)
 class SmakConfig:
     """Typed configuration container."""
 
     indices: list[IndexConfig] = field(default_factory=list)
-    llm: LLMConfig = field(default_factory=LLMConfig)
     embedding_dimensions: int | None = None
 
 
@@ -62,17 +51,9 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
                         ),
                     )
                 )
-    llm_data = data.get("llm", {}) if isinstance(data, Mapping) else {}
-    llm = LLMConfig(
-        provider=str(llm_data.get("provider", "openai")),
-        model=llm_data.get("model"),
-        temperature=float(llm_data.get("temperature", 0.0)),
-        api_base=llm_data.get("api_base"),
-    )
     return SmakConfig(
         indices=indices,
-        llm=llm,
     )
 
 
-__all__ = ["IndexConfig", "LLMConfig", "SmakConfig", "load_config"]
+__all__ = ["IndexConfig", "SmakConfig", "load_config"]
