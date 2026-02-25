@@ -152,9 +152,11 @@ class TestCli(unittest.TestCase):
 
     def test_query_command_outputs_structured_json(self) -> None:
         runner = CliRunner()
+        captured_top_k: list[int] = []
 
         class QueryStore(SimpleNamespace):
             def search(self, vector: list[float], top_k: int = 5) -> list[dict]:
+                captured_top_k.append(top_k)
                 return [
                     {
                         "uid": "func_A",
@@ -186,6 +188,7 @@ class TestCli(unittest.TestCase):
             result = runner.invoke(cli.main, ["query", "hello", "--index", "code"])
 
         self.assertEqual(result.exit_code, 0)
+        self.assertEqual(captured_top_k, [1])
         payload = json.loads(result.output)
         self.assertIn("hits", payload)
         self.assertIn("related_context", payload)

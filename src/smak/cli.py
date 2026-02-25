@@ -117,7 +117,7 @@ def init(config_path: str, force: bool) -> None:
 @main.command("query")
 @click.argument("text", type=str)
 @click.option("--index", required=True, help="Target index name")
-@click.option("--top-k", default=5, show_default=True, type=int, help="Result count")
+@click.option("--top-k", default=1, show_default=True, type=int, help="Result count")
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 def query_command(text: str, index: str, top_k: int, config: str) -> None:
     cfg, vector_store = _load_vector_store_for_cli(index, config)
