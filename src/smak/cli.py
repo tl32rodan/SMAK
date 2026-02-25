@@ -39,7 +39,7 @@ def _default_config_template() -> str:
             "  - name: source_code",
             "    description: Contains the project's source code (Python, Perl), "
             "function definitions, and logic.",
-            "    uri: ./smak_data/source_code",
+            "    uri: ./smak_data",
             "  - name: issues",
             "    description: Contains historical bug reports, GitHub issues, "
             "and Jira tickets describing known problems.",
@@ -65,7 +65,7 @@ def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig
         raise click.ClickException(f"Index '{index}' not found in configuration.")
     embedder = InternalNomicEmbedding()
     cfg = initialize_embedding_dimensions(cfg, embedder)
-    index_uri = index_config.uri or f"{DEFAULT_INDEX_DATA_DIR}/{index}"
+    index_uri = index_config.uri or DEFAULT_INDEX_DATA_DIR
     vector_store = _load_vector_store(index, index_uri, cfg)
     validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
     return cfg, vector_store
@@ -82,7 +82,19 @@ def main() -> None:
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 @click.option("--workers", default=DEFAULT_MAX_WORKERS, help="Max parallel workers")
 @click.option("--incremental/--full", default=True, help="Enable mtime-based incremental ingest")
-def ingest(folder: Path, index: str, config: str, workers: int, incremental: bool) -> None:
+@click.option(
+    "--follow-symlinks/--no-follow-symlinks",
+    default=True,
+    help="Follow symlinked directories during ingest",
+)
+def ingest(
+    folder: Path,
+    index: str,
+    config: str,
+    workers: int,
+    incremental: bool,
+    follow_symlinks: bool,
+) -> None:
     if not folder.exists() or not folder.is_dir():
         raise click.ClickException(f"Folder not found: {folder}")
     _, vector_store = _load_vector_store_for_cli(index, config)
@@ -94,6 +106,7 @@ def ingest(folder: Path, index: str, config: str, workers: int, incremental: boo
             max_workers=workers,
             workspace_root=_load_workspace_root(config),
             incremental=incremental,
+            follow_symlinks=follow_symlinks,
         )
     except IntegrityError as exc:
         raise click.ClickException(f"Sidecar integrity error: {exc}") from exc

@@ -180,7 +180,7 @@ class TestServices(unittest.TestCase):
             default_index_dir="./custom_data",
         ).search("query", top_k=1)
 
-        self.assertEqual(captured_uris, ["./custom_data/source_code", "./custom_data/issues"])
+        self.assertEqual(captured_uris, ["./custom_data", "./custom_data"])
         self.assertEqual(payload["related_context"][0]["content"], "Issue")
 
     def test_shared_sidecar_suffixes_work_across_yaml_extensions(self) -> None:
@@ -200,6 +200,34 @@ class TestServices(unittest.TestCase):
 
             self.assertEqual(issues, [])
             self.assertEqual(sidecar_files, ["a.py.sidecar.yaml", "b.py.sidecar.yml"])
+
+
+    def test_iter_source_files_can_toggle_symlink_following(self) -> None:
+        from smak.services import ingest as ingest_module
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            real_dir = root / "real"
+            real_dir.mkdir()
+            (real_dir / "linked.py").write_text("print('x')\n", encoding="utf-8")
+            link_dir = root / "link"
+            try:
+                link_dir.symlink_to(real_dir, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlink creation not supported in this environment")
+
+            without_follow = list(
+                ingest_module._iter_source_files(root, follow_symlinks=False)
+            )
+            with_follow = list(
+                ingest_module._iter_source_files(root, follow_symlinks=True)
+            )
+
+            without_paths = {str(path.relative_to(root)) for path in without_follow}
+            with_paths = {str(path.relative_to(root)) for path in with_follow}
+
+            self.assertNotIn("link/linked.py", without_paths)
+            self.assertIn("link/linked.py", with_paths)
 
     def test_sidecar_service_update(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

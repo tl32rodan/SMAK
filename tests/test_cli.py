@@ -82,7 +82,7 @@ class TestCli(unittest.TestCase):
     def test_default_config_template_includes_index_uri(self) -> None:
         cli = importlib.import_module("smak.cli")
         template = cli._default_config_template()
-        self.assertIn("uri: ./smak_data/source_code", template)
+        self.assertIn("uri: ./smak_data", template)
         self.assertNotIn("storage:", template)
         self.assertNotIn("llm:", template)
 
@@ -122,7 +122,55 @@ class TestCli(unittest.TestCase):
                 cli._load_vector_store_for_cli("docs", str(config_path))
 
             self.assertEqual(captured["index_name"], "docs")
-            self.assertEqual(captured["index_uri"], "./smak_data/docs")
+            self.assertEqual(captured["index_uri"], "./smak_data")
+
+
+    def test_ingest_command_forwards_follow_symlinks_option(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            folder = Path(tmp_dir) / "src"
+            folder.mkdir()
+            config_path = Path(tmp_dir) / "workspace.yaml"
+            config_path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: source\n",
+                encoding="utf-8",
+            )
+            captured: dict[str, object] = {}
+
+            class FakeIngestService:
+                def __init__(self, vector_store: object) -> None:
+                    self.vector_store = vector_store
+
+                def ingest_folder(self, *args: object, **kwargs: object) -> object:
+                    captured.update(kwargs)
+                    return SimpleNamespace(files=0, skipped=0, vectors=0)
+
+            with (
+                patch(
+                    "smak.cli._load_vector_store_for_cli",
+                    new=lambda index, config: (SmakConfig(), object()),
+                ),
+                patch("smak.cli.IngestService", new=FakeIngestService),
+            ):
+                cli = importlib.import_module("smak.cli")
+                result = runner.invoke(
+                    cli.main,
+                    [
+                        "ingest",
+                        "--folder",
+                        str(folder),
+                        "--index",
+                        "source_code",
+                        "--config",
+                        str(config_path),
+                        "--no-follow-symlinks",
+                    ],
+                )
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertEqual(captured.get("follow_symlinks"), False)
 
     def test_sidecar_inspect_json_output(self) -> None:
         runner = CliRunner()

@@ -45,10 +45,13 @@ def _sidecar_payload(path: Path) -> str | None:
     return None
 
 
-def _iter_source_files(folder: Path) -> Iterable[Path]:
-    for path in folder.rglob("*"):
-        if path.is_file() and not path.name.endswith(SIDECAR_SUFFIXES):
-            yield path
+def _iter_source_files(folder: Path, *, follow_symlinks: bool = True) -> Iterable[Path]:
+    for root, _, files in os.walk(folder, followlinks=follow_symlinks):
+        root_path = Path(root)
+        for filename in files:
+            path = root_path / filename
+            if not path.name.endswith(SIDECAR_SUFFIXES):
+                yield path
 
 
 def _source_key(path: Path, workspace_root: Path | None = None) -> str:
@@ -93,13 +96,14 @@ class IngestService:
         incremental: bool = True,
         node_class_loader: Callable[[], type] | None = None,
         embedder_loader: Callable[[], EmbeddingProbe] | None = None,
+        follow_symlinks: bool = True,
     ) -> IngestStats:
         embedder = (embedder_loader or InternalNomicEmbedding)()
         node_class = (node_class_loader or _load_text_node_class)()
         vector_store = self.vector_store
         sidecar_manager = SidecarManager()
 
-        paths = list(_iter_source_files(folder))
+        paths = list(_iter_source_files(folder, follow_symlinks=follow_symlinks))
         lock = threading.Lock()
         file_count = vector_count = skipped_count = 0
 

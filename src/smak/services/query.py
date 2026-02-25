@@ -32,7 +32,7 @@ class QueryService:
             if index.name in self._vector_store_cache:
                 store = self._vector_store_cache[index.name]
             else:
-                index_uri = index.uri or f"{self.default_index_dir}/{index.name}"
+                index_uri = index.uri or self.default_index_dir
                 store = self.vector_store_loader(index.name, index_uri, self.config)
                 self._vector_store_cache[index.name] = store
             payload = store.get_by_id(uid)
