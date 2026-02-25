@@ -78,7 +78,7 @@ class TestServices(unittest.TestCase):
         payload = QueryService(
             store,
             config=config,
-            vector_store_loader=lambda name, uri, cfg: store,
+            vector_store_loader=lambda index_config, cfg: store,
             embedder=self.DummyEmbedder(),
         ).search("query", top_k=1)
         self.assertEqual(payload["hits"][0]["match_type"], "semantic")
@@ -120,9 +120,9 @@ class TestServices(unittest.TestCase):
         secondary = SecondaryStore()
         loader_calls: list[str] = []
 
-        def loader(name: str, uri: str, config: SmakConfig) -> object:
-            loader_calls.append(name)
-            if name == "issues":
+        def loader(index_config: IndexConfig, config: SmakConfig) -> object:
+            loader_calls.append(index_config.name)
+            if index_config.name == "issues":
                 return secondary
             return primary
 
@@ -147,7 +147,7 @@ class TestServices(unittest.TestCase):
         self.assertEqual(payload["related_context"][0]["match_type"], "relation")
 
 
-    def test_query_service_uses_injected_default_index_dir_for_fallback_uri(self) -> None:
+    def test_query_service_uses_loader_with_index_config(self) -> None:
         class PrimaryStore:
             def search(self, vector: list[float], top_k: int = 5) -> list[dict]:
                 return [{"uid": "func_A", "content": "A", "metadata": {"relations": ["issue:42"]}}]
@@ -159,11 +159,11 @@ class TestServices(unittest.TestCase):
             def get_by_id(self, uid: str) -> dict | None:
                 return {"uid": uid, "content": "Issue"} if uid == "issue:42" else None
 
-        captured_uris: list[str] = []
+        loader_calls: list[str] = []
 
-        def loader(name: str, uri: str, config: SmakConfig) -> object:
-            captured_uris.append(uri)
-            return SecondaryStore() if name == "issues" else PrimaryStore()
+        def loader(index_config: IndexConfig, config: SmakConfig) -> object:
+            loader_calls.append(index_config.name)
+            return SecondaryStore() if index_config.name == "issues" else PrimaryStore()
 
         config = SmakConfig(
             indices=[
@@ -177,10 +177,9 @@ class TestServices(unittest.TestCase):
             config=config,
             vector_store_loader=loader,
             embedder=self.DummyEmbedder(),
-            default_index_dir="./custom_data",
         ).search("query", top_k=1)
 
-        self.assertEqual(captured_uris, ["./custom_data", "./custom_data"])
+        self.assertEqual(loader_calls, ["source_code", "issues"])
         self.assertEqual(payload["related_context"][0]["content"], "Issue")
 
     def test_shared_sidecar_suffixes_work_across_yaml_extensions(self) -> None:

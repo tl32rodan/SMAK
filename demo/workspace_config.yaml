@@ -1,7 +1,8 @@
 indices:
   - name: source_code
     description: Contains the project's source code (Python, Perl), function definitions, and logic.
-    uri: ./smak_data
+    # Customize uri if you want this index stored elsewhere.
+    uri: ./smak_data/source_code
   - name: issues
     description: Contains historical bug reports, GitHub issues, and Jira tickets describing known problems.
   - name: tests

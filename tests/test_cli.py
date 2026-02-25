@@ -82,7 +82,8 @@ class TestCli(unittest.TestCase):
     def test_default_config_template_includes_index_uri(self) -> None:
         cli = importlib.import_module("smak.cli")
         template = cli._default_config_template()
-        self.assertIn("uri: ./smak_data", template)
+        self.assertIn("uri: ./smak_data/source_code", template)
+        self.assertIn("Customize uri", template)
         self.assertNotIn("storage:", template)
         self.assertNotIn("llm:", template)
 
@@ -107,11 +108,11 @@ class TestCli(unittest.TestCase):
                 "indices:\n  - name: docs\n    description: docs index\n",
                 encoding="utf-8",
             )
-            captured: dict[str, str] = {}
+            captured: dict[str, object] = {}
 
-            def fake_loader(index_name: str, index_uri: str, config: object) -> object:
-                captured["index_name"] = index_name
-                captured["index_uri"] = index_uri
+            def fake_loader(index_config: object, config: object) -> object:
+                captured["index_name"] = index_config.name
+                captured["index_uri"] = cli._resolve_index_uri(index_config)
                 return SimpleNamespace(dimension=1)
 
             with (
@@ -122,7 +123,10 @@ class TestCli(unittest.TestCase):
                 cli._load_vector_store_for_cli("docs", str(config_path))
 
             self.assertEqual(captured["index_name"], "docs")
-            self.assertEqual(captured["index_uri"], "./smak_data")
+            self.assertEqual(
+                captured["index_uri"],
+                str((Path("./smak_data") / "docs").resolve()),
+            )
 
 
     def test_ingest_command_forwards_follow_symlinks_option(self) -> None:

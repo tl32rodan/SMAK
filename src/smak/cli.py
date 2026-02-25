@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from smak.config import SmakConfig, load_config
+from smak.config import IndexConfig, SmakConfig, load_config
 from smak.embedding import (
     InternalNomicEmbedding,
     initialize_embedding_dimensions,
@@ -20,12 +20,18 @@ DEFAULT_MAX_WORKERS = 4
 DEFAULT_INDEX_DATA_DIR = "./smak_data"
 
 
-def _load_vector_store(index_name: str, index_uri: str, config: SmakConfig):
+def _resolve_index_uri(index_config: IndexConfig) -> str:
+    if index_config.uri:
+        return str(Path(index_config.uri).expanduser().resolve())
+    return str((Path(DEFAULT_INDEX_DATA_DIR) / index_config.name).resolve())
+
+
+def _load_vector_store(index_config: IndexConfig, config: SmakConfig):
     from smak.storage.faiss_adapter import load_faiss_store
 
     return load_faiss_store(
-        uri=index_uri,
-        collection_name=index_name,
+        uri=_resolve_index_uri(index_config),
+        collection_name=index_config.name,
         dim=config.embedding_dimensions,
     )
 
@@ -39,7 +45,8 @@ def _default_config_template() -> str:
             "  - name: source_code",
             "    description: Contains the project's source code (Python, Perl), "
             "function definitions, and logic.",
-            "    uri: ./smak_data",
+            "    # Customize uri if you want this index stored elsewhere.",
+            "    uri: ./smak_data/source_code",
             "  - name: issues",
             "    description: Contains historical bug reports, GitHub issues, "
             "and Jira tickets describing known problems.",
@@ -65,8 +72,7 @@ def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig
         raise click.ClickException(f"Index '{index}' not found in configuration.")
     embedder = InternalNomicEmbedding()
     cfg = initialize_embedding_dimensions(cfg, embedder)
-    index_uri = index_config.uri or DEFAULT_INDEX_DATA_DIR
-    vector_store = _load_vector_store(index, index_uri, cfg)
+    vector_store = _load_vector_store(index_config, cfg)
     validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
     return cfg, vector_store
 
@@ -138,7 +144,6 @@ def query_command(text: str, index: str, top_k: int, config: str) -> None:
         vector_store=vector_store,
         config=cfg,
         vector_store_loader=_load_vector_store,
-        default_index_dir=DEFAULT_INDEX_DATA_DIR,
     )
     click.echo(json.dumps(service.search(text, top_k=top_k), ensure_ascii=False))
 

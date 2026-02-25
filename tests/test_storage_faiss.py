@@ -135,6 +135,23 @@ class TestFaissAdapter(unittest.TestCase):
         self.assertEqual(results[0]["uid"], "doc-1")
         self.assertEqual(index.get_by_id("doc-1")["uid"], "doc-1")
 
+    def test_store_uses_uri_as_final_engine_path(self) -> None:
+        from smak.storage import faiss_adapter as adapter_module
+
+        class CaptureEngine:
+            def __init__(self, path: str, dim: int) -> None:
+                self.path = path
+                self.dim = dim
+
+        original_engine = adapter_module.FaissEngine
+        adapter_module.FaissEngine = CaptureEngine
+        try:
+            store = FaissVectorStore(uri="memory/base", collection_name="code", dim=3)
+        finally:
+            adapter_module.FaissEngine = original_engine
+
+        self.assertEqual(store._engine.path, "memory/base")
+
     def test_load_faiss_store_creates_store(self) -> None:
         store = load_faiss_store(uri="memory", collection_name="code", dim=3)
 

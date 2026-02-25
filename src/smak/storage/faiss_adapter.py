@@ -53,7 +53,7 @@ class FaissVectorStore:
 
     def __post_init__(self) -> None:
         self._doc_cls = VectorDocument
-        full_path = Path(self.uri) / self.collection_name
+        full_path = Path(self.uri)
         logger.info("Initializing FaissEngine at %s", full_path)
         self._engine = FaissEngine(str(full_path), self.dim)
 
