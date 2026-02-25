@@ -108,7 +108,7 @@ class TestServices(unittest.TestCase):
         payload = QueryService(
             store,
             config=config,
-            vector_store_loader=lambda name, uri, cfg: store,
+            vector_store_loader=lambda index_cfg, cfg: store,
             embedder=self.DummyEmbedder(),
         ).search("query", top_k=1)
         self.assertEqual(payload["hits"][0]["match_type"], "semantic")
@@ -150,9 +150,9 @@ class TestServices(unittest.TestCase):
         secondary = SecondaryStore()
         loader_calls: list[str] = []
 
-        def loader(name: str, uri: str, config: SmakConfig) -> object:
-            loader_calls.append(name)
-            if name == "issues":
+        def loader(index_cfg: IndexConfig, config: SmakConfig) -> object:
+            loader_calls.append(index_cfg.name)
+            if index_cfg.name == "issues":
                 return secondary
             return primary
 

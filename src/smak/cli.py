@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from smak.config import SmakConfig, load_config
+from smak.config import IndexConfig, SmakConfig, load_config
 from smak.embedding import (
     InternalNomicEmbedding,
     initialize_embedding_dimensions,
@@ -19,12 +19,16 @@ from smak.services import DoctorService, IngestService, QueryService, SidecarSer
 DEFAULT_MAX_WORKERS = 4
 
 
-def _load_vector_store(index_name: str, index_uri: str, config: SmakConfig):
+def _load_vector_store(index_config: IndexConfig, config: SmakConfig):
     from smak.storage.faiss_adapter import load_faiss_store
 
+    if index_config.uri:
+        target_uri = Path(index_config.uri)
+    else:
+        target_uri = Path("./smak_data") / index_config.name
     return load_faiss_store(
-        uri=index_uri,
-        collection_name=index_name,
+        uri=str(target_uri.resolve()),
+        collection_name=index_config.name,
         dim=config.embedding_dimensions,
     )
 
@@ -44,7 +48,8 @@ def _default_config_template() -> str:
             "  - name: source_code",
             "    description: Contains the project's source code (Python, Perl), "
             "function definitions, and logic.",
-            "    uri: ./smak_data",
+            "    # Tip: customize uri per index to separate storage directories.",
+            "    uri: ./smak_data/source_code",
             "  - name: issues",
             "    description: Contains historical bug reports, GitHub issues, "
             "and Jira tickets describing known problems.",
@@ -70,8 +75,7 @@ def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig
         raise click.ClickException(f"Index '{index}' not found in configuration.")
     embedder = InternalNomicEmbedding()
     cfg = initialize_embedding_dimensions(cfg, embedder)
-    index_uri = index_config.uri or "./smak_data"
-    vector_store = _load_vector_store(index, index_uri, cfg)
+    vector_store = _load_vector_store(index_config, cfg)
     validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
     return cfg, vector_store
 
