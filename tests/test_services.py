@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from smak.config import IndexConfig, SmakConfig
+from smak.services import ingest as ingest_module
 from smak.services.doctor import DoctorService
 from smak.services.ingest import IngestService
 from smak.services.query import QueryService
@@ -61,6 +62,32 @@ class TestServices(unittest.TestCase):
             )
             self.assertEqual(stats.files, 1)
             self.assertGreaterEqual(stats.vectors, 1)
+
+    def test_iter_source_files_follows_symlink_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            src = root / "src"
+            linked = root / "linked"
+            src.mkdir()
+            linked.mkdir()
+            (linked / "through_link.py").write_text("print('ok')\n", encoding="utf-8")
+            (src / "linked").symlink_to(linked, target_is_directory=True)
+
+            files = list(ingest_module._iter_source_files(src))
+            self.assertIn(src / "linked" / "through_link.py", files)
+
+    def test_iter_source_files_can_disable_symlink_following(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            src = root / "src"
+            linked = root / "linked"
+            src.mkdir()
+            linked.mkdir()
+            (linked / "through_link.py").write_text("print('ok')\n", encoding="utf-8")
+            (src / "linked").symlink_to(linked, target_is_directory=True)
+
+            files = list(ingest_module._iter_source_files(src, follow_symlinks=False))
+            self.assertNotIn(src / "linked" / "through_link.py", files)
 
     def test_query_service_expands_one_hop_relations(self) -> None:
         store = SimpleNamespace(

@@ -82,7 +82,7 @@ class TestCli(unittest.TestCase):
     def test_default_config_template_includes_index_uri(self) -> None:
         cli = importlib.import_module("smak.cli")
         template = cli._default_config_template()
-        self.assertIn("uri: ./smak_data/source_code", template)
+        self.assertIn("uri: ./smak_data", template)
         self.assertNotIn("storage:", template)
 
     def test_load_vector_store_for_cli_raises_for_unknown_index(self) -> None:
@@ -121,7 +121,44 @@ class TestCli(unittest.TestCase):
                 cli._load_vector_store_for_cli("docs", str(config_path))
 
             self.assertEqual(captured["index_name"], "docs")
-            self.assertEqual(captured["index_uri"], "./smak_data/docs")
+            self.assertEqual(captured["index_uri"], "./smak_data")
+
+    def test_ingest_command_passes_follow_symlinks_option(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            folder = Path(tmp_dir) / "src"
+            folder.mkdir()
+            cli = importlib.import_module("smak.cli")
+            captured: dict[str, object] = {}
+
+            class FakeIngestService:
+                def __init__(self, vector_store: object) -> None:
+                    self.vector_store = vector_store
+
+                def ingest_folder(self, target: Path, **kwargs: object) -> SimpleNamespace:
+                    captured["target"] = target
+                    captured.update(kwargs)
+                    return SimpleNamespace(files=0, skipped=0, vectors=0)
+
+            with (
+                patch("smak.cli._load_vector_store_for_cli", return_value=(SmakConfig(), object())),
+                patch("smak.cli.IngestService", new=FakeIngestService),
+            ):
+                result = runner.invoke(
+                    cli.main,
+                    [
+                        "ingest",
+                        "--folder",
+                        str(folder),
+                        "--index",
+                        "source_code",
+                        "--no-follow-symlinks",
+                    ],
+                )
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertEqual(captured["target"], folder)
+            self.assertFalse(captured["follow_symlinks"])
 
     def test_sidecar_inspect_json_output(self) -> None:
         runner = CliRunner()
