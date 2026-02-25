@@ -6,6 +6,7 @@ llm:
 indices:
   - name: source_code
     description: Contains the project's source code (Python, Perl), function definitions, and logic.
+    # Tip: customize uri per index to separate storage directories.
     uri: ./smak_data/source_code
   - name: issues
     description: Contains historical bug reports, GitHub issues, and Jira tickets describing known problems.

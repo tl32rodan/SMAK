@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from smak.config import SmakConfig, load_config
+from smak.config import IndexConfig, SmakConfig, load_config
 from smak.embedding import (
     InternalNomicEmbedding,
     initialize_embedding_dimensions,
@@ -19,12 +19,16 @@ from smak.services import DoctorService, IngestService, QueryService, SidecarSer
 DEFAULT_MAX_WORKERS = 4
 
 
-def _load_vector_store(index_name: str, index_uri: str, config: SmakConfig):
+def _load_vector_store(index_config: IndexConfig, config: SmakConfig):
     from smak.storage.faiss_adapter import load_faiss_store
 
+    if index_config.uri:
+        target_uri = Path(index_config.uri)
+    else:
+        target_uri = Path("./smak_data") / index_config.name
     return load_faiss_store(
-        uri=index_uri,
-        collection_name=index_name,
+        uri=str(target_uri.resolve()),
+        collection_name=index_config.name,
         dim=config.embedding_dimensions,
     )
 
@@ -44,6 +48,7 @@ def _default_config_template() -> str:
             "  - name: source_code",
             "    description: Contains the project's source code (Python, Perl), "
             "function definitions, and logic.",
+            "    # Tip: customize uri per index to separate storage directories.",
             "    uri: ./smak_data/source_code",
             "  - name: issues",
             "    description: Contains historical bug reports, GitHub issues, "
@@ -70,8 +75,7 @@ def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig
         raise click.ClickException(f"Index '{index}' not found in configuration.")
     embedder = InternalNomicEmbedding()
     cfg = initialize_embedding_dimensions(cfg, embedder)
-    index_uri = index_config.uri or f"./smak_data/{index}"
-    vector_store = _load_vector_store(index, index_uri, cfg)
+    vector_store = _load_vector_store(index_config, cfg)
     validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
     return cfg, vector_store
 
@@ -87,7 +91,19 @@ def main() -> None:
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 @click.option("--workers", default=DEFAULT_MAX_WORKERS, help="Max parallel workers")
 @click.option("--incremental/--full", default=True, help="Enable mtime-based incremental ingest")
-def ingest(folder: Path, index: str, config: str, workers: int, incremental: bool) -> None:
+@click.option(
+    "--follow-symlinks/--no-follow-symlinks",
+    default=True,
+    help="Follow symbolic links while traversing folders",
+)
+def ingest(
+    folder: Path,
+    index: str,
+    config: str,
+    workers: int,
+    incremental: bool,
+    follow_symlinks: bool,
+) -> None:
     if not folder.exists() or not folder.is_dir():
         raise click.ClickException(f"Folder not found: {folder}")
     _, vector_store = _load_vector_store_for_cli(index, config)
@@ -99,6 +115,7 @@ def ingest(folder: Path, index: str, config: str, workers: int, incremental: boo
             max_workers=workers,
             workspace_root=_load_workspace_root(config),
             incremental=incremental,
+            follow_symlinks=follow_symlinks,
         )
     except IntegrityError as exc:
         raise click.ClickException(f"Sidecar integrity error: {exc}") from exc
