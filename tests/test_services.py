@@ -8,7 +8,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from smak.config import IndexConfig, SmakConfig
-from smak.services import ingest as ingest_module
 from smak.services.doctor import DoctorService
 from smak.services.ingest import IngestService
 from smak.services.query import QueryService
@@ -64,6 +63,8 @@ class TestServices(unittest.TestCase):
             self.assertGreaterEqual(stats.vectors, 1)
 
     def test_iter_source_files_follows_symlink_by_default(self) -> None:
+        from smak.services import ingest as ingest_module
+
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             src = root / "src"
@@ -77,6 +78,8 @@ class TestServices(unittest.TestCase):
             self.assertIn(src / "linked" / "through_link.py", files)
 
     def test_iter_source_files_can_disable_symlink_following(self) -> None:
+        from smak.services import ingest as ingest_module
+
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             src = root / "src"
