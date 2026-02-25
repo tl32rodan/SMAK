@@ -32,7 +32,7 @@ symbols:
     intent: "Update one cell by row/column index"
     relations:
       - csv-editor-known-issues
-YAML
+'YAML'
 ```
 
 ### 4) Re-ingest and query mesh context

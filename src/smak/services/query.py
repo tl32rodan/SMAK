@@ -14,11 +14,13 @@ class QueryService:
         config: SmakConfig,
         vector_store_loader: Callable[[str, str, SmakConfig], object],
         embedder: object | None = None,
+        default_index_dir: str = ".",
     ) -> None:
         self.vector_store = vector_store
         self.config = config
         self.vector_store_loader = vector_store_loader
         self.embedder = embedder or InternalNomicEmbedding()
+        self.default_index_dir = default_index_dir.rstrip("/")
         self._vector_store_cache: dict[str, object] = {}
 
     def _get_payload_globally(self, uid: str) -> dict[str, Any] | None:
@@ -30,7 +32,7 @@ class QueryService:
             if index.name in self._vector_store_cache:
                 store = self._vector_store_cache[index.name]
             else:
-                index_uri = index.uri or f"./smak_data/{index.name}"
+                index_uri = index.uri or f"{self.default_index_dir}/{index.name}"
                 store = self.vector_store_loader(index.name, index_uri, self.config)
                 self._vector_store_cache[index.name] = store
             payload = store.get_by_id(uid)

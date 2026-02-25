@@ -84,6 +84,7 @@ class TestCli(unittest.TestCase):
         template = cli._default_config_template()
         self.assertIn("uri: ./smak_data/source_code", template)
         self.assertNotIn("storage:", template)
+        self.assertNotIn("llm:", template)
 
     def test_load_vector_store_for_cli_raises_for_unknown_index(self) -> None:
         cli = importlib.import_module("smak.cli")

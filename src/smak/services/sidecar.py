@@ -5,10 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from smak.ingest.parsers import get_parser_for_path
+from smak.services.sidecar_paths import is_sidecar_file, sidecar_path_for_source
 from smak.utils.yaml import safe_dump, safe_load
-
-SIDECAR_SUFFIX = ".sidecar.yaml"
-
 
 
 def _read_text_with_fallback(path: Path) -> str:
@@ -21,7 +19,7 @@ def _read_text_with_fallback(path: Path) -> str:
 
 def _iter_source_files(folder: Path):
     for path in folder.rglob("*"):
-        if path.is_file() and not path.name.endswith((".sidecar.yaml", ".sidecar.yml")):
+        if path.is_file() and not is_sidecar_file(path):
             yield path
 
 
@@ -58,14 +56,14 @@ class SidecarService:
                 ]
             )
         payload = "\n".join(lines) + "\n" if units else "symbols: []\n"
-        output = target_path.with_name(f"{target_path.name}{SIDECAR_SUFFIX}")
+        output = sidecar_path_for_source(target_path)
         output.write_text(payload, encoding="utf-8")
         return output
 
     def update(self, file_path: Path, updates: str) -> dict[str, Any]:
         parsed_updates = json.loads(updates)
         normalized = self._normalize_updates(parsed_updates)
-        sidecar_path = file_path.with_name(f"{file_path.name}{SIDECAR_SUFFIX}")
+        sidecar_path = sidecar_path_for_source(file_path)
         total_symbols = self._merge_updates(sidecar_path, normalized)
         return {
             "file_path": str(file_path),

@@ -17,6 +17,7 @@ from smak.ingest.pipeline import IntegrityError
 from smak.services import DoctorService, IngestService, QueryService, SidecarService
 
 DEFAULT_MAX_WORKERS = 4
+DEFAULT_INDEX_DATA_DIR = "./smak_data"
 
 
 def _load_vector_store(index_name: str, index_uri: str, config: SmakConfig):
@@ -33,12 +34,6 @@ def _default_config_template() -> str:
     return "\n".join(
         [
             "# SMAK Workspace Configuration",
-            "",
-            "llm:",
-            "  provider: qwen",
-            "  model: qwen3_235B_A22B",
-            "  temperature: 0.0",
-            "  # api_base: http://localhost:11434/v1",
             "",
             "indices:",
             "  - name: source_code",
@@ -70,7 +65,7 @@ def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig
         raise click.ClickException(f"Index '{index}' not found in configuration.")
     embedder = InternalNomicEmbedding()
     cfg = initialize_embedding_dimensions(cfg, embedder)
-    index_uri = index_config.uri or f"./smak_data/{index}"
+    index_uri = index_config.uri or f"{DEFAULT_INDEX_DATA_DIR}/{index}"
     vector_store = _load_vector_store(index, index_uri, cfg)
     validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
     return cfg, vector_store
@@ -130,6 +125,7 @@ def query_command(text: str, index: str, top_k: int, config: str) -> None:
         vector_store=vector_store,
         config=cfg,
         vector_store_loader=_load_vector_store,
+        default_index_dir=DEFAULT_INDEX_DATA_DIR,
     )
     click.echo(json.dumps(service.search(text, top_k=top_k), ensure_ascii=False))
 

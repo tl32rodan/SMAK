@@ -41,6 +41,14 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(config.indices[0].uri, "data/source_code")
             self.assertIsNone(config.embedding_dimensions)
 
+    def test_demo_workspace_config_omits_llm_block(self) -> None:
+        demo_config = Path(__file__).resolve().parents[1] / "demo" / "workspace_config.yaml"
+
+        config = load_config(demo_config)
+
+        self.assertEqual(config.llm.provider, "openai")
+        self.assertIsNone(config.llm.model)
+
     def test_load_config_defaults_index_uri_to_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "workspace.yaml"

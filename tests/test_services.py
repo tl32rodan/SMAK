@@ -146,6 +146,61 @@ class TestServices(unittest.TestCase):
         self.assertEqual(payload["related_context"][0]["content"], "Fix login bug")
         self.assertEqual(payload["related_context"][0]["match_type"], "relation")
 
+
+    def test_query_service_uses_injected_default_index_dir_for_fallback_uri(self) -> None:
+        class PrimaryStore:
+            def search(self, vector: list[float], top_k: int = 5) -> list[dict]:
+                return [{"uid": "func_A", "content": "A", "metadata": {"relations": ["issue:42"]}}]
+
+            def get_by_id(self, uid: str) -> dict | None:
+                return None
+
+        class SecondaryStore:
+            def get_by_id(self, uid: str) -> dict | None:
+                return {"uid": uid, "content": "Issue"} if uid == "issue:42" else None
+
+        captured_uris: list[str] = []
+
+        def loader(name: str, uri: str, config: SmakConfig) -> object:
+            captured_uris.append(uri)
+            return SecondaryStore() if name == "issues" else PrimaryStore()
+
+        config = SmakConfig(
+            indices=[
+                IndexConfig(name="source_code", description="source"),
+                IndexConfig(name="issues", description="issues"),
+            ]
+        )
+
+        payload = QueryService(
+            PrimaryStore(),
+            config=config,
+            vector_store_loader=loader,
+            embedder=self.DummyEmbedder(),
+            default_index_dir="./custom_data",
+        ).search("query", top_k=1)
+
+        self.assertEqual(captured_uris, ["./custom_data/source_code", "./custom_data/issues"])
+        self.assertEqual(payload["related_context"][0]["content"], "Issue")
+
+    def test_shared_sidecar_suffixes_work_across_yaml_extensions(self) -> None:
+        from smak.services.sidecar_paths import iter_sidecar_files
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "a.py").write_text("print('a')\n", encoding="utf-8")
+            (root / "a.py.sidecar.yaml").write_text("symbols: []\n", encoding="utf-8")
+            (root / "b.py").write_text("print('b')\n", encoding="utf-8")
+            (root / "b.py.sidecar.yml").write_text("symbols: []\n", encoding="utf-8")
+
+            doctor = DoctorService()
+            issues = doctor.validate_sidecars(root)
+
+            sidecar_files = sorted(path.name for path in iter_sidecar_files(root))
+
+            self.assertEqual(issues, [])
+            self.assertEqual(sidecar_files, ["a.py.sidecar.yaml", "b.py.sidecar.yml"])
+
     def test_sidecar_service_update(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             source = Path(tmp_dir) / "main.py"

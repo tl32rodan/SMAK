@@ -12,8 +12,7 @@ from smak.embedding import EmbeddingProbe, InternalNomicEmbedding
 from smak.ingest.parsers import get_parser_for_path
 from smak.ingest.pipeline import IngestPipeline
 from smak.ingest.sidecar import SidecarManager
-
-SIDECAR_SUFFIXES = (".sidecar.yaml", ".sidecar.yml")
+from smak.services.sidecar_paths import SIDECAR_SUFFIXES
 
 
 @dataclass(frozen=True)
