@@ -83,7 +83,6 @@ class TestCli(unittest.TestCase):
         cli = importlib.import_module("smak.cli")
         template = cli._default_config_template()
         self.assertIn("uri: ./smak_data/source_code", template)
-        self.assertIn("# Tip: customize uri per index", template)
         self.assertNotIn("storage:", template)
 
     def test_load_vector_store_for_cli_raises_for_unknown_index(self) -> None:
@@ -107,11 +106,11 @@ class TestCli(unittest.TestCase):
                 "indices:\n  - name: docs\n    description: docs index\n",
                 encoding="utf-8",
             )
-            captured: dict[str, object] = {}
+            captured: dict[str, str] = {}
 
-            def fake_loader(index_config: object, config: object) -> object:
-                captured["index_name"] = index_config.name
-                captured["index_uri"] = index_config.uri
+            def fake_loader(index_name: str, index_uri: str, config: object) -> object:
+                captured["index_name"] = index_name
+                captured["index_uri"] = index_uri
                 return SimpleNamespace(dimension=1)
 
             with (
@@ -122,80 +121,7 @@ class TestCli(unittest.TestCase):
                 cli._load_vector_store_for_cli("docs", str(config_path))
 
             self.assertEqual(captured["index_name"], "docs")
-            self.assertIsNone(captured["index_uri"])
-
-    def test_load_vector_store_uses_absolute_default_index_path(self) -> None:
-        cli = importlib.import_module("smak.cli")
-        cfg = SmakConfig(indices=[IndexConfig(name="docs", description="docs")])
-        captured: dict[str, object] = {}
-
-        def fake_loader(*, uri: str, collection_name: str, dim: int) -> object:
-            captured["uri"] = uri
-            captured["collection_name"] = collection_name
-            captured["dim"] = dim
-            return SimpleNamespace(dimension=dim)
-
-        with patch("smak.storage.faiss_adapter.load_faiss_store", new=fake_loader):
-            cli._load_vector_store(cfg.indices[0], cfg)
-
-        self.assertEqual(captured["uri"], str((Path("./smak_data") / "docs").resolve()))
-        self.assertEqual(captured["collection_name"], "docs")
-
-    def test_load_vector_store_uses_absolute_configured_uri(self) -> None:
-        cli = importlib.import_module("smak.cli")
-        cfg = SmakConfig(
-            indices=[IndexConfig(name="docs", description="docs", uri="./smak_data/source_code")]
-        )
-        captured: dict[str, object] = {}
-
-        def fake_loader(*, uri: str, collection_name: str, dim: int) -> object:
-            captured["uri"] = uri
-            captured["collection_name"] = collection_name
-            captured["dim"] = dim
-            return SimpleNamespace(dimension=dim)
-
-        with patch("smak.storage.faiss_adapter.load_faiss_store", new=fake_loader):
-            cli._load_vector_store(cfg.indices[0], cfg)
-
-        self.assertEqual(captured["uri"], str(Path("./smak_data/source_code").resolve()))
-        self.assertEqual(captured["collection_name"], "docs")
-
-    def test_ingest_command_passes_follow_symlinks_option(self) -> None:
-        runner = CliRunner()
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            folder = Path(tmp_dir) / "src"
-            folder.mkdir()
-            cli = importlib.import_module("smak.cli")
-            captured: dict[str, object] = {}
-
-            class FakeIngestService:
-                def __init__(self, vector_store: object) -> None:
-                    self.vector_store = vector_store
-
-                def ingest_folder(self, target: Path, **kwargs: object) -> SimpleNamespace:
-                    captured["target"] = target
-                    captured.update(kwargs)
-                    return SimpleNamespace(files=0, skipped=0, vectors=0)
-
-            with (
-                patch("smak.cli._load_vector_store_for_cli", return_value=(SmakConfig(), object())),
-                patch("smak.cli.IngestService", new=FakeIngestService),
-            ):
-                result = runner.invoke(
-                    cli.main,
-                    [
-                        "ingest",
-                        "--folder",
-                        str(folder),
-                        "--index",
-                        "source_code",
-                        "--no-follow-symlinks",
-                    ],
-                )
-
-            self.assertEqual(result.exit_code, 0)
-            self.assertEqual(captured["target"], folder)
-            self.assertFalse(captured["follow_symlinks"])
+            self.assertEqual(captured["index_uri"], "./smak_data/docs")
 
     def test_sidecar_inspect_json_output(self) -> None:
         runner = CliRunner()

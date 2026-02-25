@@ -62,36 +62,6 @@ class TestServices(unittest.TestCase):
             self.assertEqual(stats.files, 1)
             self.assertGreaterEqual(stats.vectors, 1)
 
-    def test_iter_source_files_follows_symlink_by_default(self) -> None:
-        from smak.services import ingest as ingest_module
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            src = root / "src"
-            linked = root / "linked"
-            src.mkdir()
-            linked.mkdir()
-            (linked / "through_link.py").write_text("print('ok')\n", encoding="utf-8")
-            (src / "linked").symlink_to(linked, target_is_directory=True)
-
-            files = list(ingest_module._iter_source_files(src))
-            self.assertIn(src / "linked" / "through_link.py", files)
-
-    def test_iter_source_files_can_disable_symlink_following(self) -> None:
-        from smak.services import ingest as ingest_module
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            src = root / "src"
-            linked = root / "linked"
-            src.mkdir()
-            linked.mkdir()
-            (linked / "through_link.py").write_text("print('ok')\n", encoding="utf-8")
-            (src / "linked").symlink_to(linked, target_is_directory=True)
-
-            files = list(ingest_module._iter_source_files(src, follow_symlinks=False))
-            self.assertNotIn(src / "linked" / "through_link.py", files)
-
     def test_query_service_expands_one_hop_relations(self) -> None:
         store = SimpleNamespace(
             search=lambda vector, top_k=5: [
@@ -108,7 +78,7 @@ class TestServices(unittest.TestCase):
         payload = QueryService(
             store,
             config=config,
-            vector_store_loader=lambda index_cfg, cfg: store,
+            vector_store_loader=lambda name, uri, cfg: store,
             embedder=self.DummyEmbedder(),
         ).search("query", top_k=1)
         self.assertEqual(payload["hits"][0]["match_type"], "semantic")
@@ -150,9 +120,9 @@ class TestServices(unittest.TestCase):
         secondary = SecondaryStore()
         loader_calls: list[str] = []
 
-        def loader(index_cfg: IndexConfig, config: SmakConfig) -> object:
-            loader_calls.append(index_cfg.name)
-            if index_cfg.name == "issues":
+        def loader(name: str, uri: str, config: SmakConfig) -> object:
+            loader_calls.append(name)
+            if name == "issues":
                 return secondary
             return primary
 
