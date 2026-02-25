@@ -5,7 +5,6 @@ import unittest
 from dataclasses import dataclass
 from datetime import datetime
 from types import ModuleType
-from unittest.mock import patch
 
 from smak.storage.faiss_adapter import (
     FaissVectorSearchIndex,
@@ -98,21 +97,6 @@ class TestFaissAdapter(unittest.TestCase):
         ):
             sys.modules[module.__name__] = module
             self._installed_modules.append(module.__name__)
-
-    def test_store_initializes_engine_with_uri_without_collection_suffix(self) -> None:
-        captured: dict[str, object] = {}
-
-        class CaptureEngine:
-            def __init__(self, path: str, dim: int) -> None:
-                captured["path"] = path
-                captured["dim"] = dim
-                self.docs: list[FakeVectorDocument] = []
-
-        with patch("smak.storage.faiss_adapter.FaissEngine", new=CaptureEngine):
-            FaissVectorStore(uri="memory", collection_name="code", dim=3)
-
-        self.assertEqual(captured["path"], "memory")
-        self.assertEqual(captured["dim"], 3)
 
     def test_store_add_search_and_get(self) -> None:
         store = FaissVectorStore(uri="memory", collection_name="code", dim=3)

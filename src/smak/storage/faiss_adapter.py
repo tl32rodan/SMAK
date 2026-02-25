@@ -53,9 +53,9 @@ class FaissVectorStore:
 
     def __post_init__(self) -> None:
         self._doc_cls = VectorDocument
-        target_path = Path(self.uri)
-        logger.info("Initializing FaissEngine at %s", target_path)
-        self._engine = FaissEngine(str(target_path), self.dim)
+        full_path = Path(self.uri) / self.collection_name
+        logger.info("Initializing FaissEngine at %s", full_path)
+        self._engine = FaissEngine(str(full_path), self.dim)
 
     def add(self, nodes: Sequence[Any]) -> None:
         docs = []

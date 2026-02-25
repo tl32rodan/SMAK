@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from smak.config import IndexConfig, SmakConfig
+from smak.config import SmakConfig
 from smak.embedding import InternalNomicEmbedding
 
 
@@ -12,7 +12,7 @@ class QueryService:
         self,
         vector_store: object,
         config: SmakConfig,
-        vector_store_loader: Callable[[IndexConfig, SmakConfig], object],
+        vector_store_loader: Callable[[str, str, SmakConfig], object],
         embedder: object | None = None,
     ) -> None:
         self.vector_store = vector_store
@@ -30,7 +30,8 @@ class QueryService:
             if index.name in self._vector_store_cache:
                 store = self._vector_store_cache[index.name]
             else:
-                store = self.vector_store_loader(index, self.config)
+                index_uri = index.uri or f"./smak_data/{index.name}"
+                store = self.vector_store_loader(index.name, index_uri, self.config)
                 self._vector_store_cache[index.name] = store
             payload = store.get_by_id(uid)
             if isinstance(payload, dict):
