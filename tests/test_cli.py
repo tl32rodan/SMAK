@@ -184,6 +184,7 @@ class TestCli(unittest.TestCase):
             cli = importlib.import_module("smak.cli")
             result = runner.invoke(cli.main, ["sidecar", "inspect", str(source), "--json-output"])
             self.assertEqual(result.exit_code, 0)
+            self.assertIn("[\n    ", result.output)
             payload = json.loads(result.output)
             self.assertIn("::hello", payload[0])
 
@@ -200,6 +201,7 @@ class TestCli(unittest.TestCase):
                 cli.main, ["sidecar", "update", str(source), "--updates", updates]
             )
             self.assertEqual(result.exit_code, 0)
+            self.assertIn('{\n    "file_path"', result.output)
             self.assertTrue((Path(tmp_dir) / "example.py.sidecar.yaml").exists())
 
     def test_query_command_outputs_structured_json(self) -> None:
@@ -241,6 +243,7 @@ class TestCli(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0)
         self.assertEqual(captured_top_k, [1])
+        self.assertIn('{\n    "hits"', result.output)
         payload = json.loads(result.output)
         self.assertIn("hits", payload)
         self.assertIn("related_context", payload)

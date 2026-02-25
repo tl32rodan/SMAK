@@ -145,7 +145,8 @@ def query_command(text: str, index: str, top_k: int, config: str) -> None:
         config=cfg,
         vector_store_loader=_load_vector_store,
     )
-    click.echo(json.dumps(service.search(text, top_k=top_k), ensure_ascii=False))
+    output_str = json.dumps(service.search(text, top_k=top_k), ensure_ascii=False, indent=4)
+    click.echo(output_str.encode("utf-8"))
 
 
 @main.group()
@@ -176,7 +177,8 @@ def sidecar_inspect(file_path: Path, config_path: str, json_output: bool) -> Non
         raise click.ClickException(f"Path must be a file: {file_path}")
     symbols = SidecarService().inspect(file_path, workspace_root=_load_workspace_root(config_path))
     if json_output:
-        click.echo(json.dumps(symbols, ensure_ascii=False))
+        output_str = json.dumps(symbols, ensure_ascii=False, indent=4)
+        click.echo(output_str.encode("utf-8"))
         return
     for symbol in symbols:
         click.echo(symbol)
@@ -197,7 +199,8 @@ def sidecar_update(file_path: Path, updates: str, reingest: bool, index: str, co
         raise click.ClickException(f"Invalid updates JSON: {exc}") from exc
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
-    click.echo(json.dumps(result, ensure_ascii=False))
+    output_str = json.dumps(result, ensure_ascii=False, indent=4)
+    click.echo(output_str.encode("utf-8"))
     if reingest:
         _, vector_store = _load_vector_store_for_cli(index, config)
         IngestService(vector_store=vector_store).ingest_folder(
