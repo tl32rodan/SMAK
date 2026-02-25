@@ -22,7 +22,7 @@ smak sidecar inspect ./documentation/csv-editor-usage.md --config workspace_conf
 ### 3) Create sidecar and add relations
 ```bash
 smak sidecar init ./src/csv_editor.py --config workspace_config.yaml
-cat > ./src/csv_editor.py.sidecar.yaml <<'YAML'
+cat >! ./src/csv_editor.py.sidecar.yaml <<'YAML'
 symbols:
   - name: CsvEditor
     intent: "Manage CSV rows for lightweight fixture editing"
