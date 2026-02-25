@@ -83,7 +83,9 @@ class TestCli(unittest.TestCase):
         cli = importlib.import_module("smak.cli")
         template = cli._default_config_template()
         self.assertIn("uri: ./smak_data/source_code", template)
+        self.assertIn("Customize uri", template)
         self.assertNotIn("storage:", template)
+        self.assertNotIn("llm:", template)
 
     def test_load_vector_store_for_cli_raises_for_unknown_index(self) -> None:
         cli = importlib.import_module("smak.cli")
@@ -106,11 +108,11 @@ class TestCli(unittest.TestCase):
                 "indices:\n  - name: docs\n    description: docs index\n",
                 encoding="utf-8",
             )
-            captured: dict[str, str] = {}
+            captured: dict[str, object] = {}
 
-            def fake_loader(index_name: str, index_uri: str, config: object) -> object:
-                captured["index_name"] = index_name
-                captured["index_uri"] = index_uri
+            def fake_loader(index_config: object, config: object) -> object:
+                captured["index_name"] = index_config.name
+                captured["index_uri"] = cli._resolve_index_uri(index_config)
                 return SimpleNamespace(dimension=1)
 
             with (
@@ -121,7 +123,58 @@ class TestCli(unittest.TestCase):
                 cli._load_vector_store_for_cli("docs", str(config_path))
 
             self.assertEqual(captured["index_name"], "docs")
-            self.assertEqual(captured["index_uri"], "./smak_data/docs")
+            self.assertEqual(
+                captured["index_uri"],
+                str((Path("./smak_data") / "docs").resolve()),
+            )
+
+
+    def test_ingest_command_forwards_follow_symlinks_option(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            folder = Path(tmp_dir) / "src"
+            folder.mkdir()
+            config_path = Path(tmp_dir) / "workspace.yaml"
+            config_path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: source\n",
+                encoding="utf-8",
+            )
+            captured: dict[str, object] = {}
+
+            class FakeIngestService:
+                def __init__(self, vector_store: object) -> None:
+                    self.vector_store = vector_store
+
+                def ingest_folder(self, *args: object, **kwargs: object) -> object:
+                    captured.update(kwargs)
+                    return SimpleNamespace(files=0, skipped=0, vectors=0)
+
+            with (
+                patch(
+                    "smak.cli._load_vector_store_for_cli",
+                    new=lambda index, config: (SmakConfig(), object()),
+                ),
+                patch("smak.cli.IngestService", new=FakeIngestService),
+            ):
+                cli = importlib.import_module("smak.cli")
+                result = runner.invoke(
+                    cli.main,
+                    [
+                        "ingest",
+                        "--folder",
+                        str(folder),
+                        "--index",
+                        "source_code",
+                        "--config",
+                        str(config_path),
+                        "--no-follow-symlinks",
+                    ],
+                )
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertEqual(captured.get("follow_symlinks"), False)
 
     def test_sidecar_inspect_json_output(self) -> None:
         runner = CliRunner()
@@ -131,6 +184,7 @@ class TestCli(unittest.TestCase):
             cli = importlib.import_module("smak.cli")
             result = runner.invoke(cli.main, ["sidecar", "inspect", str(source), "--json-output"])
             self.assertEqual(result.exit_code, 0)
+            self.assertIn("[\n    ", result.output)
             payload = json.loads(result.output)
             self.assertIn("::hello", payload[0])
 
@@ -147,13 +201,16 @@ class TestCli(unittest.TestCase):
                 cli.main, ["sidecar", "update", str(source), "--updates", updates]
             )
             self.assertEqual(result.exit_code, 0)
+            self.assertIn('{\n    "file_path"', result.output)
             self.assertTrue((Path(tmp_dir) / "example.py.sidecar.yaml").exists())
 
     def test_query_command_outputs_structured_json(self) -> None:
         runner = CliRunner()
+        captured_top_k: list[int] = []
 
         class QueryStore(SimpleNamespace):
             def search(self, vector: list[float], top_k: int = 5) -> list[dict]:
+                captured_top_k.append(top_k)
                 return [
                     {
                         "uid": "func_A",
@@ -185,6 +242,8 @@ class TestCli(unittest.TestCase):
             result = runner.invoke(cli.main, ["query", "hello", "--index", "code"])
 
         self.assertEqual(result.exit_code, 0)
+        self.assertEqual(captured_top_k, [1])
+        self.assertIn('{\n    "hits"', result.output)
         payload = json.loads(result.output)
         self.assertIn("hits", payload)
         self.assertIn("related_context", payload)

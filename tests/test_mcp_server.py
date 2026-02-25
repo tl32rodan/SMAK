@@ -17,6 +17,18 @@ class TestMcpServer(unittest.TestCase):
             self.assertEqual(output, "ok")
             self.assertIn("ingest", run_cli.call_args.args[0])
 
+
+    def test_refresh_knowledge_can_disable_follow_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            server = SmakMcpServer(workspace_root=Path(tmp_dir))
+            with patch.object(server, "_run_cli", return_value="ok") as run_cli:
+                server.refresh_knowledge(
+                    folder="src",
+                    index="source_code",
+                    follow_symlinks=False,
+                )
+            self.assertIn("--no-follow-symlinks", run_cli.call_args.args[0])
+
     def test_semantic_search_parses_json_object(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = SmakMcpServer(workspace_root=Path(tmp_dir))

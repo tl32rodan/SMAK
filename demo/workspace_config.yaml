@@ -1,11 +1,7 @@
-llm:
-  provider: qwen
-  model: qwen3_235B_A22B
-  temperature: 0.0
-
 indices:
   - name: source_code
     description: Contains the project's source code (Python, Perl), function definitions, and logic.
+    # Customize uri if you want this index stored elsewhere.
     uri: ./smak_data/source_code
   - name: issues
     description: Contains historical bug reports, GitHub issues, and Jira tickets describing known problems.

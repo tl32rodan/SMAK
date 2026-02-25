@@ -78,7 +78,7 @@ class TestServices(unittest.TestCase):
         payload = QueryService(
             store,
             config=config,
-            vector_store_loader=lambda name, uri, cfg: store,
+            vector_store_loader=lambda index_config, cfg: store,
             embedder=self.DummyEmbedder(),
         ).search("query", top_k=1)
         self.assertEqual(payload["hits"][0]["match_type"], "semantic")
@@ -120,9 +120,9 @@ class TestServices(unittest.TestCase):
         secondary = SecondaryStore()
         loader_calls: list[str] = []
 
-        def loader(name: str, uri: str, config: SmakConfig) -> object:
-            loader_calls.append(name)
-            if name == "issues":
+        def loader(index_config: IndexConfig, config: SmakConfig) -> object:
+            loader_calls.append(index_config.name)
+            if index_config.name == "issues":
                 return secondary
             return primary
 
@@ -145,6 +145,88 @@ class TestServices(unittest.TestCase):
         self.assertEqual(payload["hits"][0]["content"], "def A(): pass")
         self.assertEqual(payload["related_context"][0]["content"], "Fix login bug")
         self.assertEqual(payload["related_context"][0]["match_type"], "relation")
+
+
+    def test_query_service_uses_loader_with_index_config(self) -> None:
+        class PrimaryStore:
+            def search(self, vector: list[float], top_k: int = 5) -> list[dict]:
+                return [{"uid": "func_A", "content": "A", "metadata": {"relations": ["issue:42"]}}]
+
+            def get_by_id(self, uid: str) -> dict | None:
+                return None
+
+        class SecondaryStore:
+            def get_by_id(self, uid: str) -> dict | None:
+                return {"uid": uid, "content": "Issue"} if uid == "issue:42" else None
+
+        loader_calls: list[str] = []
+
+        def loader(index_config: IndexConfig, config: SmakConfig) -> object:
+            loader_calls.append(index_config.name)
+            return SecondaryStore() if index_config.name == "issues" else PrimaryStore()
+
+        config = SmakConfig(
+            indices=[
+                IndexConfig(name="source_code", description="source"),
+                IndexConfig(name="issues", description="issues"),
+            ]
+        )
+
+        payload = QueryService(
+            PrimaryStore(),
+            config=config,
+            vector_store_loader=loader,
+            embedder=self.DummyEmbedder(),
+        ).search("query", top_k=1)
+
+        self.assertEqual(loader_calls, ["source_code", "issues"])
+        self.assertEqual(payload["related_context"][0]["content"], "Issue")
+
+    def test_shared_sidecar_suffixes_work_across_yaml_extensions(self) -> None:
+        from smak.services.sidecar_paths import iter_sidecar_files
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "a.py").write_text("print('a')\n", encoding="utf-8")
+            (root / "a.py.sidecar.yaml").write_text("symbols: []\n", encoding="utf-8")
+            (root / "b.py").write_text("print('b')\n", encoding="utf-8")
+            (root / "b.py.sidecar.yml").write_text("symbols: []\n", encoding="utf-8")
+
+            doctor = DoctorService()
+            issues = doctor.validate_sidecars(root)
+
+            sidecar_files = sorted(path.name for path in iter_sidecar_files(root))
+
+            self.assertEqual(issues, [])
+            self.assertEqual(sidecar_files, ["a.py.sidecar.yaml", "b.py.sidecar.yml"])
+
+
+    def test_iter_source_files_can_toggle_symlink_following(self) -> None:
+        from smak.services import ingest as ingest_module
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            real_dir = root / "real"
+            real_dir.mkdir()
+            (real_dir / "linked.py").write_text("print('x')\n", encoding="utf-8")
+            link_dir = root / "link"
+            try:
+                link_dir.symlink_to(real_dir, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlink creation not supported in this environment")
+
+            without_follow = list(
+                ingest_module._iter_source_files(root, follow_symlinks=False)
+            )
+            with_follow = list(
+                ingest_module._iter_source_files(root, follow_symlinks=True)
+            )
+
+            without_paths = {str(path.relative_to(root)) for path in without_follow}
+            with_paths = {str(path.relative_to(root)) for path in with_follow}
+
+            self.assertNotIn("link/linked.py", without_paths)
+            self.assertIn("link/linked.py", with_paths)
 
     def test_sidecar_service_update(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

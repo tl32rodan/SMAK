@@ -33,10 +33,16 @@ class SmakMcpServer:
             raise RuntimeError(message)
         return completed.stdout.strip()
 
-    def refresh_knowledge(self, folder: str = ".", index: str = "source_code") -> str:
-        return self._run_cli(
-            ["ingest", "--folder", folder, "--index", index, "--config", self.config_name]
-        )
+    def refresh_knowledge(
+        self,
+        folder: str = ".",
+        index: str = "source_code",
+        follow_symlinks: bool = True,
+    ) -> str:
+        command = ["ingest", "--folder", folder, "--index", index, "--config", self.config_name]
+        if not follow_symlinks:
+            command.append("--no-follow-symlinks")
+        return self._run_cli(command)
 
     def semantic_search(
         self, query: str, index: str = "source_code", top_k: int = 5
@@ -91,8 +97,16 @@ def build_mcp_server(workspace_root: str | Path = ".") -> FastMCP:
     mcp = FastMCP("SMAK")
 
     @mcp.tool()
-    def refresh_knowledge(folder: str = ".", index: str = "source_code") -> str:
-        return smak_server.refresh_knowledge(folder=folder, index=index)
+    def refresh_knowledge(
+        folder: str = ".",
+        index: str = "source_code",
+        follow_symlinks: bool = True,
+    ) -> str:
+        return smak_server.refresh_knowledge(
+            folder=folder,
+            index=index,
+            follow_symlinks=follow_symlinks,
+        )
 
     @mcp.tool()
     def semantic_search(query: str, index: str = "source_code", top_k: int = 5) -> dict[str, Any]:

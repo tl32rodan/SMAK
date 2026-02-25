@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from smak.config import SmakConfig, load_config
+from smak.config import IndexConfig, SmakConfig, load_config
 from smak.embedding import (
     InternalNomicEmbedding,
     initialize_embedding_dimensions,
@@ -17,14 +17,21 @@ from smak.ingest.pipeline import IntegrityError
 from smak.services import DoctorService, IngestService, QueryService, SidecarService
 
 DEFAULT_MAX_WORKERS = 4
+DEFAULT_INDEX_DATA_DIR = "./smak_data"
 
 
-def _load_vector_store(index_name: str, index_uri: str, config: SmakConfig):
+def _resolve_index_uri(index_config: IndexConfig) -> str:
+    if index_config.uri:
+        return str(Path(index_config.uri).expanduser().resolve())
+    return str((Path(DEFAULT_INDEX_DATA_DIR) / index_config.name).resolve())
+
+
+def _load_vector_store(index_config: IndexConfig, config: SmakConfig):
     from smak.storage.faiss_adapter import load_faiss_store
 
     return load_faiss_store(
-        uri=index_uri,
-        collection_name=index_name,
+        uri=_resolve_index_uri(index_config),
+        collection_name=index_config.name,
         dim=config.embedding_dimensions,
     )
 
@@ -34,16 +41,11 @@ def _default_config_template() -> str:
         [
             "# SMAK Workspace Configuration",
             "",
-            "llm:",
-            "  provider: qwen",
-            "  model: qwen3_235B_A22B",
-            "  temperature: 0.0",
-            "  # api_base: http://localhost:11434/v1",
-            "",
             "indices:",
             "  - name: source_code",
             "    description: Contains the project's source code (Python, Perl), "
             "function definitions, and logic.",
+            "    # Customize uri if you want this index stored elsewhere.",
             "    uri: ./smak_data/source_code",
             "  - name: issues",
             "    description: Contains historical bug reports, GitHub issues, "
@@ -70,8 +72,7 @@ def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig
         raise click.ClickException(f"Index '{index}' not found in configuration.")
     embedder = InternalNomicEmbedding()
     cfg = initialize_embedding_dimensions(cfg, embedder)
-    index_uri = index_config.uri or f"./smak_data/{index}"
-    vector_store = _load_vector_store(index, index_uri, cfg)
+    vector_store = _load_vector_store(index_config, cfg)
     validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
     return cfg, vector_store
 
@@ -87,7 +88,19 @@ def main() -> None:
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 @click.option("--workers", default=DEFAULT_MAX_WORKERS, help="Max parallel workers")
 @click.option("--incremental/--full", default=True, help="Enable mtime-based incremental ingest")
-def ingest(folder: Path, index: str, config: str, workers: int, incremental: bool) -> None:
+@click.option(
+    "--follow-symlinks/--no-follow-symlinks",
+    default=True,
+    help="Follow symlinked directories during ingest",
+)
+def ingest(
+    folder: Path,
+    index: str,
+    config: str,
+    workers: int,
+    incremental: bool,
+    follow_symlinks: bool,
+) -> None:
     if not folder.exists() or not folder.is_dir():
         raise click.ClickException(f"Folder not found: {folder}")
     _, vector_store = _load_vector_store_for_cli(index, config)
@@ -99,6 +112,7 @@ def ingest(folder: Path, index: str, config: str, workers: int, incremental: boo
             max_workers=workers,
             workspace_root=_load_workspace_root(config),
             incremental=incremental,
+            follow_symlinks=follow_symlinks,
         )
     except IntegrityError as exc:
         raise click.ClickException(f"Sidecar integrity error: {exc}") from exc
@@ -122,7 +136,7 @@ def init(config_path: str, force: bool) -> None:
 @main.command("query")
 @click.argument("text", type=str)
 @click.option("--index", required=True, help="Target index name")
-@click.option("--top-k", default=5, show_default=True, type=int, help="Result count")
+@click.option("--top-k", default=1, show_default=True, type=int, help="Result count")
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 def query_command(text: str, index: str, top_k: int, config: str) -> None:
     cfg, vector_store = _load_vector_store_for_cli(index, config)
@@ -131,7 +145,8 @@ def query_command(text: str, index: str, top_k: int, config: str) -> None:
         config=cfg,
         vector_store_loader=_load_vector_store,
     )
-    click.echo(json.dumps(service.search(text, top_k=top_k), ensure_ascii=False))
+    output_str = json.dumps(service.search(text, top_k=top_k), ensure_ascii=False, indent=4)
+    click.echo(output_str.encode("utf-8"))
 
 
 @main.group()
@@ -162,7 +177,8 @@ def sidecar_inspect(file_path: Path, config_path: str, json_output: bool) -> Non
         raise click.ClickException(f"Path must be a file: {file_path}")
     symbols = SidecarService().inspect(file_path, workspace_root=_load_workspace_root(config_path))
     if json_output:
-        click.echo(json.dumps(symbols, ensure_ascii=False))
+        output_str = json.dumps(symbols, ensure_ascii=False, indent=4)
+        click.echo(output_str.encode("utf-8"))
         return
     for symbol in symbols:
         click.echo(symbol)
@@ -183,7 +199,8 @@ def sidecar_update(file_path: Path, updates: str, reingest: bool, index: str, co
         raise click.ClickException(f"Invalid updates JSON: {exc}") from exc
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
-    click.echo(json.dumps(result, ensure_ascii=False))
+    output_str = json.dumps(result, ensure_ascii=False, indent=4)
+    click.echo(output_str.encode("utf-8"))
     if reingest:
         _, vector_store = _load_vector_store_for_cli(index, config)
         IngestService(vector_store=vector_store).ingest_folder(

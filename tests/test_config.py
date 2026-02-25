@@ -12,8 +12,7 @@ class TestConfig(unittest.TestCase):
         config = SmakConfig()
 
         self.assertIsNone(config.embedding_dimensions)
-        self.assertEqual(config.llm.provider, "openai")
-        self.assertEqual(config.llm.temperature, 0.0)
+        self.assertEqual(config.indices, [])
 
     def test_load_config_reads_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -35,11 +34,39 @@ class TestConfig(unittest.TestCase):
             config = load_config(path)
 
             self.assertEqual(config.indices[0].name, "source_code")
-            self.assertEqual(config.llm.provider, "ollama")
-            self.assertEqual(config.llm.temperature, 0.4)
-            self.assertEqual(config.llm.api_base, "http://localhost:11434/v1")
             self.assertEqual(config.indices[0].uri, "data/source_code")
             self.assertIsNone(config.embedding_dimensions)
+            self.assertFalse(hasattr(config, "llm"))
+
+    def test_demo_workspace_config_loads_without_llm_field(self) -> None:
+        demo_config = Path(__file__).resolve().parents[1] / "demo" / "workspace_config.yaml"
+
+        config = load_config(demo_config)
+
+        self.assertFalse(hasattr(config, "llm"))
+
+    def test_load_config_ignores_llm_block(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code files\n"
+                "llm:\n"
+                "  provider: legacy\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+            self.assertFalse(hasattr(config, "llm"))
+
+    def test_demo_workspace_config_source_code_uri(self) -> None:
+        demo_config = Path(__file__).resolve().parents[1] / "demo" / "workspace_config.yaml"
+
+        config = load_config(demo_config)
+
+        self.assertEqual(config.indices[0].uri, "./smak_data/source_code")
 
     def test_load_config_defaults_index_uri_to_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
