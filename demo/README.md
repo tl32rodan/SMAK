@@ -17,11 +17,13 @@ smak ingest --folder ./documentation --index documentation --config workspace_co
 smak sidecar inspect ./src/csv_editor.py --config workspace_config.yaml
 smak sidecar inspect ./src/tests/test_csv_editor.py --config workspace_config.yaml
 smak sidecar inspect ./documentation/csv-editor-usage.md --config workspace_config.yaml
+smak sidecar inspect ./issues/csv-editor-known-issues.md --config workspace_config.yaml
 ```
 
 ### 3) Create sidecar and add relations
 ```bash
 smak sidecar init ./src/csv_editor.py --config workspace_config.yaml
+smak sidecar init ./issues/csv-editor-known-issues.md --config workspace_config.yaml
 cat >! ./src/csv_editor.py.sidecar.yaml <<'YAML'
 symbols:
   - name: CsvEditor
