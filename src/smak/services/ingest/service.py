@@ -8,11 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
-from smak.embedding import EmbeddingProbe, InternalNomicEmbedding
-from smak.ingest.parsers import get_parser_for_path
-from smak.ingest.pipeline import IngestPipeline
-from smak.ingest.sidecar import SidecarManager
-from smak.services.sidecar_paths import SIDECAR_SUFFIXES
+from smak.services.ingest.parsers import get_parser_for_path
+from smak.services.ingest.pipeline import IngestPipeline
+from smak.sidecar import SIDECAR_SUFFIXES, SidecarManager
+from smak.utils.embedding import EmbeddingProbe, InternalNomicEmbedding
 
 
 @dataclass(frozen=True)
@@ -28,13 +27,11 @@ def _load_text_node_class():
     return TextNode
 
 
-
 def _read_text_with_fallback(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return path.read_text(encoding="utf-8", errors="replace")
-
 
 
 def _sidecar_payload(path: Path) -> str | None:

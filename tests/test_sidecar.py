@@ -1,7 +1,7 @@
 import unittest
 
 from smak.core.domain import KnowledgeUnit
-from smak.ingest.sidecar import IntegrityError, SidecarManager
+from smak.sidecar.manager import IntegrityError, SidecarManager
 
 
 class TestSidecarManager(unittest.TestCase):

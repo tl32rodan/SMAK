@@ -4,8 +4,8 @@ import unittest
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
-from smak.ingest.parsers import PythonParser
-from smak.ingest.sidecar import IntegrityError, SidecarManager
+from smak.services.ingest.parsers import PythonParser
+from smak.sidecar.manager import IntegrityError, SidecarManager
 
 
 class DummyEmbedder:
@@ -82,7 +82,7 @@ _install_fake_dependencies()
 
 
 def _load_pipeline():
-    return importlib.import_module("smak.ingest.pipeline")
+    return importlib.import_module("smak.services.ingest.pipeline")
 
 
 class TestIngestPipeline(unittest.TestCase):
@@ -125,7 +125,7 @@ class TestIngestPipeline(unittest.TestCase):
                 return [[float(len(text))] for text in texts]
 
         with patch(
-            "smak.ingest.pipeline.InternalNomicEmbedding",
+            "smak.services.ingest.pipeline.InternalNomicEmbedding",
             return_value=DefaultDummyEmbedder(),
         ):
             pipeline = _load_pipeline().IngestPipeline(

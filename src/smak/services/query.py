@@ -4,8 +4,8 @@ from collections.abc import Callable
 from typing import Any
 
 from smak.config import IndexConfig, SmakConfig
-from smak.embedding import InternalNomicEmbedding
 from smak.services.relation_resolver import SidecarRelationResolver
+from smak.utils.embedding import InternalNomicEmbedding
 
 
 class QueryService:

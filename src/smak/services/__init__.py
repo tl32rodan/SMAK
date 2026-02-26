@@ -1,7 +1,7 @@
 """Service layer for SMAK operations."""
 
 from smak.services.doctor import DoctorService
-from smak.services.ingest import IngestService, IngestStats
+from smak.services.ingest.service import IngestService, IngestStats
 from smak.services.query import QueryService
 from smak.services.sidecar import SidecarService
 

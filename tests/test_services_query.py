@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from smak.config import IndexConfig, SmakConfig
 from smak.services.query import QueryService
 from smak.services.relation_resolver import SidecarRelationResolver
-from smak.services.sidecar_store import SidecarStore
+from smak.sidecar.store import SidecarStore
 
 
 class DummyEmbedder:
@@ -172,7 +172,7 @@ class TestQueryService(unittest.TestCase):
 
 
     def test_query_service_matches_sidecar_symbol_name_from_ingest_metadata(self) -> None:
-        from smak.ingest.parsers.python import PythonParser
+        from smak.services.ingest.parsers.python import PythonParser
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace_root = Path(tmp_dir)

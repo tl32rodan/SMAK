@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from smak.mcp_server import SmakMcpServer, build_mcp_server
+from scripts.mcp_server import SmakMcpServer, build_mcp_server
 
 
 class TestMcpServer(unittest.TestCase):
@@ -57,7 +57,7 @@ class TestMcpServer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = SmakMcpServer(workspace_root=Path(tmp_dir))
             completed = MagicMock(returncode=0, stdout="ok", stderr="")
-            with patch("smak.mcp_server.subprocess.run", return_value=completed) as run_mock:
+            with patch("scripts.mcp_server.subprocess.run", return_value=completed) as run_mock:
                 output = server._run_cli(["query", "hello"])
             self.assertEqual(output, "ok")
             kwargs = run_mock.call_args.kwargs
