@@ -12,8 +12,8 @@ _SUB_START_REGEX = re.compile(
     r"(?m)^[ \t]*sub[ \t]+([A-Za-z_][A-Za-z0-9_]*)[^{;\n]*\{"
 )
 _POD_LINE_START_REGEX = re.compile(r"(?m)^=(head\d*|pod|begin|for|item|over|back|encoding)\b")
-_SINGLE_QUOTE_REGEX = re.compile(r"'(?:\\.|[^'\\])*'")
-_DOUBLE_QUOTE_REGEX = re.compile(r'"(?:\\.|[^"\\])*"')
+_SINGLE_QUOTE_REGEX = re.compile(r"'(?:\\.|[^'\\\n])*'")
+_DOUBLE_QUOTE_REGEX = re.compile(r'"(?:\\.|[^"\\\n])*"')
 
 
 @dataclass
@@ -55,8 +55,8 @@ class PerlParser:
 
 def _clean_for_structure_scan(content: str) -> str:
     cleaned = _mask_pod_sections(content)
-    cleaned = _mask_regex(cleaned, _DOUBLE_QUOTE_REGEX)
     cleaned = _mask_regex(cleaned, _SINGLE_QUOTE_REGEX)
+    cleaned = _mask_regex(cleaned, _DOUBLE_QUOTE_REGEX)
     cleaned = _mask_single_line_comments(cleaned)
     return cleaned
 

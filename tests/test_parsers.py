@@ -27,7 +27,6 @@ class TestParsers(unittest.TestCase):
         units = PerlParser().parse("sub login {\n}\n\nsub logout {\n}\n", source="main.pl")
         self.assertEqual([unit.uid for unit in units], ["main.pl::login", "main.pl::logout"])
 
-
     def test_perl_parser_extracts_sub_blocks_with_nested_braces(self) -> None:
         content = (
             "sub login {\n"
@@ -53,7 +52,7 @@ class TestParsers(unittest.TestCase):
             "=cut\n"
             "sub alpha {\n"
             "    my $s1 = \"} not real brace\";\n"
-            "    my $s2 = '\{ still string';\n"
+            "    my $s2 = '\\{ still string';\n"
             "    # sub fake_comment {\n"
             "    return 1;\n"
             "}\n"
@@ -66,6 +65,22 @@ class TestParsers(unittest.TestCase):
 
         self.assertEqual([unit.uid for unit in units], ["main.pl::alpha", "main.pl::beta"])
         self.assertNotIn("fake_from_pod", "\n".join(unit.content for unit in units))
+
+    def test_perl_parser_handles_single_quote_with_double_quote_char(self) -> None:
+        content = (
+            "sub build_csv {\n"
+            "    return Text::CSV->new({ quote_char => '\"' });\n"
+            "}\n"
+            "sub other {\n"
+            "    my $x = \"ok\";\n"
+            "    return $x;\n"
+            "}\n"
+        )
+
+        units = PerlParser().parse(content, source="csv.pl")
+
+        self.assertEqual([unit.uid for unit in units], ["csv.pl::build_csv", "csv.pl::other"])
+        self.assertIn("quote_char => '\"'", units[0].content)
 
     def test_issue_parser_uses_symbol_from_frontmatter(self) -> None:
         parser = IssueParser()
@@ -89,7 +104,6 @@ class TestParsers(unittest.TestCase):
     def test_issue_parser_falls_back_to_filename_slug(self) -> None:
         units = IssueParser().parse("No markdown header", source="docs/My Issue.md")
         self.assertEqual(units[0].uid, "my-issue")
-
 
     def test_get_parser_for_path_routes_by_suffix(self) -> None:
         self.assertIsInstance(get_parser_for_path(Path("a.py")), PythonParser)
