@@ -27,6 +27,46 @@ class TestParsers(unittest.TestCase):
         units = PerlParser().parse("sub login {\n}\n\nsub logout {\n}\n", source="main.pl")
         self.assertEqual([unit.uid for unit in units], ["main.pl::login", "main.pl::logout"])
 
+
+    def test_perl_parser_extracts_sub_blocks_with_nested_braces(self) -> None:
+        content = (
+            "sub login {\n"
+            "    my $v = 1;\n"
+            "    if ($v) {\n"
+            "        return $v;\n"
+            "    }\n"
+            "}\n"
+        )
+
+        units = PerlParser().parse(content, source="main.pl")
+
+        self.assertEqual(len(units), 1)
+        self.assertTrue(units[0].content.startswith("sub login {"))
+        self.assertIn("if ($v) {", units[0].content)
+        self.assertTrue(units[0].content.endswith("}"))
+
+    def test_perl_parser_ignores_braces_in_strings_comments_and_pod(self) -> None:
+        content = (
+            "=head\n"
+            "sub fake_from_pod {\n"
+            "}\n"
+            "=cut\n"
+            "sub alpha {\n"
+            "    my $s1 = \"} not real brace\";\n"
+            "    my $s2 = '\{ still string';\n"
+            "    # sub fake_comment {\n"
+            "    return 1;\n"
+            "}\n"
+            "sub beta {\n"
+            "    return 2;\n"
+            "}\n"
+        )
+
+        units = PerlParser().parse(content, source="main.pl")
+
+        self.assertEqual([unit.uid for unit in units], ["main.pl::alpha", "main.pl::beta"])
+        self.assertNotIn("fake_from_pod", "\n".join(unit.content for unit in units))
+
     def test_issue_parser_uses_symbol_from_frontmatter(self) -> None:
         parser = IssueParser()
         content = (
