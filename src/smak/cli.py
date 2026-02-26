@@ -15,6 +15,8 @@ from smak.embedding import (
 )
 from smak.ingest.pipeline import IntegrityError
 from smak.services import DoctorService, IngestService, QueryService, SidecarService
+from smak.services.relation_resolver import SidecarRelationResolver
+from smak.services.sidecar_store import SidecarStore
 
 DEFAULT_MAX_WORKERS = 4
 DEFAULT_INDEX_DATA_DIR = "./smak_data"
@@ -140,11 +142,12 @@ def init(config_path: str, force: bool) -> None:
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 def query_command(text: str, index: str, top_k: int, config: str) -> None:
     cfg, vector_store = _load_vector_store_for_cli(index, config)
+    sidecar_store = SidecarStore(workspace_root=_load_workspace_root(config) or Path.cwd())
     service = QueryService(
         vector_store=vector_store,
         config=cfg,
-        workspace_root=_load_workspace_root(config) or Path.cwd(),
         vector_store_loader=_load_vector_store,
+        relation_resolver=SidecarRelationResolver(sidecar_store),
     )
     output_str = json.dumps(service.search(text, top_k=top_k), ensure_ascii=False, indent=4)
     click.echo(output_str.encode("utf-8"))
@@ -163,7 +166,8 @@ def sidecar() -> None:
 def sidecar_init(target_path: Path, config_path: str) -> None:
     if not target_path.exists():
         raise click.ClickException(f"Path not found: {target_path}")
-    output = SidecarService().init(target_path, workspace_root=_load_workspace_root(config_path))
+    sidecar_store = SidecarStore(workspace_root=_load_workspace_root(config_path))
+    output = SidecarService(sidecar_store).init(target_path)
     click.echo(f"Wrote sidecar template to {output}")
 
 
@@ -176,7 +180,8 @@ def sidecar_init(target_path: Path, config_path: str) -> None:
 def sidecar_inspect(file_path: Path, config_path: str, json_output: bool) -> None:
     if not file_path.exists() or not file_path.is_file():
         raise click.ClickException(f"Path must be a file: {file_path}")
-    symbols = SidecarService().inspect(file_path, workspace_root=_load_workspace_root(config_path))
+    sidecar_store = SidecarStore(workspace_root=_load_workspace_root(config_path))
+    symbols = SidecarService(sidecar_store).inspect(file_path)
     if json_output:
         output_str = json.dumps(symbols, ensure_ascii=False, indent=4)
         click.echo(output_str.encode("utf-8"))

@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 from smak.config import IndexConfig, SmakConfig
 from smak.services.query import QueryService
+from smak.services.relation_resolver import SidecarRelationResolver
+from smak.services.sidecar_store import SidecarStore
 
 
 class DummyEmbedder:
@@ -41,9 +43,9 @@ class TestQueryService(unittest.TestCase):
             payload = QueryService(
                 store,
                 config=config,
-                workspace_root=Path(tmp_dir),
                 vector_store_loader=lambda index_config, cfg: store,
                 embedder=DummyEmbedder(),
+                relation_resolver=SidecarRelationResolver(SidecarStore(Path(tmp_dir))),
             ).search("query", top_k=1)
             self.assertEqual(payload["hits"][0]["match_type"], "semantic")
             self.assertEqual(payload["related_context"][0]["source_hit"], "func_A")
@@ -111,9 +113,9 @@ class TestQueryService(unittest.TestCase):
             payload = QueryService(
                 primary,
                 config=config,
-                workspace_root=Path(tmp_dir),
                 vector_store_loader=loader,
                 embedder=DummyEmbedder(),
+                relation_resolver=SidecarRelationResolver(SidecarStore(Path(tmp_dir))),
             ).search("query", top_k=1)
 
         self.assertEqual(primary.search_calls, 1)
@@ -160,9 +162,9 @@ class TestQueryService(unittest.TestCase):
             payload = QueryService(
                 PrimaryStore(),
                 config=config,
-                workspace_root=Path(tmp_dir),
                 vector_store_loader=loader,
                 embedder=DummyEmbedder(),
+                relation_resolver=SidecarRelationResolver(SidecarStore(Path(tmp_dir))),
             ).search("query", top_k=1)
 
         self.assertEqual(loader_calls, ["source_code", "issues"])
@@ -217,9 +219,9 @@ class TestQueryService(unittest.TestCase):
             payload = QueryService(
                 store,
                 config=config,
-                workspace_root=workspace_root,
                 vector_store_loader=lambda index_config, cfg: store,
                 embedder=DummyEmbedder(),
+                relation_resolver=SidecarRelationResolver(SidecarStore(workspace_root)),
             ).search("query", top_k=1)
 
             self.assertEqual(payload["related_context"][0]["uid"], "issue:from-symbol")
@@ -253,9 +255,9 @@ class TestQueryService(unittest.TestCase):
             payload = QueryService(
                 store,
                 config=config,
-                workspace_root=workspace_root,
                 vector_store_loader=lambda index_config, cfg: store,
                 embedder=DummyEmbedder(),
+                relation_resolver=SidecarRelationResolver(SidecarStore(workspace_root)),
             ).search("query", top_k=1)
 
             self.assertEqual(payload["related_context"][0]["uid"], "issue:suffix-match")
@@ -290,9 +292,9 @@ class TestQueryService(unittest.TestCase):
             payload = QueryService(
                 store,
                 config=config,
-                workspace_root=Path(tmp_dir),
                 vector_store_loader=lambda index_config, cfg: store,
                 embedder=DummyEmbedder(),
+                relation_resolver=SidecarRelationResolver(SidecarStore(Path(tmp_dir))),
             ).search("query", top_k=1)
 
             self.assertEqual(payload["related_context"][0]["uid"], "issue:fresh")

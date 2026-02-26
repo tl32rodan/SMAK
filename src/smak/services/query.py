@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 from smak.config import IndexConfig, SmakConfig
@@ -14,17 +13,16 @@ class QueryService:
         self,
         vector_store: object,
         config: SmakConfig,
-        workspace_root: Path,
         vector_store_loader: Callable[[IndexConfig, SmakConfig], object],
         embedder: object | None = None,
+        relation_resolver: SidecarRelationResolver | None = None,
     ) -> None:
         self.vector_store = vector_store
         self.config = config
-        self.workspace_root = workspace_root
         self.vector_store_loader = vector_store_loader
         self.embedder = embedder or InternalNomicEmbedding()
+        self.relation_resolver = relation_resolver or SidecarRelationResolver()
         self._vector_store_cache: dict[str, object] = {}
-        self.relation_resolver = SidecarRelationResolver(workspace_root)
 
     def _get_payload_globally(self, uid: str) -> dict[str, Any] | None:
         payload = self.vector_store.get_by_id(uid)
