@@ -108,6 +108,7 @@ class TestParsers(unittest.TestCase):
     def test_get_parser_for_path_routes_by_suffix(self) -> None:
         self.assertIsInstance(get_parser_for_path(Path("a.py")), PythonParser)
         self.assertIsInstance(get_parser_for_path(Path("a.pm")), PerlParser)
+        self.assertIsInstance(get_parser_for_path(Path("a.t")), PerlParser)
         self.assertIsInstance(get_parser_for_path(Path("a.md")), IssueParser)
         self.assertIsInstance(get_parser_for_path(Path("a.txt")), SimpleLineParser)
 

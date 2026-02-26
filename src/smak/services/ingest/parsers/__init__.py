@@ -38,7 +38,7 @@ def get_parser_for_path(path: Path, root_path: Path | None = None) -> Parser:
     suffix = path.suffix.lower()
     if suffix == ".py":
         return PythonParser(root_path=str(root_path) if root_path else None)
-    if suffix in {".pl", ".pm"}:
+    if suffix in {".pl", ".pm", ".t"}:
         return PerlParser(root_path=str(root_path) if root_path else None)
     if suffix in {".md", ".markdown"}:
         return IssueParser()
