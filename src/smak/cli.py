@@ -143,6 +143,7 @@ def query_command(text: str, index: str, top_k: int, config: str) -> None:
     service = QueryService(
         vector_store=vector_store,
         config=cfg,
+        workspace_root=_load_workspace_root(config) or Path.cwd(),
         vector_store_loader=_load_vector_store,
     )
     output_str = json.dumps(service.search(text, top_k=top_k), ensure_ascii=False, indent=4)
@@ -187,10 +188,7 @@ def sidecar_inspect(file_path: Path, config_path: str, json_output: bool) -> Non
 @sidecar.command("update")
 @click.argument("file_path", type=click.Path(path_type=Path))
 @click.option("--updates", required=True, help="JSON list of symbol updates")
-@click.option("--reingest", is_flag=True, help="Trigger ingest after sidecar update")
-@click.option("--index", default="source_code", help="Index name for optional re-ingest")
-@click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
-def sidecar_update(file_path: Path, updates: str, reingest: bool, index: str, config: str) -> None:
+def sidecar_update(file_path: Path, updates: str) -> None:
     if not file_path.exists() or not file_path.is_file():
         raise click.ClickException(f"Source file not found: {file_path}")
     try:
@@ -201,14 +199,6 @@ def sidecar_update(file_path: Path, updates: str, reingest: bool, index: str, co
         raise click.ClickException(str(exc)) from exc
     output_str = json.dumps(result, ensure_ascii=False, indent=4)
     click.echo(output_str.encode("utf-8"))
-    if reingest:
-        _, vector_store = _load_vector_store_for_cli(index, config)
-        IngestService(vector_store=vector_store).ingest_folder(
-            file_path.parent,
-            max_workers=1,
-            workspace_root=_load_workspace_root(config),
-            incremental=True,
-        )
 
 
 @main.command("doctor")

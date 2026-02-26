@@ -63,27 +63,38 @@ class TestServices(unittest.TestCase):
             self.assertGreaterEqual(stats.vectors, 1)
 
     def test_query_service_expands_one_hop_relations(self) -> None:
-        store = SimpleNamespace(
-            search=lambda vector, top_k=5: [
-                {
-                    "uid": "func_A",
-                    "score": 0.9,
-                    "content": "A",
-                    "metadata": {"relations": ["issue_12"]},
-                }
-            ],
-            get_by_id=lambda uid: {"uid": uid, "content": "Issue body"},
-        )
-        config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
-        payload = QueryService(
-            store,
-            config=config,
-            vector_store_loader=lambda index_config, cfg: store,
-            embedder=self.DummyEmbedder(),
-        ).search("query", top_k=1)
-        self.assertEqual(payload["hits"][0]["match_type"], "semantic")
-        self.assertEqual(payload["related_context"][0]["source_hit"], "func_A")
-        self.assertEqual(payload["hits"][0]["content"], "A")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def a():\n    pass\n", encoding="utf-8")
+            source.with_name("main.py.sidecar.yaml").write_text(
+                "symbols:\n"
+                "  - name: func_A\n"
+                "    relations:\n"
+                "      - issue_12\n",
+                encoding="utf-8",
+            )
+            store = SimpleNamespace(
+                search=lambda vector, top_k=5: [
+                    {
+                        "uid": "func_A",
+                        "score": 0.9,
+                        "content": "A",
+                        "metadata": {"source": str(source)},
+                    }
+                ],
+                get_by_id=lambda uid: {"uid": uid, "content": "Issue body"},
+            )
+            config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
+            payload = QueryService(
+                store,
+                config=config,
+                workspace_root=Path(tmp_dir),
+                vector_store_loader=lambda index_config, cfg: store,
+                embedder=self.DummyEmbedder(),
+            ).search("query", top_k=1)
+            self.assertEqual(payload["hits"][0]["match_type"], "semantic")
+            self.assertEqual(payload["related_context"][0]["source_hit"], "func_A")
+            self.assertEqual(payload["hits"][0]["content"], "A")
 
     def test_query_service_resolves_relations_across_indices_without_extra_search(self) -> None:
         class PrimaryStore:
@@ -98,7 +109,7 @@ class TestServices(unittest.TestCase):
                         "uid": "func_A",
                         "score": 0.95,
                         "content": "def A(): pass",
-                        "metadata": {"relations": ["issue:42"]},
+                        "metadata": {"source": "src/a.py"},
                     }
                 ]
 
@@ -133,12 +144,24 @@ class TestServices(unittest.TestCase):
             ]
         )
 
-        payload = QueryService(
-            primary,
-            config=config,
-            vector_store_loader=loader,
-            embedder=self.DummyEmbedder(),
-        ).search("query", top_k=1)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "src" / "a.py"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("def a():\n    pass\n", encoding="utf-8")
+            source.with_name("a.py.sidecar.yaml").write_text(
+                "symbols:\n"
+                "  - name: func_A\n"
+                "    relations:\n"
+                "      - issue:42\n",
+                encoding="utf-8",
+            )
+            payload = QueryService(
+                primary,
+                config=config,
+                workspace_root=Path(tmp_dir),
+                vector_store_loader=loader,
+                embedder=self.DummyEmbedder(),
+            ).search("query", top_k=1)
 
         self.assertEqual(primary.search_calls, 1)
         self.assertEqual(loader_calls, ["source_code", "issues"])
@@ -150,7 +173,7 @@ class TestServices(unittest.TestCase):
     def test_query_service_uses_loader_with_index_config(self) -> None:
         class PrimaryStore:
             def search(self, vector: list[float], top_k: int = 5) -> list[dict]:
-                return [{"uid": "func_A", "content": "A", "metadata": {"relations": ["issue:42"]}}]
+                return [{"uid": "func_A", "content": "A", "metadata": {"source": "src/a.py"}}]
 
             def get_by_id(self, uid: str) -> dict | None:
                 return None
@@ -172,15 +195,64 @@ class TestServices(unittest.TestCase):
             ]
         )
 
-        payload = QueryService(
-            PrimaryStore(),
-            config=config,
-            vector_store_loader=loader,
-            embedder=self.DummyEmbedder(),
-        ).search("query", top_k=1)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "src" / "a.py"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("def a():\n    pass\n", encoding="utf-8")
+            source.with_name("a.py.sidecar.yaml").write_text(
+                "symbols:\n"
+                "  - name: func_A\n"
+                "    relations:\n"
+                "      - issue:42\n",
+                encoding="utf-8",
+            )
+            payload = QueryService(
+                PrimaryStore(),
+                config=config,
+                workspace_root=Path(tmp_dir),
+                vector_store_loader=loader,
+                embedder=self.DummyEmbedder(),
+            ).search("query", top_k=1)
 
         self.assertEqual(loader_calls, ["source_code", "issues"])
         self.assertEqual(payload["related_context"][0]["content"], "Issue")
+
+    def test_query_service_ignores_stale_metadata_relations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "module.py"
+            source.write_text("def a():\n    pass\n", encoding="utf-8")
+            source.with_name("module.py.sidecar.yaml").write_text(
+                "symbols:\n"
+                "  - name: func_A\n"
+                "    relations:\n"
+                "      - issue:fresh\n",
+                encoding="utf-8",
+            )
+
+            store = SimpleNamespace(
+                search=lambda vector, top_k=5: [
+                    {
+                        "uid": "func_A",
+                        "content": "A",
+                        "metadata": {
+                            "source": str(source),
+                            "relations": ["issue:stale"],
+                        },
+                    }
+                ],
+                get_by_id=lambda uid: {"uid": uid, "content": uid},
+            )
+            config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
+
+            payload = QueryService(
+                store,
+                config=config,
+                workspace_root=Path(tmp_dir),
+                vector_store_loader=lambda index_config, cfg: store,
+                embedder=self.DummyEmbedder(),
+            ).search("query", top_k=1)
+
+            self.assertEqual(payload["related_context"][0]["uid"], "issue:fresh")
 
     def test_shared_sidecar_suffixes_work_across_yaml_extensions(self) -> None:
         from smak.services.sidecar_paths import iter_sidecar_files

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from smak.config import IndexConfig, SmakConfig
 from smak.embedding import InternalNomicEmbedding
+from smak.services.sidecar_paths import sidecar_path_for_source
+from smak.utils.yaml import safe_load
 
 
 class QueryService:
@@ -12,14 +15,50 @@ class QueryService:
         self,
         vector_store: object,
         config: SmakConfig,
+        workspace_root: Path,
         vector_store_loader: Callable[[IndexConfig, SmakConfig], object],
         embedder: object | None = None,
     ) -> None:
         self.vector_store = vector_store
         self.config = config
+        self.workspace_root = workspace_root
         self.vector_store_loader = vector_store_loader
         self.embedder = embedder or InternalNomicEmbedding()
         self._vector_store_cache: dict[str, object] = {}
+
+    def _resolve_relations_for_hit(self, uid: str, metadata: dict[str, Any]) -> list[str]:
+        source = metadata.get("source")
+        if not isinstance(source, str) or not source:
+            return []
+
+        source_path = Path(source)
+        if not source_path.is_absolute():
+            source_path = self.workspace_root / source_path
+        sidecar_path = sidecar_path_for_source(source_path)
+        if not sidecar_path.exists() or not sidecar_path.is_file():
+            return []
+
+        try:
+            parsed = safe_load(sidecar_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        if not isinstance(parsed, dict):
+            return []
+
+        symbols = parsed.get("symbols")
+        if not isinstance(symbols, list):
+            return []
+
+        for symbol in symbols:
+            if not isinstance(symbol, dict) or symbol.get("name") != uid:
+                continue
+            relations = symbol.get("relations", [])
+            if isinstance(relations, str):
+                return [relations]
+            if isinstance(relations, list):
+                return [str(target_uid) for target_uid in relations if str(target_uid)]
+            return []
+        return []
 
     def _get_payload_globally(self, uid: str) -> dict[str, Any] | None:
         payload = self.vector_store.get_by_id(uid)
@@ -58,11 +97,7 @@ class QueryService:
                     "content": hit.get("content"),
                 }
             )
-            relations = metadata.get("relations", [])
-            if isinstance(relations, str):
-                relations = [relations]
-            if not isinstance(relations, list):
-                continue
+            relations = self._resolve_relations_for_hit(uid, metadata)
             for target_uid in relations:
                 target_uid = str(target_uid)
                 if not target_uid or target_uid in seen_related:
