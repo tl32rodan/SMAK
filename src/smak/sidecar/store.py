@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from smak.services.sidecar_paths import sidecar_path_for_source
+from smak.sidecar.paths import sidecar_path_for_source
 from smak.utils.yaml import safe_dump, safe_load
 
 

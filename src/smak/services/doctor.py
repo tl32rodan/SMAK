@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from smak.services.sidecar_paths import iter_sidecar_files, source_path_from_sidecar
+from smak.sidecar.paths import iter_sidecar_files, source_path_from_sidecar
 from smak.utils.yaml import safe_load
 
 

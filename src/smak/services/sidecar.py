@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from smak.ingest.parsers import get_parser_for_path
-from smak.services.sidecar_paths import is_sidecar_file
-from smak.services.sidecar_store import SidecarStore
+from smak.services.ingest.parsers import get_parser_for_path
+from smak.sidecar.paths import is_sidecar_file
+from smak.sidecar.store import SidecarStore
 
 
 def _read_text_with_fallback(path: Path) -> str:

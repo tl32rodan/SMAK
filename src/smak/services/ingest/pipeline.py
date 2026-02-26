@@ -6,17 +6,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from smak.core.domain import KnowledgeUnit
-from smak.embedding import EmbeddingProbe, InternalNomicEmbedding
-from smak.ingest.parsers import Parser
-from smak.ingest.sidecar import IntegrityError, SidecarManager
+from smak.services.ingest.parsers import Parser
+from smak.sidecar import IntegrityError, SidecarManager
+from smak.utils.embedding import EmbeddingProbe, InternalNomicEmbedding
 
 Embedder = EmbeddingProbe
 
 
 @dataclass
 class IngestResult:
-    """Output of the ingest pipeline."""
-
     units: list[KnowledgeUnit]
     embeddings: list[list[float]]
     metadata: dict[str, Any]
@@ -24,8 +22,6 @@ class IngestResult:
 
 @dataclass
 class IngestPipeline:
-    """Coordinate ingest steps for content."""
-
     parser: Parser
     embedder: Embedder | None = None
     sidecar_manager: SidecarManager | None = None
@@ -45,9 +41,7 @@ class IngestPipeline:
         compute_embeddings: bool = False,
     ) -> IngestResult:
         units = self.parser.parse(content, source=source)
-        sidecar_manager = self.sidecar_manager
-        if sidecar_manager is None:
-            sidecar_manager = SidecarManager()
+        sidecar_manager = self.sidecar_manager or SidecarManager()
         metadata = sidecar_manager.load(sidecar_payload)
         symbols = [unit.metadata.get("symbol") for unit in units if unit.metadata.get("symbol")]
         sidecar_manager.validate(symbols, metadata)

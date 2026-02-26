@@ -18,8 +18,6 @@ class SidecarManager:
     """Parse and validate sidecar metadata."""
 
     def load(self, payload: str | None) -> dict[str, Any]:
-        """Load metadata from YAML payload."""
-
         if not payload:
             return {}
         parsed = safe_load(payload)
@@ -30,8 +28,6 @@ class SidecarManager:
         return {"value": parsed}
 
     def validate(self, symbols: Sequence[str], metadata: Mapping[str, Any]) -> None:
-        """Ensure annotated symbols exist in the source symbol list."""
-
         annotations = metadata.get("symbols", [])
         if annotations is None:
             return
@@ -56,8 +52,6 @@ class SidecarManager:
     def apply(
         self, units: Sequence[KnowledgeUnit], metadata: Mapping[str, Any]
     ) -> list[KnowledgeUnit]:
-        """Apply sidecar metadata and relations to knowledge units."""
-
         annotations = metadata.get("symbols", [])
         annotation_map: dict[str, Mapping[str, Any]] = {}
         class_relations: dict[str, list[str]] = {}

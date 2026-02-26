@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from smak.services.relation_resolver import SidecarRelationResolver, build_symbol_name_candidates
-from smak.services.sidecar_store import SidecarStore
+from smak.sidecar.store import SidecarStore
 
 
 class TestRelationResolver(unittest.TestCase):

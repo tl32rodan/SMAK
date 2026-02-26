@@ -10,7 +10,7 @@ from smak.services.doctor import DoctorService
 
 class TestDoctorService(unittest.TestCase):
     def test_shared_sidecar_suffixes_work_across_yaml_extensions(self) -> None:
-        from smak.services.sidecar_paths import iter_sidecar_files
+        from smak.sidecar.paths import iter_sidecar_files
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

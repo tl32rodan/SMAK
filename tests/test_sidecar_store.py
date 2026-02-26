@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from smak.services.sidecar_store import SidecarStore
+from smak.sidecar.store import SidecarStore
 
 
 class TestSidecarStore(unittest.TestCase):

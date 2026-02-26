@@ -8,15 +8,15 @@ from pathlib import Path
 import click
 
 from smak.config import IndexConfig, SmakConfig, load_config
-from smak.embedding import (
+from smak.services import DoctorService, IngestService, QueryService, SidecarService
+from smak.services.ingest.pipeline import IntegrityError
+from smak.services.relation_resolver import SidecarRelationResolver
+from smak.sidecar.store import SidecarStore
+from smak.utils.embedding import (
     InternalNomicEmbedding,
     initialize_embedding_dimensions,
     validate_vector_store_dimension,
 )
-from smak.ingest.pipeline import IntegrityError
-from smak.services import DoctorService, IngestService, QueryService, SidecarService
-from smak.services.relation_resolver import SidecarRelationResolver
-from smak.services.sidecar_store import SidecarStore
 
 DEFAULT_MAX_WORKERS = 4
 DEFAULT_INDEX_DATA_DIR = "./smak_data"
