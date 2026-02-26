@@ -11,8 +11,6 @@ from smak.core.domain import KnowledgeUnit
 
 @dataclass
 class PythonParser:
-    """Parse Python source code into knowledge units."""
-
     root_path: str | None = None
 
     def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from smak.config import SmakConfig
-from smak.embedding import (
+from smak.utils.embedding import (
     InternalNomicEmbedding,
     detect_embedding_dimension,
     initialize_embedding_dimensions,

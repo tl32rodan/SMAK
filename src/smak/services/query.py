@@ -4,7 +4,8 @@ from collections.abc import Callable
 from typing import Any
 
 from smak.config import IndexConfig, SmakConfig
-from smak.embedding import InternalNomicEmbedding
+from smak.services.relation_resolver import SidecarRelationResolver
+from smak.utils.embedding import InternalNomicEmbedding
 
 
 class QueryService:
@@ -14,11 +15,13 @@ class QueryService:
         config: SmakConfig,
         vector_store_loader: Callable[[IndexConfig, SmakConfig], object],
         embedder: object | None = None,
+        relation_resolver: SidecarRelationResolver | None = None,
     ) -> None:
         self.vector_store = vector_store
         self.config = config
         self.vector_store_loader = vector_store_loader
         self.embedder = embedder or InternalNomicEmbedding()
+        self.relation_resolver = relation_resolver or SidecarRelationResolver()
         self._vector_store_cache: dict[str, object] = {}
 
     def _get_payload_globally(self, uid: str) -> dict[str, Any] | None:
@@ -58,11 +61,7 @@ class QueryService:
                     "content": hit.get("content"),
                 }
             )
-            relations = metadata.get("relations", [])
-            if isinstance(relations, str):
-                relations = [relations]
-            if not isinstance(relations, list):
-                continue
+            relations = self.relation_resolver.resolve(uid, metadata)
             for target_uid in relations:
                 target_uid = str(target_uid)
                 if not target_uid or target_uid in seen_related:

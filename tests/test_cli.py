@@ -216,30 +216,60 @@ class TestCli(unittest.TestCase):
                         "uid": "func_A",
                         "score": 0.8,
                         "content": "A",
-                        "metadata": {"relations": ["issue_1"]},
+                        "metadata": {"source": "src/main.py"},
                     }
                 ]
 
             def get_by_id(self, uid: str) -> dict | None:
                 return {"uid": uid, "content": "related"}
 
-        with (
-            patch(
-                "smak.cli._load_vector_store_for_cli",
-                new=lambda index, config: (
-                    SmakConfig(
-                        indices=[IndexConfig(name="source_code", description="source")]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            config_path = workspace / "workspace_config.yaml"
+            config_path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: source\n",
+                encoding="utf-8",
+            )
+            source = workspace / "src" / "main.py"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("def a():\n    pass\n", encoding="utf-8")
+            source.with_name("main.py.sidecar.yaml").write_text(
+                "symbols:\n"
+                "  - name: func_A\n"
+                "    relations:\n"
+                "      - issue_1\n",
+                encoding="utf-8",
+            )
+
+            with (
+                patch(
+                    "smak.cli._load_vector_store_for_cli",
+                    new=lambda index, config: (
+                        SmakConfig(
+                            indices=[IndexConfig(name="source_code", description="source")]
+                        ),
+                        QueryStore(),
                     ),
-                    QueryStore(),
                 ),
-            ),
-            patch(
-                "smak.services.query.InternalNomicEmbedding",
-                new=lambda: SimpleNamespace(get_text_embedding=lambda text: [0.1]),
-            ),
-        ):
-            cli = importlib.import_module("smak.cli")
-            result = runner.invoke(cli.main, ["query", "hello", "--index", "code"])
+                patch(
+                    "smak.services.query.InternalNomicEmbedding",
+                    new=lambda: SimpleNamespace(get_text_embedding=lambda text: [0.1]),
+                ),
+            ):
+                cli = importlib.import_module("smak.cli")
+                result = runner.invoke(
+                    cli.main,
+                    [
+                        "query",
+                        "hello",
+                        "--index",
+                        "code",
+                        "--config",
+                        str(config_path),
+                    ],
+                )
 
         self.assertEqual(result.exit_code, 0)
         self.assertEqual(captured_top_k, [1])
@@ -247,6 +277,15 @@ class TestCli(unittest.TestCase):
         payload = json.loads(result.output)
         self.assertIn("hits", payload)
         self.assertIn("related_context", payload)
+
+    def test_sidecar_update_has_no_reingest_options(self) -> None:
+        runner = CliRunner()
+        cli = importlib.import_module("smak.cli")
+        result = runner.invoke(cli.main, ["sidecar", "update", "--help"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertNotIn("--reingest", result.output)
+        self.assertNotIn("--index", result.output)
+        self.assertNotIn("--config", result.output)
 
 
 if __name__ == "__main__":

@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from smak.ingest.parsers import get_parser_for_path
-from smak.services.sidecar_paths import is_sidecar_file, sidecar_path_for_source
-from smak.utils.yaml import safe_dump, safe_load
+from smak.services.ingest.parsers import get_parser_for_path
+from smak.sidecar.paths import is_sidecar_file
+from smak.sidecar.store import SidecarStore
 
 
 def _read_text_with_fallback(path: Path) -> str:
@@ -16,7 +16,6 @@ def _read_text_with_fallback(path: Path) -> str:
         return path.read_text(encoding="utf-8", errors="replace")
 
 
-
 def _iter_source_files(folder: Path):
     for path in folder.rglob("*"):
         if path.is_file() and not is_sidecar_file(path):
@@ -24,16 +23,19 @@ def _iter_source_files(folder: Path):
 
 
 class SidecarService:
-    def inspect(self, path: Path, *, workspace_root: Path | None = None) -> list[str]:
-        parser = get_parser_for_path(path, root_path=workspace_root)
+    def __init__(self, sidecar_store: SidecarStore | None = None) -> None:
+        self.sidecar_store = sidecar_store or SidecarStore()
+
+    def inspect(self, path: Path) -> list[str]:
+        parser = get_parser_for_path(path, root_path=self.sidecar_store.workspace_root)
         content = _read_text_with_fallback(path)
         return [unit.uid for unit in parser.parse(content, source=str(path))]
 
-    def init(self, target_path: Path, *, workspace_root: Path | None = None) -> Path:
+    def init(self, target_path: Path) -> Path:
         if target_path.is_dir():
             symbols: list[str] = []
             for source_path in sorted(_iter_source_files(target_path)):
-                symbols.extend(self.inspect(source_path, workspace_root=workspace_root))
+                symbols.extend(self.inspect(source_path))
             lines = ["symbols:"]
             for symbol in symbols:
                 lines.extend([f"  - name: {symbol}", '    intent: ""', "    relations: []"])
@@ -42,29 +44,25 @@ class SidecarService:
             output.write_text(payload, encoding="utf-8")
             return output
 
-        parser = get_parser_for_path(target_path, root_path=workspace_root)
-        units = parser.parse(
-            _read_text_with_fallback(target_path), source=str(target_path)
-        )
-        lines = ["symbols:"]
-        for unit in units:
-            lines.extend(
-                [
-                    f"  - name: {unit.metadata.get('symbol', unit.uid)}",
-                    '    intent: ""',
-                    "    relations: []",
-                ]
-            )
-        payload = "\n".join(lines) + "\n" if units else "symbols: []\n"
-        output = sidecar_path_for_source(target_path)
-        output.write_text(payload, encoding="utf-8")
-        return output
+        parser = get_parser_for_path(target_path, root_path=self.sidecar_store.workspace_root)
+        units = parser.parse(_read_text_with_fallback(target_path), source=str(target_path))
+        symbols = [
+            {
+                "name": str(unit.metadata.get("symbol", unit.uid)),
+                "intent": "",
+                "relations": [],
+            }
+            for unit in units
+        ]
+        return self.sidecar_store.save_symbols_for_source(target_path, symbols)
 
     def update(self, file_path: Path, updates: str) -> dict[str, Any]:
         parsed_updates = json.loads(updates)
         normalized = self._normalize_updates(parsed_updates)
-        sidecar_path = sidecar_path_for_source(file_path)
-        total_symbols = self._merge_updates(sidecar_path, normalized)
+        sidecar_path, total_symbols = self.sidecar_store.merge_symbols_for_source(
+            file_path,
+            normalized,
+        )
         return {
             "file_path": str(file_path),
             "sidecar_path": str(sidecar_path),
@@ -92,25 +90,3 @@ class SidecarService:
                 record["relations"] = [str(item) for item in relations]
             normalized.append(record)
         return normalized
-
-    def _merge_updates(self, sidecar_path: Path, updates: list[dict[str, Any]]) -> int:
-        payload = (
-            safe_load(_read_text_with_fallback(sidecar_path)) if sidecar_path.exists() else {}
-        )
-        if not isinstance(payload, dict):
-            payload = {}
-        existing = payload.get("symbols")
-        if not isinstance(existing, list):
-            existing = []
-        table: dict[str, dict[str, Any]] = {}
-        for entry in existing:
-            if isinstance(entry, dict) and isinstance(entry.get("name"), str):
-                table[entry["name"]] = dict(entry)
-        for update in updates:
-            name = update["name"]
-            target = table.get(name, {"name": name})
-            target.update(update)
-            table[name] = target
-        payload["symbols"] = sorted(table.values(), key=lambda item: str(item.get("name", "")))
-        sidecar_path.write_text(safe_dump(payload), encoding="utf-8")
-        return len(payload["symbols"])

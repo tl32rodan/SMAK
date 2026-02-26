@@ -13,8 +13,6 @@ from smak.utils.yaml import safe_load
 
 @dataclass
 class IssueParser:
-    """Parse markdown issues with optional frontmatter."""
-
     def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:
         frontmatter, body = _split_frontmatter(content or "")
         metadata = safe_load(frontmatter) if frontmatter else {}
@@ -45,11 +43,9 @@ def _resolve_uid(metadata: dict[str, object], body: str, source: str | None) -> 
     symbol = metadata.get("symbol")
     if isinstance(symbol, str) and symbol.strip():
         return symbol.strip()
-
     header = _first_header(body)
     if header:
         return _slugify(header)
-
     if source:
         return _slugify(Path(source).stem)
     return "issue"

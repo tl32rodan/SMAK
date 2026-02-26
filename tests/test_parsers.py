@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from smak.ingest.parsers import (
+from smak.services.ingest.parsers import (
     IssueParser,
     PerlParser,
     PythonParser,
@@ -27,6 +27,61 @@ class TestParsers(unittest.TestCase):
         units = PerlParser().parse("sub login {\n}\n\nsub logout {\n}\n", source="main.pl")
         self.assertEqual([unit.uid for unit in units], ["main.pl::login", "main.pl::logout"])
 
+    def test_perl_parser_extracts_sub_blocks_with_nested_braces(self) -> None:
+        content = (
+            "sub login {\n"
+            "    my $v = 1;\n"
+            "    if ($v) {\n"
+            "        return $v;\n"
+            "    }\n"
+            "}\n"
+        )
+
+        units = PerlParser().parse(content, source="main.pl")
+
+        self.assertEqual(len(units), 1)
+        self.assertTrue(units[0].content.startswith("sub login {"))
+        self.assertIn("if ($v) {", units[0].content)
+        self.assertTrue(units[0].content.endswith("}"))
+
+    def test_perl_parser_ignores_braces_in_strings_comments_and_pod(self) -> None:
+        content = (
+            "=head\n"
+            "sub fake_from_pod {\n"
+            "}\n"
+            "=cut\n"
+            "sub alpha {\n"
+            "    my $s1 = \"} not real brace\";\n"
+            "    my $s2 = '\\{ still string';\n"
+            "    # sub fake_comment {\n"
+            "    return 1;\n"
+            "}\n"
+            "sub beta {\n"
+            "    return 2;\n"
+            "}\n"
+        )
+
+        units = PerlParser().parse(content, source="main.pl")
+
+        self.assertEqual([unit.uid for unit in units], ["main.pl::alpha", "main.pl::beta"])
+        self.assertNotIn("fake_from_pod", "\n".join(unit.content for unit in units))
+
+    def test_perl_parser_handles_single_quote_with_double_quote_char(self) -> None:
+        content = (
+            "sub build_csv {\n"
+            "    return Text::CSV->new({ quote_char => '\"' });\n"
+            "}\n"
+            "sub other {\n"
+            "    my $x = \"ok\";\n"
+            "    return $x;\n"
+            "}\n"
+        )
+
+        units = PerlParser().parse(content, source="csv.pl")
+
+        self.assertEqual([unit.uid for unit in units], ["csv.pl::build_csv", "csv.pl::other"])
+        self.assertIn("quote_char => '\"'", units[0].content)
+
     def test_issue_parser_uses_symbol_from_frontmatter(self) -> None:
         parser = IssueParser()
         content = (
@@ -50,10 +105,10 @@ class TestParsers(unittest.TestCase):
         units = IssueParser().parse("No markdown header", source="docs/My Issue.md")
         self.assertEqual(units[0].uid, "my-issue")
 
-
     def test_get_parser_for_path_routes_by_suffix(self) -> None:
         self.assertIsInstance(get_parser_for_path(Path("a.py")), PythonParser)
         self.assertIsInstance(get_parser_for_path(Path("a.pm")), PerlParser)
+        self.assertIsInstance(get_parser_for_path(Path("a.t")), PerlParser)
         self.assertIsInstance(get_parser_for_path(Path("a.md")), IssueParser)
         self.assertIsInstance(get_parser_for_path(Path("a.txt")), SimpleLineParser)
 
