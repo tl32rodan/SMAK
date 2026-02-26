@@ -49,8 +49,18 @@ class QueryService:
         if not isinstance(symbols, list):
             return []
 
+        symbol_name = metadata.get("symbol")
+        candidate_names = {uid}
+        if isinstance(symbol_name, str) and symbol_name:
+            candidate_names.add(symbol_name)
+        if "::" in uid:
+            candidate_names.add(uid.split("::", 1)[1])
+
         for symbol in symbols:
-            if not isinstance(symbol, dict) or symbol.get("name") != uid:
+            if not isinstance(symbol, dict):
+                continue
+            name = symbol.get("name")
+            if not isinstance(name, str) or name not in candidate_names:
                 continue
             relations = symbol.get("relations", [])
             if isinstance(relations, str):

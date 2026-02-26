@@ -168,6 +168,98 @@ class TestQueryService(unittest.TestCase):
         self.assertEqual(loader_calls, ["source_code", "issues"])
         self.assertEqual(payload["related_context"][0]["content"], "Issue")
 
+
+    def test_query_service_matches_sidecar_symbol_name_from_ingest_metadata(self) -> None:
+        from smak.ingest.parsers.python import PythonParser
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace_root = Path(tmp_dir)
+            source = workspace_root / "src" / "csv_editor.py"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text(
+                "class CsvEditor:\n"
+                "    def updatecell(self):\n"
+                "        return True\n",
+                encoding="utf-8",
+            )
+
+            parser = PythonParser(root_path=str(workspace_root))
+            parsed_units = parser.parse(source.read_text(encoding="utf-8"), source=str(source))
+            target_unit = next(
+                unit
+                for unit in parsed_units
+                if unit.metadata.get("symbol") == "CsvEditor.updatecell"
+            )
+
+            source.with_name("csv_editor.py.sidecar.yaml").write_text(
+                "symbols:\n"
+                "  - name: CsvEditor.updatecell\n"
+                "    relations:\n"
+                "      - issue:from-symbol\n",
+                encoding="utf-8",
+            )
+
+            store = SimpleNamespace(
+                search=lambda vector, top_k=5: [
+                    {
+                        "uid": target_unit.uid,
+                        "content": target_unit.content,
+                        "metadata": {
+                            "source": target_unit.metadata["source"],
+                            "symbol": target_unit.metadata["symbol"],
+                        },
+                    }
+                ],
+                get_by_id=lambda related_uid: {"uid": related_uid, "content": related_uid},
+            )
+            config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
+
+            payload = QueryService(
+                store,
+                config=config,
+                workspace_root=workspace_root,
+                vector_store_loader=lambda index_config, cfg: store,
+                embedder=DummyEmbedder(),
+            ).search("query", top_k=1)
+
+            self.assertEqual(payload["related_context"][0]["uid"], "issue:from-symbol")
+
+    def test_query_service_matches_uid_sans_source_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace_root = Path(tmp_dir)
+            source = workspace_root / "src" / "csv_editor.py"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("def updatecell():\n    return True\n", encoding="utf-8")
+            source.with_name("csv_editor.py.sidecar.yaml").write_text(
+                "symbols:\n"
+                "  - name: updatecell\n"
+                "    relations:\n"
+                "      - issue:suffix-match\n",
+                encoding="utf-8",
+            )
+
+            store = SimpleNamespace(
+                search=lambda vector, top_k=5: [
+                    {
+                        "uid": "src/csv_editor.py::updatecell",
+                        "content": "def updatecell",
+                        "metadata": {"source": "src/csv_editor.py"},
+                    }
+                ],
+                get_by_id=lambda related_uid: {"uid": related_uid, "content": related_uid},
+            )
+            config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
+
+            payload = QueryService(
+                store,
+                config=config,
+                workspace_root=workspace_root,
+                vector_store_loader=lambda index_config, cfg: store,
+                embedder=DummyEmbedder(),
+            ).search("query", top_k=1)
+
+            self.assertEqual(payload["related_context"][0]["uid"], "issue:suffix-match")
+
     def test_query_service_ignores_stale_metadata_relations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             source = Path(tmp_dir) / "module.py"
