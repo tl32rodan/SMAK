@@ -1,0 +1,9 @@
+providers:
+  llm:
+    provider: openai_compatible
+    model: gpt-4o-mini
+    api_key_env: OPENAI_API_KEY
+  embeddings:
+    provider: openai_compatible
+    model: text-embedding-3-small
+    api_key_env: OPENAI_API_KEY
