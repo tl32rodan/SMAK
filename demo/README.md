@@ -1,18 +1,37 @@
-# SMAK CLI Demo
+# SMAK Strict Multi-Workspace Demo
 
-This folder demonstrates a minimal end-to-end CLI flow for the passive SMAK kernel using a CSV editor sample.
+This demo now models the **mandatory registry-based multi-workspace architecture**.
 
-## Run step by step
+## Layout
 
-### 1) Ingest folders
+- `all_workspaces.yaml`: workspace registry used by MCP routing.
+- `workspace_a/`: primary demo flow containing source code, issues, and docs.
+- `workspace_b/`: isolated secondary workspace with its own `workspace_config.yaml`.
+
+## Registry
+
+`all_workspaces.yaml` maps logical workspace names to filesystem paths:
+
+- `demo_flow_a -> ./workspace_a`
+- `demo_flow_b -> ./workspace_b`
+
+Use this file with the MCP server:
+
 ```bash
-cd demo
+python -m smak.mcp_server --registry ./demo/all_workspaces.yaml
+```
+
+## CLI walkthrough in workspace A
+
+```bash
+cd demo/workspace_a
 smak ingest --folder ./src --index source_code --config workspace_config.yaml --workers 1
 smak ingest --folder ./issues --index issues --config workspace_config.yaml --workers 1
 smak ingest --folder ./documentation --index documentation --config workspace_config.yaml --workers 1
 ```
 
-### 2) Inspect canonical symbols
+Inspect symbols:
+
 ```bash
 smak sidecar inspect ./src/csv_editor.py --config workspace_config.yaml
 smak sidecar inspect ./src/tests/test_csv_editor.py --config workspace_config.yaml
@@ -20,32 +39,14 @@ smak sidecar inspect ./documentation/csv-editor-usage.md --config workspace_conf
 smak sidecar inspect ./issues/csv-editor-known-issues.md --config workspace_config.yaml
 ```
 
-### 3) Create sidecar and add relations
-```bash
-smak sidecar init ./src/csv_editor.py --config workspace_config.yaml
-smak sidecar init ./issues/csv-editor-known-issues.md --config workspace_config.yaml
-cat >! ./src/csv_editor.py.sidecar.yaml <<'YAML'
-symbols:
-  - name: CsvEditor
-    intent: "Manage CSV rows for lightweight fixture editing"
-    relations:
-      - csv-editor-known-issues
-  - name: CsvEditor.update_cell
-    intent: "Update one cell by row/column index"
-    relations:
-      - csv-editor-known-issues
-'YAML'
-```
+Re-ingest and query:
 
-### 4) Re-ingest and query mesh context
 ```bash
 smak ingest --folder ./src --index source_code --config workspace_config.yaml --workers 1
 smak query "why update_cell fails" --index source_code --config workspace_config.yaml
-```
-
-You should see semantic hits from `csv_editor.py` and `related_context` entries that include `csv-editor-known-issues.md` content due to 1-hop relation traversal.
-
-### 5) Run doctor
-```bash
 smak doctor --path . --index source_code --config workspace_config.yaml
 ```
+
+## Isolation intent
+
+`workspace_b` intentionally contains separate files/config so you can validate that tool calls routed to `demo_flow_b` do not read `workspace_a` content.

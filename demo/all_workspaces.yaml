@@ -1,0 +1,7 @@
+workspaces:
+  demo_flow_a:
+    path: "./workspace_a"
+    description: "Demo workspace A for primary flow."
+  demo_flow_b:
+    path: "./workspace_b"
+    description: "Demo workspace B for secondary flow."
