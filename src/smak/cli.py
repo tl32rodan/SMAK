@@ -22,17 +22,23 @@ DEFAULT_MAX_WORKERS = 4
 DEFAULT_INDEX_DATA_DIR = "./smak_data"
 
 
-def _resolve_index_uri(index_config: IndexConfig) -> str:
+def _resolve_index_uri(index_config: IndexConfig, base_path: Path | None = None) -> str:
+    resolved_base = base_path.resolve() if base_path else Path.cwd().resolve()
     if index_config.uri:
-        return str(Path(index_config.uri).expanduser().resolve())
-    return str((Path(DEFAULT_INDEX_DATA_DIR) / index_config.name).resolve())
+        uri_path = Path(index_config.uri).expanduser()
+        return str((resolved_base / uri_path).resolve()) if not uri_path.is_absolute() else str(
+            uri_path.resolve()
+        )
+    return str((resolved_base / DEFAULT_INDEX_DATA_DIR / index_config.name).resolve())
 
 
-def _load_vector_store(index_config: IndexConfig, config: SmakConfig):
+def _load_vector_store(
+    index_config: IndexConfig, config: SmakConfig, base_path: Path | None = None
+):
     from smak.storage.faiss_adapter import load_faiss_store
 
     return load_faiss_store(
-        uri=_resolve_index_uri(index_config),
+        uri=_resolve_index_uri(index_config, base_path=base_path),
         collection_name=index_config.name,
         dim=config.embedding_dimensions,
     )
@@ -69,12 +75,13 @@ def _load_workspace_root(config_path: str) -> Path | None:
 
 def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig, object]:
     cfg = load_config(config_path)
+    workspace_root = _load_workspace_root(config_path)
     index_config = next((entry for entry in cfg.indices if entry.name == index), None)
     if index_config is None:
         raise click.ClickException(f"Index '{index}' not found in configuration.")
     embedder = InternalNomicEmbedding()
     cfg = initialize_embedding_dimensions(cfg, embedder)
-    vector_store = _load_vector_store(index_config, cfg)
+    vector_store = _load_vector_store(index_config, cfg, workspace_root)
     validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
     return cfg, vector_store
 
@@ -208,11 +215,22 @@ def sidecar_update(file_path: Path, updates: str) -> None:
 
 @main.command("doctor")
 @click.option("--path", "target_path", default=".", type=click.Path(path_type=Path))
-@click.option("--index", default="source_code", help="Index name")
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
-def doctor(target_path: Path, index: str, config: str) -> None:
-    _, vector_store = _load_vector_store_for_cli(index, config)
-    service = DoctorService(vector_store=vector_store)
+def doctor(target_path: Path, config: str) -> None:
+    cfg = load_config(config)
+    workspace_root = _load_workspace_root(config)
+    embedder = InternalNomicEmbedding()
+    cfg = initialize_embedding_dimensions(cfg, embedder)
+
+    def _load_store(index_name: str) -> object:
+        index_config = next((entry for entry in cfg.indices if entry.name == index_name), None)
+        if index_config is None:
+            raise click.ClickException(f"Index '{index_name}' not found in configuration.")
+        vector_store = _load_vector_store(index_config, cfg, workspace_root)
+        validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
+        return vector_store
+
+    service = DoctorService(config=cfg, vector_store_loader=_load_store)
     issues = service.validate_sidecars(target_path)
     dangling = service.validate_mesh_integrity(target_path)
     problems = [*issues, *dangling]

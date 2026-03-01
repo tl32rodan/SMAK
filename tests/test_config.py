@@ -39,7 +39,12 @@ class TestConfig(unittest.TestCase):
             self.assertFalse(hasattr(config, "llm"))
 
     def test_demo_workspace_config_loads_without_llm_field(self) -> None:
-        demo_config = Path(__file__).resolve().parents[1] / "demo" / "workspace_config.yaml"
+        demo_config = (
+            Path(__file__).resolve().parents[1]
+            / "demo"
+            / "workspace_a"
+            / "workspace_config.yaml"
+        )
 
         config = load_config(demo_config)
 
@@ -62,7 +67,12 @@ class TestConfig(unittest.TestCase):
             self.assertFalse(hasattr(config, "llm"))
 
     def test_demo_workspace_config_source_code_uri(self) -> None:
-        demo_config = Path(__file__).resolve().parents[1] / "demo" / "workspace_config.yaml"
+        demo_config = (
+            Path(__file__).resolve().parents[1]
+            / "demo"
+            / "workspace_a"
+            / "workspace_config.yaml"
+        )
 
         config = load_config(demo_config)
 

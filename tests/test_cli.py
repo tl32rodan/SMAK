@@ -110,9 +110,16 @@ class TestCli(unittest.TestCase):
             )
             captured: dict[str, object] = {}
 
-            def fake_loader(index_config: object, config: object) -> object:
+            def fake_loader(
+                index_config: object,
+                config: object,
+                base_path: object = None,
+            ) -> object:
                 captured["index_name"] = index_config.name
-                captured["index_uri"] = cli._resolve_index_uri(index_config)
+                captured["index_uri"] = cli._resolve_index_uri(
+                    index_config,
+                    base_path=base_path,
+                )
                 return SimpleNamespace(dimension=1)
 
             with (
@@ -125,7 +132,7 @@ class TestCli(unittest.TestCase):
             self.assertEqual(captured["index_name"], "docs")
             self.assertEqual(
                 captured["index_uri"],
-                str((Path("./smak_data") / "docs").resolve()),
+                str((Path(tmp_dir).resolve() / "smak_data" / "docs").resolve()),
             )
 
 
