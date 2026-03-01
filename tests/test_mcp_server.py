@@ -21,15 +21,23 @@ class TestMcpServer(unittest.TestCase):
         tmp_path = Path(tmp_dir)
         workspace = tmp_path / "workspace"
         workspace.mkdir()
+        (workspace / "workspace_config.yaml").write_text(
+            "indices:\n"
+            "  - name: source_code\n"
+            "    description: src\n",
+            encoding="utf-8",
+        )
         registry_path = tmp_path / "registry.yaml"
         registry_path.write_text(
-            """
-workspaces:
-  mock_workspace:
-    path: "./workspace"
-    description: "Mock workspace"
-""".strip()
-            + "\n",
+            "\n".join(
+                [
+                    "workspaces:",
+                    "  mock_workspace:",
+                    '    path: "./workspace"',
+                    '    description: "Mock workspace"',
+                    "",
+                ]
+            ),
             encoding="utf-8",
         )
         return SmakMcpServer(registry_path=registry_path)
@@ -43,93 +51,123 @@ workspaces:
     def test_init_requires_non_empty_workspaces(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             registry_path = Path(tmp_dir) / "registry.yaml"
-            registry_path.write_text("workspaces: {}\n", encoding="utf-8")
+            registry_path.write_text("workspaces:\n", encoding="utf-8")
             with self.assertRaises(ValueError):
                 SmakMcpServer(registry_path=registry_path)
 
-    def test_get_workspace_cwd_resolves_relative_path(self) -> None:
+    def test_get_workspace_path_resolves_relative_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
-            cwd = server._get_workspace_cwd("mock_workspace")
-            self.assertTrue(cwd.is_absolute())
-            self.assertEqual(cwd, Path(tmp_dir).resolve() / "workspace")
+            workspace_path = server._get_workspace_path("mock_workspace")
+            self.assertTrue(workspace_path.is_absolute())
+            self.assertEqual(workspace_path, Path(tmp_dir).resolve() / "workspace")
 
-    def test_get_workspace_cwd_rejects_unknown_workspace(self) -> None:
+    def test_get_workspace_path_rejects_unknown_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
             with self.assertRaises(ValueError):
-                server._get_workspace_cwd("unknown")
+                server._get_workspace_path("unknown")
 
-    def test_refresh_knowledge_uses_cli(self) -> None:
+    @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
+    @patch("smak.mcp_server._load_vector_store")
+    @patch("smak.mcp_server.IngestService")
+    def test_refresh_knowledge_uses_ingest_service(
+        self,
+        ingest_cls: MagicMock,
+        load_store: MagicMock,
+        _: MagicMock,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
-            with patch.object(server, "_run_cli", return_value="ok") as run_cli:
-                output = server.refresh_knowledge(
-                    workspace="mock_workspace", folder="src", index="source_code"
-                )
-            self.assertEqual(output, "ok")
-            self.assertIn("ingest", run_cli.call_args.args[0])
-            self.assertEqual(run_cli.call_args.kwargs["workspace"], "mock_workspace")
+            load_store.return_value = object()
+            ingest_instance = ingest_cls.return_value
+            ingest_instance.ingest_folder.return_value = MagicMock(files=1, skipped=0, vectors=2)
 
-    def test_refresh_knowledge_can_disable_follow_symlinks(self) -> None:
+            output = server.refresh_knowledge(
+                workspace="mock_workspace",
+                folder=".",
+                index="source_code",
+            )
+
+            self.assertIn("Ingestion Complete", output)
+            ingest_cls.assert_called_once()
+            ingest_instance.ingest_folder.assert_called_once()
+
+    @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
+    @patch("smak.mcp_server._load_vector_store", return_value=object())
+    @patch("smak.mcp_server.QueryService")
+    def test_semantic_search_calls_query_service(
+        self,
+        query_cls: MagicMock,
+        _: MagicMock,
+        __: MagicMock,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
-            with patch.object(server, "_run_cli", return_value="ok") as run_cli:
-                server.refresh_knowledge(
-                    workspace="mock_workspace",
-                    folder="src",
-                    index="source_code",
-                    follow_symlinks=False,
-                )
-            self.assertIn("--no-follow-symlinks", run_cli.call_args.args[0])
+            query_cls.return_value.search.return_value = {"hits": [], "related_context": []}
 
-    def test_semantic_search_parses_json_object(self) -> None:
+            result = server.semantic_search(workspace="mock_workspace", query="auth")
+
+            self.assertEqual(result, {"hits": [], "related_context": []})
+            query_cls.return_value.search.assert_called_once_with("auth", top_k=5)
+
+    @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
+    @patch("smak.mcp_server.SidecarService")
+    def test_manage_sidecar_inspect(
+        self,
+        sidecar_cls: MagicMock,
+        _: MagicMock,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
-            with patch.object(server, "_run_cli", return_value='{"hits":[],"related_context":[]}'):
-                result = server.semantic_search(workspace="mock_workspace", query="auth")
-            self.assertIn("hits", result)
+            sidecar_cls.return_value.inspect.return_value = ["a.py::A"]
 
-    def test_manage_sidecar_inspect(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-            with patch.object(server, "_run_cli", return_value='["a.py::A"]'):
-                symbols = server.manage_sidecar(
-                    workspace="mock_workspace", action="inspect", file_path="a.py"
-                )
+            symbols = server.manage_sidecar(
+                workspace="mock_workspace",
+                action="inspect",
+                file_path="a.py",
+            )
+
             self.assertEqual(symbols, ["a.py::A"])
 
-    def test_manage_sidecar_update(self) -> None:
+    @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
+    @patch("smak.mcp_server.SidecarService")
+    def test_manage_sidecar_update(
+        self,
+        sidecar_cls: MagicMock,
+        _: MagicMock,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
-            with patch.object(server, "_run_cli", return_value='{"applied_updates":1}'):
-                result = server.manage_sidecar(
-                    workspace="mock_workspace",
-                    action="update",
-                    file_path="src/a.py",
-                    updates=[{"symbol": "x"}],
-                )
+            sidecar_cls.return_value.update.return_value = {"applied_updates": 1}
+
+            result = server.manage_sidecar(
+                workspace="mock_workspace",
+                action="update",
+                file_path="src/a.py",
+                updates=[{"symbol": "x"}],
+            )
+
             self.assertEqual(result["applied_updates"], 1)
 
-    def test_validate_mesh_uses_workspace(self) -> None:
+    @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
+    @patch("smak.mcp_server.DoctorService")
+    def test_validate_mesh_uses_doctor_service(
+        self,
+        doctor_cls: MagicMock,
+        _: MagicMock,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
-            with patch.object(server, "_run_cli", return_value="ok") as run_cli:
-                output = server.validate_mesh(workspace="mock_workspace", path=".")
-            self.assertEqual(output, "ok")
-            self.assertEqual(run_cli.call_args.kwargs["workspace"], "mock_workspace")
+            doctor_instance = doctor_cls.return_value
+            doctor_instance.validate_sidecars.return_value = []
+            doctor_instance.validate_mesh_integrity.return_value = []
 
-    def test_run_cli_forces_utf8_environment_and_workspace_cwd(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-            completed = MagicMock(returncode=0, stdout="ok", stderr="")
-            with patch("smak.mcp_server.subprocess.run", return_value=completed) as run_mock:
-                output = server._run_cli(["query", "hello"], workspace="mock_workspace")
-            self.assertEqual(output, "ok")
-            kwargs = run_mock.call_args.kwargs
-            self.assertEqual(kwargs["encoding"], "utf-8")
-            self.assertEqual(kwargs["env"]["PYTHONIOENCODING"], "utf-8")
-            self.assertEqual(kwargs["cwd"], Path(tmp_dir).resolve() / "workspace")
+            output = server.validate_mesh(workspace="mock_workspace", path=".")
+
+            self.assertEqual(output, "Mesh diagnostics passed.")
+            doctor_instance.validate_sidecars.assert_called_once()
+            doctor_instance.validate_mesh_integrity.assert_called_once()
 
     def test_build_mcp_server_returns_sdk_server(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

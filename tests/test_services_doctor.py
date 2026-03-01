@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from smak.config import IndexConfig, SmakConfig
 from smak.services.doctor import DoctorService
 
 
@@ -19,7 +20,8 @@ class TestDoctorService(unittest.TestCase):
             (root / "b.py").write_text("print('b')\n", encoding="utf-8")
             (root / "b.py.sidecar.yml").write_text("symbols: []\n", encoding="utf-8")
 
-            doctor = DoctorService()
+            config = SmakConfig(indices=[])
+            doctor = DoctorService(config=config, vector_store_loader=lambda _: object())
             issues = doctor.validate_sidecars(root)
 
             sidecar_files = sorted(path.name for path in iter_sidecar_files(root))
@@ -27,18 +29,45 @@ class TestDoctorService(unittest.TestCase):
             self.assertEqual(issues, [])
             self.assertEqual(sidecar_files, ["a.py.sidecar.yaml", "b.py.sidecar.yml"])
 
-    def test_doctor_service_detects_dangling_reference(self) -> None:
+    def test_doctor_service_detects_dangling_reference_only_if_missing_in_all_indices(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             source = Path(tmp_dir) / "main.py"
             source.write_text("def hello():\n  return True\n", encoding="utf-8")
             sidecar = Path(tmp_dir) / "main.py.sidecar.yaml"
             sidecar.write_text(
-                "symbols:\n  - name: main.py::hello\n    relations:\n      - missing_uid\n",
+                "symbols:\n"
+                "  - name: main.py::hello\n"
+                "    relations:\n"
+                "      - shared_uid\n"
+                "      - missing_uid\n",
                 encoding="utf-8",
             )
-            service = DoctorService(vector_store=SimpleNamespace(get_by_id=lambda uid: None))
+
+            config = SmakConfig(
+                indices=[
+                    IndexConfig(name="source_code", description="src"),
+                    IndexConfig(name="issues", description="issues"),
+                ]
+            )
+            stores = {
+                "source_code": SimpleNamespace(
+                    get_by_id=lambda uid: {"uid": uid} if uid == "shared_uid" else None
+                ),
+                "issues": SimpleNamespace(get_by_id=lambda uid: None),
+            }
+            loader_calls: list[str] = []
+
+            def loader(index_name: str):
+                loader_calls.append(index_name)
+                return stores[index_name]
+
+            service = DoctorService(config=config, vector_store_loader=loader)
             warnings = service.validate_mesh_integrity(Path(tmp_dir))
             self.assertEqual(len(warnings), 1)
+            self.assertIn("missing_uid", warnings[0])
+            self.assertNotIn("shared_uid", "\n".join(warnings))
+            self.assertEqual(loader_calls.count("source_code"), 1)
+            self.assertEqual(loader_calls.count("issues"), 1)
 
 
 if __name__ == "__main__":

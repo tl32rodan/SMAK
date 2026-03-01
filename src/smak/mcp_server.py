@@ -1,40 +1,32 @@
-"""MCP bridge for exposing SMAK CLI capabilities as tool-callable operations.
-
-This module intentionally keeps business logic in CLI commands (``smak ...``) and
-provides a thin wrapper for MCP/agent integrations.
-
-Strict multi-workspace mode is enforced via a registry file that defines all
-available workspaces. All operational tools require an explicit ``workspace``
-parameter and commands are routed by changing the process cwd.
-"""
+"""MCP bridge for exposing SMAK services as tool-callable operations."""
 
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from smak.cli import _load_vector_store
+from smak.config import SmakConfig, load_config
+from smak.services import DoctorService, IngestService, QueryService, SidecarService
+from smak.services.relation_resolver import SidecarRelationResolver
+from smak.sidecar.store import SidecarStore
+from smak.utils.embedding import (
+    InternalNomicEmbedding,
+    initialize_embedding_dimensions,
+    validate_vector_store_dimension,
+)
 from smak.utils.yaml import safe_load
 
 
 @dataclass
 class SmakMcpServer:
-    """CLI-backed adapter used by MCP tool handlers.
-
-    Attributes:
-        registry_path: Path to the mandatory multi-workspace registry YAML file.
-        smak_binary: CLI executable name/path (defaults to ``smak``).
-        config_name: Workspace config file passed to SMAK commands.
-        workspaces: Parsed workspace registry entries keyed by workspace name.
-    """
+    """In-process adapter used by MCP tool handlers."""
 
     registry_path: Path
-    smak_binary: str = "smak"
     config_name: str = "workspace_config.yaml"
     workspaces: dict[str, dict[str, str]] = field(default_factory=dict)
 
@@ -54,8 +46,8 @@ class SmakMcpServer:
                 "Registry file must contain at least one workspace under the 'workspaces' key."
             )
 
-    def _get_workspace_cwd(self, workspace_name: str) -> Path:
-        """Resolve the target directory for a given workspace name."""
+    def _get_workspace_path(self, workspace_name: str) -> Path:
+        """Resolve the absolute directory path for a workspace."""
 
         if workspace_name not in self.workspaces:
             raise ValueError(f"Workspace '{workspace_name}' not found in registry.")
@@ -67,26 +59,30 @@ class SmakMcpServer:
 
         return target_path
 
-    def _run_cli(self, args: list[str], workspace: str) -> str:
-        """Execute a SMAK CLI command and return stdout.
+    def _get_workspace_context(self, workspace_name: str) -> tuple[Path, SmakConfig]:
+        """Returns the base_path and loaded SmakConfig for a workspace."""
 
-        Raises:
-            RuntimeError: If the underlying command exits with non-zero status.
-        """
+        base_path = self._get_workspace_path(workspace_name)
+        config_path = base_path / self.config_name
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config not found at {config_path}")
 
-        completed = subprocess.run(
-            [self.smak_binary, *args],
-            cwd=self._get_workspace_cwd(workspace),
-            text=True,
-            encoding="utf-8",
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-            capture_output=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            message = completed.stderr.strip() or completed.stdout.strip() or "Unknown CLI failure"
-            raise RuntimeError(message)
-        return completed.stdout.strip()
+        config = load_config(config_path)
+        config = initialize_embedding_dimensions(config, InternalNomicEmbedding())
+        return base_path, config
+
+    def _load_workspace_vector_store(
+        self,
+        config: SmakConfig,
+        base_path: Path,
+        index: str,
+    ) -> object:
+        index_config = next((entry for entry in config.indices if entry.name == index), None)
+        if index_config is None:
+            raise ValueError(f"Index '{index}' not found in configuration.")
+        vector_store = _load_vector_store(index_config, config, base_path=base_path)
+        validate_vector_store_dimension(vector_store, config.embedding_dimensions)
+        return vector_store
 
     def refresh_knowledge(
         self,
@@ -97,10 +93,23 @@ class SmakMcpServer:
     ) -> str:
         """Ingest workspace content into a target index."""
 
-        command = ["ingest", "--folder", folder, "--index", index, "--config", self.config_name]
-        if not follow_symlinks:
-            command.append("--no-follow-symlinks")
-        return self._run_cli(command, workspace=workspace)
+        base_path, config = self._get_workspace_context(workspace)
+        vector_store = self._load_workspace_vector_store(config, base_path, index)
+        folder_path = Path(folder)
+        target_folder = (
+            folder_path if folder_path.is_absolute() else (base_path / folder_path).resolve()
+        )
+        service = IngestService(vector_store=vector_store)
+        stats = service.ingest_folder(
+            target_folder,
+            workspace_root=base_path,
+            follow_symlinks=follow_symlinks,
+        )
+        return (
+            "Ingestion Complete! "
+            f"Processed Files: {stats.files}, "
+            f"Skipped Files: {stats.skipped}, Vectors Added: {stats.vectors}"
+        )
 
     def semantic_search(
         self,
@@ -109,14 +118,23 @@ class SmakMcpServer:
         index: str = "source_code",
         top_k: int = 5,
     ) -> dict[str, Any]:
-        """Run ``smak query`` and parse the JSON response payload."""
+        """Run in-process semantic query and return serializable payload."""
 
-        output = self._run_cli(
-            ["query", query, "--index", index, "--top-k", str(top_k), "--config", self.config_name],
-            workspace=workspace,
+        base_path, config = self._get_workspace_context(workspace)
+        vector_store = self._load_workspace_vector_store(config, base_path, index)
+        sidecar_store = SidecarStore(workspace_root=base_path)
+        service = QueryService(
+            vector_store=vector_store,
+            config=config,
+            vector_store_loader=lambda idx, cfg: _load_vector_store(
+                idx,
+                cfg,
+                base_path=base_path,
+            ),
+            relation_resolver=SidecarRelationResolver(sidecar_store),
         )
-        parsed = json.loads(output) if output else {}
-        return parsed if isinstance(parsed, dict) else {}
+        result = service.search(query, top_k=top_k)
+        return result if isinstance(result, dict) else {}
 
     def manage_sidecar(
         self,
@@ -127,51 +145,60 @@ class SmakMcpServer:
         reingest: bool = False,
         index: str = "source_code",
     ) -> dict[str, Any] | list[str] | str:
-        """Manage sidecar metadata through one unified entrypoint.
+        """Manage sidecar metadata through one unified entrypoint."""
 
-        Supported actions:
-            - ``inspect``: Return parsed symbol ids for a source file.
-            - ``init``: Create initial sidecar content.
-            - ``update``: Apply updates and optionally trigger re-ingest.
-        """
+        base_path, config = self._get_workspace_context(workspace)
+        raw_source_path = Path(file_path)
+        source_path = (
+            raw_source_path
+            if raw_source_path.is_absolute()
+            else (base_path / raw_source_path).resolve()
+        )
+        sidecar_store = SidecarStore(workspace_root=base_path)
+        service = SidecarService(sidecar_store=sidecar_store)
 
         if action == "inspect":
-            output = self._run_cli(
-                ["sidecar", "inspect", file_path, "--config", self.config_name, "--json-output"],
-                workspace=workspace,
-            )
-            parsed = json.loads(output) if output else []
-            return [str(symbol) for symbol in parsed]
+            return service.inspect(source_path)
         if action == "init":
-            return self._run_cli(
-                ["sidecar", "init", file_path, "--config", self.config_name], workspace=workspace
-            )
+            output = service.init(source_path)
+            return str(output)
         if action == "update":
-            command = [
-                "sidecar",
-                "update",
-                file_path,
-                "--updates",
+            update_result = service.update(
+                source_path,
                 json.dumps(updates or [], ensure_ascii=False),
-                "--config",
-                self.config_name,
-                "--index",
-                index,
-            ]
+            )
             if reingest:
-                command.append("--reingest")
-            output = self._run_cli(command, workspace=workspace)
-            parsed = json.loads(output) if output else {}
-            return parsed if isinstance(parsed, dict) else {}
+                vector_store = self._load_workspace_vector_store(config, base_path, index)
+                ingest_service = IngestService(vector_store=vector_store)
+                ingest_stats = ingest_service.ingest_folder(
+                    source_path.parent,
+                    workspace_root=base_path,
+                )
+                update_result["reingest"] = {
+                    "files": ingest_stats.files,
+                    "vectors": ingest_stats.vectors,
+                    "skipped": ingest_stats.skipped,
+                }
+            return update_result
         raise ValueError("action must be one of: init, update, inspect")
 
     def validate_mesh(self, workspace: str, path: str = ".") -> str:
-        """Run mesh/sidecar integrity checks via ``smak doctor``."""
+        """Run mesh/sidecar integrity checks in-process."""
 
-        return self._run_cli(
-            ["doctor", "--path", path, "--config", self.config_name],
-            workspace=workspace,
-        )
+        base_path, config = self._get_workspace_context(workspace)
+        path_obj = Path(path)
+        target_path = path_obj if path_obj.is_absolute() else (base_path / path_obj).resolve()
+
+        def _load_store(index_name: str) -> object:
+            return self._load_workspace_vector_store(config, base_path, index_name)
+
+        service = DoctorService(config=config, vector_store_loader=_load_store)
+        issues = service.validate_sidecars(target_path)
+        dangling = service.validate_mesh_integrity(target_path)
+        problems = [*issues, *dangling]
+        if problems:
+            raise RuntimeError("\n".join(problems))
+        return "Mesh diagnostics passed."
 
 
 def build_mcp_server(registry_path: str | Path) -> FastMCP:
@@ -182,11 +209,6 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
 
     @mcp.tool()
     def list_available_workspaces() -> dict[str, Any]:
-        """List all available workspaces and descriptions.
-
-        Call this first to choose a workspace for other tools.
-        """
-
         return smak_server.workspaces
 
     @mcp.tool()
@@ -196,8 +218,6 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         index: str = "source_code",
         follow_symlinks: bool = True,
     ) -> str:
-        """Refresh vector knowledge by ingesting files from ``folder``."""
-
         return smak_server.refresh_knowledge(
             workspace=workspace,
             folder=folder,
@@ -212,8 +232,6 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         index: str = "source_code",
         top_k: int = 5,
     ) -> dict[str, Any]:
-        """Search for relevant knowledge and one-hop related context."""
-
         return smak_server.semantic_search(
             workspace=workspace,
             query=query,
@@ -230,8 +248,6 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         reingest: bool = False,
         index: str = "source_code",
     ) -> dict[str, Any] | list[str] | str:
-        """Inspect/init/update sidecar annotations for a source file."""
-
         return smak_server.manage_sidecar(
             workspace=workspace,
             action=action,
@@ -243,8 +259,6 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
 
     @mcp.tool()
     def validate_mesh(workspace: str, path: str = ".") -> str:
-        """Validate sidecar and mesh consistency for the given path."""
-
         return smak_server.validate_mesh(workspace=workspace, path=path)
 
     return mcp
