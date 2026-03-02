@@ -64,9 +64,10 @@ class QueryService:
                     "content": hit.get("content"),
                 }
             )
-            if "source" in metadata:
-                metadata["source"] = str(Path(self.index_config.path) / metadata["source"])
-            relations = self.relation_resolver.resolve(uid, metadata)
+            resolver_metadata = dict(metadata)
+            if "source" in resolver_metadata:
+                resolver_metadata["source"] = str(Path(self.index_config.path) / resolver_metadata["source"])
+            relations = self.relation_resolver.resolve(uid, resolver_metadata)
             for target_uid in relations:
                 target_uid = str(target_uid)
                 if not target_uid or target_uid in seen_related:

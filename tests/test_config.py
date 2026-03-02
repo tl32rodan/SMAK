@@ -34,7 +34,7 @@ class TestConfig(unittest.TestCase):
             config = load_config(path)
 
             self.assertEqual(config.indices[0].name, "source_code")
-            self.assertEqual(config.indices[0].uri, "data/source_code")
+            self.assertTrue(config.indices[0].uri.endswith("data/source_code"))
             self.assertIsNone(config.embedding_dimensions)
             self.assertFalse(hasattr(config, "llm"))
 
@@ -76,7 +76,7 @@ class TestConfig(unittest.TestCase):
 
         config = load_config(demo_config)
 
-        self.assertEqual(config.indices[0].uri, "./smak_data/source_code")
+        self.assertTrue(config.indices[0].uri.endswith("smak_data/source_code"))
 
     def test_load_config_defaults_index_uri_to_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -88,7 +88,8 @@ class TestConfig(unittest.TestCase):
 
             config = load_config(path)
 
-            self.assertIsNone(config.indices[0].uri)
+            self.assertIsNotNone(config.indices[0].uri)
+            self.assertTrue(config.indices[0].uri.endswith("smak_data/docs"))
 
 
 if __name__ == "__main__":

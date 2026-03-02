@@ -22,30 +22,6 @@ DEFAULT_MAX_WORKERS = 4
 DEFAULT_INDEX_DATA_DIR = "./smak_data"
 
 
-def _resolve_config(cfg: SmakConfig, config_path: str) -> SmakConfig:
-    config_file = Path(config_path)
-    base_path = config_file.resolve().parent if config_file.exists() else Path.cwd().resolve()
-    resolved_indices = []
-    for index in cfg.indices:
-        # Resolve path
-        resolved_path = str((base_path / Path(index.path).expanduser()).resolve()) if not Path(index.path).expanduser().is_absolute() else str(Path(index.path).expanduser().resolve())
-        # Resolve uri
-        if index.uri:
-            uri_path = Path(index.uri).expanduser()
-            resolved_uri = str((base_path / uri_path).resolve()) if not uri_path.is_absolute() else str(uri_path.resolve())
-        else:
-            resolved_uri = str((base_path / DEFAULT_INDEX_DATA_DIR / index.name).resolve())
-        resolved_indices.append(
-            IndexConfig(
-                name=index.name,
-                description=index.description,
-                path=resolved_path,
-                uri=resolved_uri,
-            )
-        )
-    return SmakConfig(indices=resolved_indices, embedding_dimensions=cfg.embedding_dimensions)
-
-
 def _load_vector_store(index_config: IndexConfig, config: SmakConfig):
     from smak.storage.faiss_adapter import load_faiss_store
 
@@ -84,7 +60,6 @@ def _default_config_template() -> str:
 
 def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig, IndexConfig, object]:
     cfg = load_config(config_path)
-    cfg = _resolve_config(cfg, config_path)
     index_config = next((entry for entry in cfg.indices if entry.name == index), None)
     if index_config is None:
         raise click.ClickException(f"Index '{index}' not found in configuration.")
@@ -219,7 +194,6 @@ def sidecar_update(file_path: Path, updates: str) -> None:
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 def doctor(config: str) -> None:
     cfg = load_config(config)
-    cfg = _resolve_config(cfg, config)
     embedder = InternalNomicEmbedding()
     cfg = initialize_embedding_dimensions(cfg, embedder)
 
@@ -232,19 +206,12 @@ def doctor(config: str) -> None:
         return vector_store
 
     service = DoctorService(config=cfg, vector_store_loader=_load_store)
-
-    issues = []
-    dangling = []
-    for index_config in cfg.indices:
-        target_path = Path(index_config.path)
-        if target_path.exists():
-            issues.extend(service.validate_sidecars(target_path))
-            dangling.extend(service.validate_mesh_integrity(target_path))
-    problems = [*issues, *dangling]
-    if problems:
-        for issue in problems:
+    try:
+        service.validate_all()
+    except RuntimeError as exc:
+        for issue in str(exc).split("\n"):
             click.echo(issue)
-        raise click.ClickException("Mesh diagnostics found problems.")
+        raise click.ClickException("Mesh diagnostics found problems.") from exc
     click.echo("Mesh diagnostics passed.")
 
 

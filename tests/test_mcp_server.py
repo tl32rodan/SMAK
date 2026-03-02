@@ -160,14 +160,11 @@ class TestMcpServer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
             doctor_instance = doctor_cls.return_value
-            doctor_instance.validate_sidecars.return_value = []
-            doctor_instance.validate_mesh_integrity.return_value = []
 
-            output = server.validate_mesh(workspace="mock_workspace", path=".")
+            output = server.validate_mesh(workspace="mock_workspace")
 
             self.assertEqual(output, "Mesh diagnostics passed.")
-            doctor_instance.validate_sidecars.assert_called_once()
-            doctor_instance.validate_mesh_integrity.assert_called_once()
+            doctor_instance.validate_all.assert_called_once()
 
     def test_build_mcp_server_returns_sdk_server(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

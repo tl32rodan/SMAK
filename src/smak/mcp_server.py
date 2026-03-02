@@ -93,8 +93,6 @@ class SmakMcpServer:
         """Ingest workspace content into a target index."""
 
         base_path, config = self._get_workspace_context(workspace)
-        from smak.cli import _resolve_config
-        config = _resolve_config(config, str(base_path / self.config_name))
         vector_store = self._load_workspace_vector_store(config, index)
         folder_path = Path(folder)
         target_folder = (
@@ -121,8 +119,6 @@ class SmakMcpServer:
         """Run in-process semantic query and return serializable payload."""
 
         base_path, config = self._get_workspace_context(workspace)
-        from smak.cli import _resolve_config
-        config = _resolve_config(config, str(base_path / self.config_name))
         index_config = next((entry for entry in config.indices if entry.name == index), None)
         if index_config is None:
             raise ValueError(f"Index '{index}' not found in configuration.")
@@ -148,14 +144,11 @@ class SmakMcpServer:
         action: str,
         file_path: str,
         updates: list[dict[str, Any]] | None = None,
-        reingest: bool = False,
         index: str = "source_code",
     ) -> dict[str, Any] | list[str] | str:
         """Manage sidecar metadata through one unified entrypoint."""
 
         base_path, config = self._get_workspace_context(workspace)
-        from smak.cli import _resolve_config
-        config = _resolve_config(config, str(base_path / self.config_name))
         raw_source_path = Path(file_path)
         source_path = (
             raw_source_path
@@ -175,38 +168,19 @@ class SmakMcpServer:
                 source_path,
                 json.dumps(updates or [], ensure_ascii=False),
             )
-            if reingest:
-                vector_store = self._load_workspace_vector_store(config, index)
-                ingest_service = IngestService(vector_store=vector_store)
-                ingest_stats = ingest_service.ingest_folder(
-                    source_path.parent,
-                )
-                update_result["reingest"] = {
-                    "files": ingest_stats.files,
-                    "vectors": ingest_stats.vectors,
-                    "skipped": ingest_stats.skipped,
-                }
             return update_result
         raise ValueError("action must be one of: init, update, inspect")
 
-    def validate_mesh(self, workspace: str, path: str = ".") -> str:
+    def validate_mesh(self, workspace: str) -> str:
         """Run mesh/sidecar integrity checks in-process."""
 
         base_path, config = self._get_workspace_context(workspace)
-        from smak.cli import _resolve_config
-        config = _resolve_config(config, str(base_path / self.config_name))
-        path_obj = Path(path)
-        target_path = path_obj if path_obj.is_absolute() else (base_path / path_obj).resolve()
 
         def _load_store(index_name: str) -> object:
             return self._load_workspace_vector_store(config, index_name)
 
         service = DoctorService(config=config, vector_store_loader=_load_store)
-        issues = service.validate_sidecars(target_path)
-        dangling = service.validate_mesh_integrity(target_path)
-        problems = [*issues, *dangling]
-        if problems:
-            raise RuntimeError("\n".join(problems))
+        service.validate_all()
         return "Mesh diagnostics passed."
 
 
@@ -254,7 +228,6 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         action: str,
         file_path: str,
         updates: list[dict[str, Any]] | None = None,
-        reingest: bool = False,
         index: str = "source_code",
     ) -> dict[str, Any] | list[str] | str:
         return smak_server.manage_sidecar(
@@ -262,13 +235,12 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
             action=action,
             file_path=file_path,
             updates=updates,
-            reingest=reingest,
             index=index,
         )
 
     @mcp.tool()
-    def validate_mesh(workspace: str, path: str = ".") -> str:
-        return smak_server.validate_mesh(workspace=workspace, path=path)
+    def validate_mesh(workspace: str) -> str:
+        return smak_server.validate_mesh(workspace=workspace)
 
     return mcp
 

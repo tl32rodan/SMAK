@@ -27,12 +27,37 @@ class SmakConfig:
     embedding_dimensions: int | None = None
 
 
+def _resolve_config(cfg: SmakConfig, config_path: str | Path) -> SmakConfig:
+    config_file = Path(config_path)
+    base_path = config_file.resolve().parent if config_file.exists() else Path.cwd().resolve()
+    resolved_indices = []
+    for index in cfg.indices:
+        # Resolve path
+        resolved_path = str((base_path / Path(index.path).expanduser()).resolve()) if not Path(index.path).expanduser().is_absolute() else str(Path(index.path).expanduser().resolve())
+        # Resolve uri
+        if index.uri:
+            uri_path = Path(index.uri).expanduser()
+            resolved_uri = str((base_path / uri_path).resolve()) if not uri_path.is_absolute() else str(uri_path.resolve())
+        else:
+            resolved_uri = str((base_path / "./smak_data" / index.name).resolve())
+        resolved_indices.append(
+            IndexConfig(
+                name=index.name,
+                description=index.description,
+                path=resolved_path,
+                uri=resolved_uri,
+            )
+        )
+    return SmakConfig(indices=resolved_indices, embedding_dimensions=cfg.embedding_dimensions)
+
+
 def load_config(path: str | Path) -> SmakConfig:
     """Load configuration from a YAML file."""
 
     raw = Path(path).read_text(encoding="utf-8")
     data: Any = safe_load(raw) or {}
-    return _coerce_config(data)
+    cfg = _coerce_config(data)
+    return _resolve_config(cfg, path)
 
 
 def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
