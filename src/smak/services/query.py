@@ -27,6 +27,19 @@ class QueryService:
         self.relation_resolver = relation_resolver or SidecarRelationResolver()
         self._vector_store_cache: dict[str, object] = {}
 
+    def _build_resolver_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        """Return a copy of *metadata* with 'source' made absolute for sidecar lookup.
+
+        The stored source path is relative to the index root. The relation resolver
+        needs an absolute path to locate the .sidecar.yaml file on disk.
+        """
+        resolver_metadata = dict(metadata)
+        if "source" in resolver_metadata:
+            resolver_metadata["source"] = str(
+                Path(self.index_config.path) / resolver_metadata["source"]
+            )
+        return resolver_metadata
+
     def _get_payload_globally(self, uid: str) -> dict[str, Any] | None:
         payload = self.vector_store.get_by_id(uid)
         if isinstance(payload, dict):
@@ -64,10 +77,7 @@ class QueryService:
                     "content": hit.get("content"),
                 }
             )
-            resolver_metadata = dict(metadata)
-            if "source" in resolver_metadata:
-                resolver_metadata["source"] = str(Path(self.index_config.path) / resolver_metadata["source"])
-            relations = self.relation_resolver.resolve(uid, resolver_metadata)
+            relations = self.relation_resolver.resolve(uid, self._build_resolver_metadata(metadata))
             for target_uid in relations:
                 target_uid = str(target_uid)
                 if not target_uid or target_uid in seen_related:

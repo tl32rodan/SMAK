@@ -75,13 +75,13 @@ class SmakMcpServer:
         self,
         config: SmakConfig,
         index: str,
-    ) -> object:
-        index_config = next((entry for entry in config.indices if entry.name == index), None)
+    ) -> tuple[object, object]:
+        index_config = config.get_index(index)
         if index_config is None:
             raise ValueError(f"Index '{index}' not found in configuration.")
         vector_store = _load_vector_store(index_config, config)
         validate_vector_store_dimension(vector_store, config.embedding_dimensions)
-        return vector_store
+        return vector_store, index_config
 
     def refresh_knowledge(
         self,
@@ -93,7 +93,7 @@ class SmakMcpServer:
         """Ingest workspace content into a target index."""
 
         base_path, config = self._get_workspace_context(workspace)
-        vector_store = self._load_workspace_vector_store(config, index)
+        vector_store, _ = self._load_workspace_vector_store(config, index)
         folder_path = Path(folder)
         target_folder = (
             folder_path if folder_path.is_absolute() else (base_path / folder_path).resolve()
@@ -119,20 +119,13 @@ class SmakMcpServer:
         """Run in-process semantic query and return serializable payload."""
 
         base_path, config = self._get_workspace_context(workspace)
-        index_config = next((entry for entry in config.indices if entry.name == index), None)
-        if index_config is None:
-            raise ValueError(f"Index '{index}' not found in configuration.")
-
-        vector_store = self._load_workspace_vector_store(config, index)
+        vector_store, index_config = self._load_workspace_vector_store(config, index)
         sidecar_store = SidecarStore()
         service = QueryService(
             vector_store=vector_store,
             config=config,
             index_config=index_config,
-            vector_store_loader=lambda idx, cfg: _load_vector_store(
-                idx,
-                cfg,
-            ),
+            vector_store_loader=_load_vector_store,
             relation_resolver=SidecarRelationResolver(sidecar_store),
         )
         result = service.search(query, top_k=top_k)
@@ -177,7 +170,8 @@ class SmakMcpServer:
         base_path, config = self._get_workspace_context(workspace)
 
         def _load_store(index_name: str) -> object:
-            return self._load_workspace_vector_store(config, index_name)
+            store, _ = self._load_workspace_vector_store(config, index_name)
+            return store
 
         service = DoctorService(config=config, vector_store_loader=_load_store)
         service.validate_all()
