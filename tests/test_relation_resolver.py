@@ -36,10 +36,10 @@ class TestRelationResolver(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            resolver = SidecarRelationResolver(SidecarStore(workspace_root))
+            resolver = SidecarRelationResolver(SidecarStore())
             relations = resolver.resolve(
                 "src/csv_editor.py::CsvEditor.updatecell",
-                {"source": "src/csv_editor.py", "symbol": "CsvEditor.updatecell"},
+                {"source": str(source), "symbol": "CsvEditor.updatecell"},
             )
             self.assertEqual(relations, ["issue:1"])
 

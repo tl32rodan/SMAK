@@ -15,6 +15,7 @@ class IndexConfig:
 
     name: str
     description: str
+    path: str = "."
     uri: str | None = None
 
 
@@ -44,6 +45,7 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
                     IndexConfig(
                         name=str(entry.get("name", "")),
                         description=str(entry.get("description", "")),
+                        path=str(entry.get("path", ".")),
                         uri=(
                             str(entry["uri"])
                             if entry.get("uri") is not None

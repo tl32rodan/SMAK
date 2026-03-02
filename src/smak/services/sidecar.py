@@ -27,7 +27,7 @@ class SidecarService:
         self.sidecar_store = sidecar_store or SidecarStore()
 
     def inspect(self, path: Path) -> list[str]:
-        parser = get_parser_for_path(path, root_path=self.sidecar_store.workspace_root)
+        parser = get_parser_for_path(path)
         content = _read_text_with_fallback(path)
         return [unit.uid for unit in parser.parse(content, source=str(path))]
 
@@ -44,7 +44,7 @@ class SidecarService:
             output.write_text(payload, encoding="utf-8")
             return output
 
-        parser = get_parser_for_path(target_path, root_path=self.sidecar_store.workspace_root)
+        parser = get_parser_for_path(target_path)
         units = parser.parse(_read_text_with_fallback(target_path), source=str(target_path))
         symbols = [
             {

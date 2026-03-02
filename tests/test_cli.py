@@ -113,13 +113,9 @@ class TestCli(unittest.TestCase):
             def fake_loader(
                 index_config: object,
                 config: object,
-                base_path: object = None,
             ) -> object:
                 captured["index_name"] = index_config.name
-                captured["index_uri"] = cli._resolve_index_uri(
-                    index_config,
-                    base_path=base_path,
-                )
+                captured["index_uri"] = index_config.uri
                 return SimpleNamespace(dimension=1)
 
             with (
@@ -145,7 +141,8 @@ class TestCli(unittest.TestCase):
             config_path.write_text(
                 "indices:\n"
                 "  - name: source_code\n"
-                "    description: source\n",
+                "    description: source\n"
+                f"    path: {str(folder)}\n",
                 encoding="utf-8",
             )
             captured: dict[str, object] = {}
@@ -161,7 +158,7 @@ class TestCli(unittest.TestCase):
             with (
                 patch(
                     "smak.cli._load_vector_store_for_cli",
-                    new=lambda index, config: (SmakConfig(), object()),
+                    new=lambda index, config: (SmakConfig(), IndexConfig(name="source_code", description="source", path=str(folder)), object()),
                 ),
                 patch("smak.cli.IngestService", new=FakeIngestService),
             ):
@@ -170,8 +167,6 @@ class TestCli(unittest.TestCase):
                     cli.main,
                     [
                         "ingest",
-                        "--folder",
-                        str(folder),
                         "--index",
                         "source_code",
                         "--config",
@@ -257,6 +252,7 @@ class TestCli(unittest.TestCase):
                         SmakConfig(
                             indices=[IndexConfig(name="source_code", description="source")]
                         ),
+                        IndexConfig(name="source_code", description="source", path=str(workspace)),
                         QueryStore(),
                     ),
                 ),

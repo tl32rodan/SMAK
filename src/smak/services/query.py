@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from smak.config import IndexConfig, SmakConfig
@@ -14,12 +15,14 @@ class QueryService:
         vector_store: object,
         config: SmakConfig,
         vector_store_loader: Callable[[IndexConfig, SmakConfig], object],
+        index_config: IndexConfig,
         embedder: object | None = None,
         relation_resolver: SidecarRelationResolver | None = None,
     ) -> None:
         self.vector_store = vector_store
         self.config = config
         self.vector_store_loader = vector_store_loader
+        self.index_config = index_config
         self.embedder = embedder or InternalNomicEmbedding()
         self.relation_resolver = relation_resolver or SidecarRelationResolver()
         self._vector_store_cache: dict[str, object] = {}
@@ -61,6 +64,8 @@ class QueryService:
                     "content": hit.get("content"),
                 }
             )
+            if "source" in metadata:
+                metadata["source"] = str(Path(self.index_config.path) / metadata["source"])
             relations = self.relation_resolver.resolve(uid, metadata)
             for target_uid in relations:
                 target_uid = str(target_uid)
