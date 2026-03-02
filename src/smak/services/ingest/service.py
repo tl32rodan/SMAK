@@ -51,11 +51,11 @@ def _iter_source_files(folder: Path, *, follow_symlinks: bool = True) -> Iterabl
                 yield path
 
 
-def _source_key(path: Path, workspace_root: Path | None = None) -> str:
-    if workspace_root is None:
+def _source_key(path: Path, root_path: Path | None = None) -> str:
+    if root_path is None:
         return str(path)
     try:
-        return str(path.resolve().relative_to(workspace_root.resolve()))
+        return str(path.resolve().relative_to(root_path.resolve()))
     except ValueError:
         return str(path)
 
@@ -89,7 +89,6 @@ class IngestService:
         folder: Path,
         *,
         max_workers: int = 4,
-        workspace_root: Path | None = None,
         incremental: bool = True,
         node_class_loader: Callable[[], type] | None = None,
         embedder_loader: Callable[[], EmbeddingProbe] | None = None,
@@ -105,7 +104,7 @@ class IngestService:
         file_count = vector_count = skipped_count = 0
 
         def process(file_path: Path) -> tuple[int, bool]:
-            parser = get_parser_for_path(file_path, root_path=workspace_root)
+            parser = get_parser_for_path(file_path, root_path=folder)
             content = _read_text_with_fallback(file_path)
             parsed_units = parser.parse(content, source=str(file_path))
             source_mtime = _source_mtime(file_path)
@@ -133,7 +132,7 @@ class IngestService:
                     metadata={
                         "relations": list(unit.relations),
                         "meta": unit.metadata,
-                        "source": _source_key(file_path, workspace_root),
+                        "source": _source_key(file_path, folder),
                         "source_mtime": source_mtime,
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     },
@@ -143,7 +142,7 @@ class IngestService:
             with lock:
                 if hasattr(vector_store, "delete_by_metadata"):
                     vector_store.delete_by_metadata(
-                        "source", _source_key(file_path, workspace_root)
+                        "source", _source_key(file_path, folder)
                     )
                 if nodes:
                     vector_store.add(nodes)

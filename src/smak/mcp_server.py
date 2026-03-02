@@ -74,15 +74,14 @@ class SmakMcpServer:
     def _load_workspace_vector_store(
         self,
         config: SmakConfig,
-        base_path: Path,
         index: str,
-    ) -> object:
-        index_config = next((entry for entry in config.indices if entry.name == index), None)
+    ) -> tuple[object, object]:
+        index_config = config.get_index(index)
         if index_config is None:
             raise ValueError(f"Index '{index}' not found in configuration.")
-        vector_store = _load_vector_store(index_config, config, base_path=base_path)
+        vector_store = _load_vector_store(index_config, config)
         validate_vector_store_dimension(vector_store, config.embedding_dimensions)
-        return vector_store
+        return vector_store, index_config
 
     def refresh_knowledge(
         self,
@@ -94,7 +93,7 @@ class SmakMcpServer:
         """Ingest workspace content into a target index."""
 
         base_path, config = self._get_workspace_context(workspace)
-        vector_store = self._load_workspace_vector_store(config, base_path, index)
+        vector_store, _ = self._load_workspace_vector_store(config, index)
         folder_path = Path(folder)
         target_folder = (
             folder_path if folder_path.is_absolute() else (base_path / folder_path).resolve()
@@ -102,7 +101,6 @@ class SmakMcpServer:
         service = IngestService(vector_store=vector_store)
         stats = service.ingest_folder(
             target_folder,
-            workspace_root=base_path,
             follow_symlinks=follow_symlinks,
         )
         return (
@@ -121,16 +119,13 @@ class SmakMcpServer:
         """Run in-process semantic query and return serializable payload."""
 
         base_path, config = self._get_workspace_context(workspace)
-        vector_store = self._load_workspace_vector_store(config, base_path, index)
-        sidecar_store = SidecarStore(workspace_root=base_path)
+        vector_store, index_config = self._load_workspace_vector_store(config, index)
+        sidecar_store = SidecarStore()
         service = QueryService(
             vector_store=vector_store,
             config=config,
-            vector_store_loader=lambda idx, cfg: _load_vector_store(
-                idx,
-                cfg,
-                base_path=base_path,
-            ),
+            index_config=index_config,
+            vector_store_loader=_load_vector_store,
             relation_resolver=SidecarRelationResolver(sidecar_store),
         )
         result = service.search(query, top_k=top_k)
@@ -142,7 +137,6 @@ class SmakMcpServer:
         action: str,
         file_path: str,
         updates: list[dict[str, Any]] | None = None,
-        reingest: bool = False,
         index: str = "source_code",
     ) -> dict[str, Any] | list[str] | str:
         """Manage sidecar metadata through one unified entrypoint."""
@@ -154,7 +148,7 @@ class SmakMcpServer:
             if raw_source_path.is_absolute()
             else (base_path / raw_source_path).resolve()
         )
-        sidecar_store = SidecarStore(workspace_root=base_path)
+        sidecar_store = SidecarStore()
         service = SidecarService(sidecar_store=sidecar_store)
 
         if action == "inspect":
@@ -167,37 +161,20 @@ class SmakMcpServer:
                 source_path,
                 json.dumps(updates or [], ensure_ascii=False),
             )
-            if reingest:
-                vector_store = self._load_workspace_vector_store(config, base_path, index)
-                ingest_service = IngestService(vector_store=vector_store)
-                ingest_stats = ingest_service.ingest_folder(
-                    source_path.parent,
-                    workspace_root=base_path,
-                )
-                update_result["reingest"] = {
-                    "files": ingest_stats.files,
-                    "vectors": ingest_stats.vectors,
-                    "skipped": ingest_stats.skipped,
-                }
             return update_result
         raise ValueError("action must be one of: init, update, inspect")
 
-    def validate_mesh(self, workspace: str, path: str = ".") -> str:
+    def validate_mesh(self, workspace: str) -> str:
         """Run mesh/sidecar integrity checks in-process."""
 
         base_path, config = self._get_workspace_context(workspace)
-        path_obj = Path(path)
-        target_path = path_obj if path_obj.is_absolute() else (base_path / path_obj).resolve()
 
         def _load_store(index_name: str) -> object:
-            return self._load_workspace_vector_store(config, base_path, index_name)
+            store, _ = self._load_workspace_vector_store(config, index_name)
+            return store
 
         service = DoctorService(config=config, vector_store_loader=_load_store)
-        issues = service.validate_sidecars(target_path)
-        dangling = service.validate_mesh_integrity(target_path)
-        problems = [*issues, *dangling]
-        if problems:
-            raise RuntimeError("\n".join(problems))
+        service.validate_all()
         return "Mesh diagnostics passed."
 
 
@@ -245,7 +222,6 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         action: str,
         file_path: str,
         updates: list[dict[str, Any]] | None = None,
-        reingest: bool = False,
         index: str = "source_code",
     ) -> dict[str, Any] | list[str] | str:
         return smak_server.manage_sidecar(
@@ -253,13 +229,12 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
             action=action,
             file_path=file_path,
             updates=updates,
-            reingest=reingest,
             index=index,
         )
 
     @mcp.tool()
-    def validate_mesh(workspace: str, path: str = ".") -> str:
-        return smak_server.validate_mesh(workspace=workspace, path=path)
+    def validate_mesh(workspace: str) -> str:
+        return smak_server.validate_mesh(workspace=workspace)
 
     return mcp
 

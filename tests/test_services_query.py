@@ -45,7 +45,7 @@ class TestQueryService(unittest.TestCase):
                 config=config,
                 vector_store_loader=lambda index_config, cfg: store,
                 embedder=DummyEmbedder(),
-                relation_resolver=SidecarRelationResolver(SidecarStore(Path(tmp_dir))),
+                index_config=config.indices[0], relation_resolver=SidecarRelationResolver(SidecarStore()),
             ).search("query", top_k=1)
             self.assertEqual(payload["hits"][0]["match_type"], "semantic")
             self.assertEqual(payload["related_context"][0]["source_hit"], "func_A")
@@ -92,14 +92,14 @@ class TestQueryService(unittest.TestCase):
                 return secondary
             return primary
 
-        config = SmakConfig(
-            indices=[
-                IndexConfig(name="source_code", description="source"),
-                IndexConfig(name="issues", description="issues"),
-            ]
-        )
-
         with tempfile.TemporaryDirectory() as tmp_dir:
+            config = SmakConfig(
+                indices=[
+                    IndexConfig(name="source_code", description="source", path=tmp_dir),
+                    IndexConfig(name="issues", description="issues", path=tmp_dir),
+                ]
+            )
+
             source = Path(tmp_dir) / "src" / "a.py"
             source.parent.mkdir(parents=True, exist_ok=True)
             source.write_text("def a():\n    pass\n", encoding="utf-8")
@@ -115,7 +115,7 @@ class TestQueryService(unittest.TestCase):
                 config=config,
                 vector_store_loader=loader,
                 embedder=DummyEmbedder(),
-                relation_resolver=SidecarRelationResolver(SidecarStore(Path(tmp_dir))),
+                index_config=config.indices[0], relation_resolver=SidecarRelationResolver(SidecarStore()),
             ).search("query", top_k=1)
 
         self.assertEqual(primary.search_calls, 1)
@@ -141,14 +141,14 @@ class TestQueryService(unittest.TestCase):
             loader_calls.append(index_config.name)
             return SecondaryStore() if index_config.name == "issues" else PrimaryStore()
 
-        config = SmakConfig(
-            indices=[
-                IndexConfig(name="source_code", description="source"),
-                IndexConfig(name="issues", description="issues"),
-            ]
-        )
-
         with tempfile.TemporaryDirectory() as tmp_dir:
+            config = SmakConfig(
+                indices=[
+                    IndexConfig(name="source_code", description="source", path=tmp_dir),
+                    IndexConfig(name="issues", description="issues", path=tmp_dir),
+                ]
+            )
+
             source = Path(tmp_dir) / "src" / "a.py"
             source.parent.mkdir(parents=True, exist_ok=True)
             source.write_text("def a():\n    pass\n", encoding="utf-8")
@@ -164,7 +164,7 @@ class TestQueryService(unittest.TestCase):
                 config=config,
                 vector_store_loader=loader,
                 embedder=DummyEmbedder(),
-                relation_resolver=SidecarRelationResolver(SidecarStore(Path(tmp_dir))),
+                index_config=config.indices[0], relation_resolver=SidecarRelationResolver(SidecarStore()),
             ).search("query", top_k=1)
 
         self.assertEqual(loader_calls, ["source_code", "issues"])
@@ -214,14 +214,14 @@ class TestQueryService(unittest.TestCase):
                 ],
                 get_by_id=lambda related_uid: {"uid": related_uid, "content": related_uid},
             )
-            config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
+            config = SmakConfig(indices=[IndexConfig(name="source_code", description="source", path=tmp_dir)])
 
             payload = QueryService(
                 store,
                 config=config,
                 vector_store_loader=lambda index_config, cfg: store,
                 embedder=DummyEmbedder(),
-                relation_resolver=SidecarRelationResolver(SidecarStore(workspace_root)),
+                index_config=config.indices[0], relation_resolver=SidecarRelationResolver(SidecarStore()),
             ).search("query", top_k=1)
 
             self.assertEqual(payload["related_context"][0]["uid"], "issue:from-symbol")
@@ -250,14 +250,14 @@ class TestQueryService(unittest.TestCase):
                 ],
                 get_by_id=lambda related_uid: {"uid": related_uid, "content": related_uid},
             )
-            config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
+            config = SmakConfig(indices=[IndexConfig(name="source_code", description="source", path=tmp_dir)])
 
             payload = QueryService(
                 store,
                 config=config,
                 vector_store_loader=lambda index_config, cfg: store,
                 embedder=DummyEmbedder(),
-                relation_resolver=SidecarRelationResolver(SidecarStore(workspace_root)),
+                index_config=config.indices[0], relation_resolver=SidecarRelationResolver(SidecarStore()),
             ).search("query", top_k=1)
 
             self.assertEqual(payload["related_context"][0]["uid"], "issue:suffix-match")
@@ -294,7 +294,7 @@ class TestQueryService(unittest.TestCase):
                 config=config,
                 vector_store_loader=lambda index_config, cfg: store,
                 embedder=DummyEmbedder(),
-                relation_resolver=SidecarRelationResolver(SidecarStore(Path(tmp_dir))),
+                index_config=config.indices[0], relation_resolver=SidecarRelationResolver(SidecarStore()),
             ).search("query", top_k=1)
 
             self.assertEqual(payload["related_context"][0]["uid"], "issue:fresh")

@@ -1,0 +1,17 @@
+symbols:
+  - name: CsvEditor
+    intent: "Manages read, append, and in-place cell-update operations on CSV files."
+    relations:
+      - "csv-editor-known-issues"
+  - name: CsvEditor.append_row
+    intent: "Appends a list of string values as a new row at the end of the CSV file."
+    relations: []
+  - name: CsvEditor.update_cell
+    intent: >
+      Rewrites the entire file to update one cell at the given row/column position.
+      Raises IndexError when the row or column index is out of range (see ISSUE-001).
+    relations:
+      - "csv-editor-known-issues"
+  - name: CsvEditor.read_rows
+    intent: "Reads and returns all rows of the CSV as a nested list of strings."
+    relations: []

@@ -10,13 +10,11 @@ from smak.utils.yaml import safe_dump, safe_load
 class SidecarStore:
     """I/O boundary for sidecar persistence and source->sidecar mapping."""
 
-    def __init__(self, workspace_root: Path | None = None) -> None:
-        self.workspace_root = workspace_root
+    def __init__(self) -> None:
+        pass
 
     def resolve_source_path(self, source_path: Path) -> Path:
-        if source_path.is_absolute() or self.workspace_root is None:
-            return source_path
-        return self.workspace_root / source_path
+        return source_path
 
     def resolve_sidecar_path(self, source_path: Path) -> Path:
         return sidecar_path_for_source(self.resolve_source_path(source_path))

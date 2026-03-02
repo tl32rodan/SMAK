@@ -15,15 +15,15 @@ class TestSidecarStore(unittest.TestCase):
             source.parent.mkdir(parents=True, exist_ok=True)
             source.write_text("print('x')\n", encoding="utf-8")
 
-            store = SidecarStore(workspace_root)
+            store = SidecarStore()
             sidecar_path, total_symbols = store.merge_symbols_for_source(
-                Path("src/a.py"),
+                source,
                 [{"name": "src/a.py::foo", "relations": ["issue:1"]}],
             )
 
             self.assertEqual(sidecar_path, source.with_name("a.py.sidecar.yaml"))
             self.assertEqual(total_symbols, 1)
-            symbols = store.load_symbols_for_source(Path("src/a.py"))
+            symbols = store.load_symbols_for_source(source)
             self.assertEqual(symbols[0]["name"], "src/a.py::foo")
 
 

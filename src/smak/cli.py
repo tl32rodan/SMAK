@@ -19,26 +19,13 @@ from smak.utils.embedding import (
 )
 
 DEFAULT_MAX_WORKERS = 4
-DEFAULT_INDEX_DATA_DIR = "./smak_data"
 
 
-def _resolve_index_uri(index_config: IndexConfig, base_path: Path | None = None) -> str:
-    resolved_base = base_path.resolve() if base_path else Path.cwd().resolve()
-    if index_config.uri:
-        uri_path = Path(index_config.uri).expanduser()
-        return str((resolved_base / uri_path).resolve()) if not uri_path.is_absolute() else str(
-            uri_path.resolve()
-        )
-    return str((resolved_base / DEFAULT_INDEX_DATA_DIR / index_config.name).resolve())
-
-
-def _load_vector_store(
-    index_config: IndexConfig, config: SmakConfig, base_path: Path | None = None
-):
+def _load_vector_store(index_config: IndexConfig, config: SmakConfig):
     from smak.storage.faiss_adapter import load_faiss_store
 
     return load_faiss_store(
-        uri=_resolve_index_uri(index_config, base_path=base_path),
+        uri=index_config.uri,  # URI is already absolute here
         collection_name=index_config.name,
         dim=config.embedding_dimensions,
     )
@@ -53,11 +40,13 @@ def _default_config_template() -> str:
             "  - name: source_code",
             "    description: Contains the project's source code (Python, Perl), "
             "function definitions, and logic.",
+            "    path: ./src",
             "    # Customize uri if you want this index stored elsewhere.",
             "    uri: ./smak_data/source_code",
             "  - name: issues",
             "    description: Contains historical bug reports, GitHub issues, "
             "and Jira tickets describing known problems.",
+            "    path: ./issues",
             "  - name: tests",
             "    description: Contains unit tests, integration tests, and test cases.",
             "  - name: documentation",
@@ -68,22 +57,16 @@ def _default_config_template() -> str:
     )
 
 
-def _load_workspace_root(config_path: str) -> Path | None:
-    config_file = Path(config_path)
-    return config_file.resolve().parent if config_file.exists() else None
-
-
-def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig, object]:
+def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig, IndexConfig, object]:
     cfg = load_config(config_path)
-    workspace_root = _load_workspace_root(config_path)
-    index_config = next((entry for entry in cfg.indices if entry.name == index), None)
+    index_config = cfg.get_index(index)
     if index_config is None:
         raise click.ClickException(f"Index '{index}' not found in configuration.")
     embedder = InternalNomicEmbedding()
     cfg = initialize_embedding_dimensions(cfg, embedder)
-    vector_store = _load_vector_store(index_config, cfg, workspace_root)
+    vector_store = _load_vector_store(index_config, cfg)
     validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
-    return cfg, vector_store
+    return cfg, index_config, vector_store
 
 
 @click.group()
@@ -92,7 +75,6 @@ def main() -> None:
 
 
 @main.command()
-@click.option("--folder", required=True, type=click.Path(path_type=Path), help="Path to ingest")
 @click.option("--index", required=True, help="Target index name (e.g., source_code)")
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 @click.option("--workers", default=DEFAULT_MAX_WORKERS, help="Max parallel workers")
@@ -103,23 +85,22 @@ def main() -> None:
     help="Follow symlinked directories during ingest",
 )
 def ingest(
-    folder: Path,
     index: str,
     config: str,
     workers: int,
     incremental: bool,
     follow_symlinks: bool,
 ) -> None:
+    _, index_config, vector_store = _load_vector_store_for_cli(index, config)
+    folder = Path(index_config.path)
     if not folder.exists() or not folder.is_dir():
         raise click.ClickException(f"Folder not found: {folder}")
-    _, vector_store = _load_vector_store_for_cli(index, config)
     service = IngestService(vector_store=vector_store)
     click.echo(f"Starting ingestion for '{folder}' -> Index: '{index}'...")
     try:
         stats = service.ingest_folder(
             folder,
             max_workers=workers,
-            workspace_root=_load_workspace_root(config),
             incremental=incremental,
             follow_symlinks=follow_symlinks,
         )
@@ -148,12 +129,13 @@ def init(config_path: str, force: bool) -> None:
 @click.option("--top-k", default=1, show_default=True, type=int, help="Result count")
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 def query_command(text: str, index: str, top_k: int, config: str) -> None:
-    cfg, vector_store = _load_vector_store_for_cli(index, config)
-    sidecar_store = SidecarStore(workspace_root=_load_workspace_root(config) or Path.cwd())
+    cfg, index_config, vector_store = _load_vector_store_for_cli(index, config)
+    sidecar_store = SidecarStore()
     service = QueryService(
         vector_store=vector_store,
         config=cfg,
         vector_store_loader=_load_vector_store,
+        index_config=index_config,
         relation_resolver=SidecarRelationResolver(sidecar_store),
     )
     output_str = json.dumps(service.search(text, top_k=top_k), ensure_ascii=False, indent=4)
@@ -167,27 +149,21 @@ def sidecar() -> None:
 
 @sidecar.command("init")
 @click.argument("target_path", type=click.Path(path_type=Path))
-@click.option(
-    "--config", "config_path", default="workspace_config.yaml", help="Path to workspace config"
-)
-def sidecar_init(target_path: Path, config_path: str) -> None:
+def sidecar_init(target_path: Path) -> None:
     if not target_path.exists():
         raise click.ClickException(f"Path not found: {target_path}")
-    sidecar_store = SidecarStore(workspace_root=_load_workspace_root(config_path))
+    sidecar_store = SidecarStore()
     output = SidecarService(sidecar_store).init(target_path)
     click.echo(f"Wrote sidecar template to {output}")
 
 
 @sidecar.command("inspect")
 @click.argument("file_path", type=click.Path(path_type=Path))
-@click.option(
-    "--config", "config_path", default="workspace_config.yaml", help="Path to workspace config"
-)
 @click.option("--json-output", is_flag=True, help="Emit machine-readable JSON")
-def sidecar_inspect(file_path: Path, config_path: str, json_output: bool) -> None:
+def sidecar_inspect(file_path: Path, json_output: bool) -> None:
     if not file_path.exists() or not file_path.is_file():
         raise click.ClickException(f"Path must be a file: {file_path}")
-    sidecar_store = SidecarStore(workspace_root=_load_workspace_root(config_path))
+    sidecar_store = SidecarStore()
     symbols = SidecarService(sidecar_store).inspect(file_path)
     if json_output:
         output_str = json.dumps(symbols, ensure_ascii=False, indent=4)
@@ -214,30 +190,27 @@ def sidecar_update(file_path: Path, updates: str) -> None:
 
 
 @main.command("doctor")
-@click.option("--path", "target_path", default=".", type=click.Path(path_type=Path))
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
-def doctor(target_path: Path, config: str) -> None:
+def doctor(config: str) -> None:
     cfg = load_config(config)
-    workspace_root = _load_workspace_root(config)
     embedder = InternalNomicEmbedding()
     cfg = initialize_embedding_dimensions(cfg, embedder)
 
     def _load_store(index_name: str) -> object:
-        index_config = next((entry for entry in cfg.indices if entry.name == index_name), None)
+        index_config = cfg.get_index(index_name)
         if index_config is None:
             raise click.ClickException(f"Index '{index_name}' not found in configuration.")
-        vector_store = _load_vector_store(index_config, cfg, workspace_root)
+        vector_store = _load_vector_store(index_config, cfg)
         validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
         return vector_store
 
     service = DoctorService(config=cfg, vector_store_loader=_load_store)
-    issues = service.validate_sidecars(target_path)
-    dangling = service.validate_mesh_integrity(target_path)
-    problems = [*issues, *dangling]
-    if problems:
-        for issue in problems:
+    try:
+        service.validate_all()
+    except RuntimeError as exc:
+        for issue in str(exc).split("\n"):
             click.echo(issue)
-        raise click.ClickException("Mesh diagnostics found problems.")
+        raise click.ClickException("Mesh diagnostics found problems.") from exc
     click.echo("Mesh diagnostics passed.")
 
 
