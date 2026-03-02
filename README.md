@@ -60,12 +60,8 @@ SMAK ingests files into knowledge units, enriches them with sidecar metadata, co
 ## Quick start (CLI)
 
 ```bash
-smak ingest --folder demo/workspace_a/src \
-            --index source_code \
-            --config demo/workspace_a/workspace_config.yaml
-smak ingest --folder demo/workspace_a/issues \
-            --index issues \
-            --config demo/workspace_a/workspace_config.yaml
+smak ingest --index source_code --config demo/workspace_a/workspace_config.yaml
+smak ingest --index issues      --config demo/workspace_a/workspace_config.yaml
 smak query "why does update_cell raise an error" \
       --index source_code \
       --config demo/workspace_a/workspace_config.yaml

@@ -45,6 +45,10 @@ demo/
         └── log-analyzer-known-issues.md
 ```
 
+The `path:` field on each index entry in `workspace_config.yaml` controls which directory
+`smak ingest` reads. For example, `source_code` has `path: ./src`, so `smak ingest
+--index source_code` ingests from `<workspace>/src/` automatically.
+
 ---
 
 ## Prerequisites
@@ -78,8 +82,7 @@ All commands below are run from the **repository root**.
 #### Step 1: Ingest source code
 
 ```bash
-smak ingest --folder demo/workspace_a/src \
-            --index source_code \
+smak ingest --index source_code \
             --config demo/workspace_a/workspace_config.yaml \
             --workers 1
 ```
@@ -87,7 +90,11 @@ smak ingest --folder demo/workspace_a/src \
 Expected output:
 
 ```
-Ingestion complete. Files: 2, Vectors added: 5, Skipped: 0
+Starting ingestion for '.../workspace_a/src' -> Index: 'source_code'...
+Ingestion Complete!
+   - Processed Files: 2
+   - Skipped Files: 0
+   - Vectors Added: 5
 ```
 
 The Python parser extracts symbols from `csv_editor.py` and `test_csv_editor.py`.
@@ -97,8 +104,7 @@ each symbol with `intent` text and `relations` pointers.
 #### Step 2: Ingest issues
 
 ```bash
-smak ingest --folder demo/workspace_a/issues \
-            --index issues \
+smak ingest --index issues \
             --config demo/workspace_a/workspace_config.yaml \
             --workers 1
 ```
@@ -109,8 +115,7 @@ Its UID becomes `csv-editor-known-issues` (taken from the frontmatter `symbol:` 
 #### Step 3: Ingest documentation
 
 ```bash
-smak ingest --folder demo/workspace_a/documentation \
-            --index documentation \
+smak ingest --index documentation \
             --config demo/workspace_a/workspace_config.yaml \
             --workers 1
 ```
@@ -120,8 +125,7 @@ smak ingest --folder demo/workspace_a/documentation \
 See which UIDs were extracted from the source file:
 
 ```bash
-smak sidecar inspect demo/workspace_a/src/csv_editor.py \
-     --config demo/workspace_a/workspace_config.yaml
+smak sidecar inspect demo/workspace_a/src/csv_editor.py
 ```
 
 Expected output:
@@ -173,19 +177,17 @@ index — all in one query, without you knowing the issue file existed.
 
 #### Step 6: Update a sidecar entry (optional)
 
-Add or edit relations interactively using `smak sidecar update`.
+Add or edit relations using `smak sidecar update`.
 First inspect to confirm symbol names:
 
 ```bash
-smak sidecar inspect demo/workspace_a/src/csv_editor.py \
-     --config demo/workspace_a/workspace_config.yaml
+smak sidecar inspect demo/workspace_a/src/csv_editor.py
 ```
 
 Then update:
 
 ```bash
 smak sidecar update demo/workspace_a/src/csv_editor.py \
-     --config demo/workspace_a/workspace_config.yaml \
      --updates '[
        {
          "symbol": "CsvEditor.append_row",
@@ -198,8 +200,7 @@ smak sidecar update demo/workspace_a/src/csv_editor.py \
 Re-ingest to propagate the change into the vector store:
 
 ```bash
-smak ingest --folder demo/workspace_a/src \
-            --index source_code \
+smak ingest --index source_code \
             --config demo/workspace_a/workspace_config.yaml \
             --workers 1
 ```
@@ -368,8 +369,7 @@ workspace isolation works: a query in `demo_flow_b` never surfaces CSV editor co
 #### Step 1: Ingest source code
 
 ```bash
-smak ingest --folder demo/workspace_b/src \
-            --index source_code \
+smak ingest --index source_code \
             --config demo/workspace_b/workspace_config.yaml \
             --workers 1
 ```
@@ -377,7 +377,11 @@ smak ingest --folder demo/workspace_b/src \
 Expected output:
 
 ```
-Ingestion complete. Files: 2, Vectors added: 6, Skipped: 0
+Starting ingestion for '.../workspace_b/src' -> Index: 'source_code'...
+Ingestion Complete!
+   - Processed Files: 2
+   - Skipped Files: 0
+   - Vectors Added: 6
 ```
 
 The sidecar `log_analyzer.py.sidecar.yaml` is picked up automatically, linking
@@ -386,8 +390,7 @@ The sidecar `log_analyzer.py.sidecar.yaml` is picked up automatically, linking
 #### Step 2: Ingest issues
 
 ```bash
-smak ingest --folder demo/workspace_b/issues \
-            --index issues \
+smak ingest --index issues \
             --config demo/workspace_b/workspace_config.yaml \
             --workers 1
 ```
@@ -397,8 +400,7 @@ The issue file's frontmatter `symbol: log-parse-error` sets its UID to `log-pars
 #### Step 3: Ingest documentation
 
 ```bash
-smak ingest --folder demo/workspace_b/documentation \
-            --index documentation \
+smak ingest --index documentation \
             --config demo/workspace_b/workspace_config.yaml \
             --workers 1
 ```
@@ -406,8 +408,7 @@ smak ingest --folder demo/workspace_b/documentation \
 #### Step 4: Inspect symbols
 
 ```bash
-smak sidecar inspect demo/workspace_b/src/log_analyzer.py \
-     --config demo/workspace_b/workspace_config.yaml
+smak sidecar inspect demo/workspace_b/src/log_analyzer.py
 ```
 
 Expected output:
@@ -456,7 +457,6 @@ Example output:
 
 ```bash
 smak sidecar update demo/workspace_b/src/log_analyzer.py \
-     --config demo/workspace_b/workspace_config.yaml \
      --updates '[
        {
          "symbol": "LogAnalyzer.count_by_level",
@@ -469,8 +469,7 @@ smak sidecar update demo/workspace_b/src/log_analyzer.py \
 Re-ingest after updating:
 
 ```bash
-smak ingest --folder demo/workspace_b/src \
-            --index source_code \
+smak ingest --index source_code \
             --config demo/workspace_b/workspace_config.yaml \
             --workers 1
 ```
