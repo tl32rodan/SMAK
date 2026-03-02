@@ -26,20 +26,32 @@ class SmakConfig:
     indices: list[IndexConfig] = field(default_factory=list)
     embedding_dimensions: int | None = None
 
+    def get_index(self, name: str) -> IndexConfig | None:
+        """Return the IndexConfig with the given name, or None if not found."""
+        return next((entry for entry in self.indices if entry.name == name), None)
+
+
+DEFAULT_DATA_DIR = "smak_data"
+
+
+def _resolve_absolute_path(raw: str, base: Path) -> str:
+    """Resolve *raw* relative to *base*, or expand it if already absolute."""
+    expanded = Path(raw).expanduser()
+    if expanded.is_absolute():
+        return str(expanded.resolve())
+    return str((base / expanded).resolve())
+
 
 def _resolve_config(cfg: SmakConfig, config_path: str | Path) -> SmakConfig:
     config_file = Path(config_path)
     base_path = config_file.resolve().parent if config_file.exists() else Path.cwd().resolve()
     resolved_indices = []
     for index in cfg.indices:
-        # Resolve path
-        resolved_path = str((base_path / Path(index.path).expanduser()).resolve()) if not Path(index.path).expanduser().is_absolute() else str(Path(index.path).expanduser().resolve())
-        # Resolve uri
+        resolved_path = _resolve_absolute_path(index.path, base_path)
         if index.uri:
-            uri_path = Path(index.uri).expanduser()
-            resolved_uri = str((base_path / uri_path).resolve()) if not uri_path.is_absolute() else str(uri_path.resolve())
+            resolved_uri = _resolve_absolute_path(index.uri, base_path)
         else:
-            resolved_uri = str((base_path / "./smak_data" / index.name).resolve())
+            resolved_uri = str((base_path / DEFAULT_DATA_DIR / index.name).resolve())
         resolved_indices.append(
             IndexConfig(
                 name=index.name,
@@ -83,4 +95,4 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
     )
 
 
-__all__ = ["IndexConfig", "SmakConfig", "load_config"]
+__all__ = ["DEFAULT_DATA_DIR", "IndexConfig", "SmakConfig", "load_config"]

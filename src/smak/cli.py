@@ -19,7 +19,6 @@ from smak.utils.embedding import (
 )
 
 DEFAULT_MAX_WORKERS = 4
-DEFAULT_INDEX_DATA_DIR = "./smak_data"
 
 
 def _load_vector_store(index_config: IndexConfig, config: SmakConfig):
@@ -60,7 +59,7 @@ def _default_config_template() -> str:
 
 def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig, IndexConfig, object]:
     cfg = load_config(config_path)
-    index_config = next((entry for entry in cfg.indices if entry.name == index), None)
+    index_config = cfg.get_index(index)
     if index_config is None:
         raise click.ClickException(f"Index '{index}' not found in configuration.")
     embedder = InternalNomicEmbedding()
@@ -198,7 +197,7 @@ def doctor(config: str) -> None:
     cfg = initialize_embedding_dimensions(cfg, embedder)
 
     def _load_store(index_name: str) -> object:
-        index_config = next((entry for entry in cfg.indices if entry.name == index_name), None)
+        index_config = cfg.get_index(index_name)
         if index_config is None:
             raise click.ClickException(f"Index '{index_name}' not found in configuration.")
         vector_store = _load_vector_store(index_config, cfg)
