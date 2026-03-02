@@ -1,9 +1,10 @@
-providers:
-  llm:
-    provider: openai_compatible
-    model: gpt-4o-mini
-    api_key_env: OPENAI_API_KEY
-  embeddings:
-    provider: openai_compatible
-    model: text-embedding-3-small
-    api_key_env: OPENAI_API_KEY
+indices:
+  - name: source_code
+    description: Python source code for the log-analysis library (classes and functions).
+    uri: ./smak_data/source_code
+  - name: issues
+    description: Bug reports and known limitations of the log analyzer.
+  - name: tests
+    description: Unit tests for the log analyzer.
+  - name: documentation
+    description: Design notes and API reference for the log analyzer.

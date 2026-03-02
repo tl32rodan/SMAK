@@ -60,18 +60,26 @@ SMAK ingests files into knowledge units, enriches them with sidecar metadata, co
 ## Quick start (CLI)
 
 ```bash
-smak init --path workspace_config.yaml
-smak ingest --folder ./src --index source_code --config workspace_config.yaml
-smak sidecar inspect ./src/csv_editor.py --config workspace_config.yaml
-smak sidecar init ./src/csv_editor.py --config workspace_config.yaml
-smak query "csv editor bug" --index source_code --config workspace_config.yaml
-smak doctor --path . --index source_code --config workspace_config.yaml
+smak ingest --folder demo/workspace_a/src \
+            --index source_code \
+            --config demo/workspace_a/workspace_config.yaml
+smak ingest --folder demo/workspace_a/issues \
+            --index issues \
+            --config demo/workspace_a/workspace_config.yaml
+smak query "why does update_cell raise an error" \
+      --index source_code \
+      --config demo/workspace_a/workspace_config.yaml
+smak doctor --config demo/workspace_a/workspace_config.yaml
 ```
 
 ## Quick start (MCP server)
 
 ```bash
-python -m smak.mcp_server --registry ./all_workspaces.yaml
+python -m smak.mcp_server --registry ./demo/all_workspaces.yaml
 ```
 
-The registry file must define workspace names and filesystem paths. All tool calls except `list_available_workspaces` require explicitly choosing one workspace.
+The registry file must define workspace names and filesystem paths. All tool calls except
+`list_available_workspaces` require explicitly choosing one workspace.
+
+See **[`demo/README.md`](demo/README.md)** for a complete step-by-step walkthrough of both
+workspaces, covering every CLI command and MCP tool call with expected output.
