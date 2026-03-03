@@ -14,14 +14,14 @@ It is the source-of-truth layer for:
 SMAK ingests files into knowledge units, enriches them with sidecar metadata, computes embeddings, and stores vectors.
 
 ### 2) MCP-facing API surface
-`src/smak/mcp_server.py` exposes strict multi-workspace MCP tools:
-- `list_available_workspaces()`
-- `refresh_knowledge(workspace, folder=".", index="source_code", follow_symlinks=True)`
-- `semantic_search(workspace, query, index="source_code", top_k=5)`
-- `manage_sidecar(workspace, action, file_path, updates=None, reingest=False, index="source_code")`
-- `validate_mesh(workspace, path=".")`
+`src/smak/mcp_server.py` exposes config-driven MCP tools:
+- `list_available_configs()`
+- `refresh_knowledge(config, index="source_code", follow_symlinks=True)`
+- `semantic_search(config, query, index="source_code", top_k=5)`
+- `manage_sidecar(config, action, file_path, updates=None, index="source_code")`
+- `validate_mesh(config)`
 
-> `all_workspaces.yaml` (or an equivalent registry file passed via `--registry`) is now **mandatory**. The MCP server fails fast when the registry is missing or empty.
+> `registry.yaml` (or an equivalent registry file passed via `--registry`) is **mandatory**. The MCP server fails fast when the registry is missing or empty.
 
 ### 3) CLI utilities
 - `smak init`
@@ -71,11 +71,11 @@ smak doctor --config demo/workspace_a/workspace_config.yaml
 ## Quick start (MCP server)
 
 ```bash
-python -m smak.mcp_server --registry ./demo/all_workspaces.yaml
+python -m smak.mcp_server --registry ./demo/registry.yaml
 ```
 
-The registry file must define workspace names and filesystem paths. All tool calls except
-`list_available_workspaces` require explicitly choosing one workspace.
+The registry file must list config file paths. All tool calls except
+`list_available_configs` require explicitly choosing one config.
 
 See **[`demo/README.md`](demo/README.md)** for a complete step-by-step walkthrough of both
 workspaces, covering every CLI command and MCP tool call with expected output.
