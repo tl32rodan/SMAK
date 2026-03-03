@@ -13,13 +13,18 @@ description: SMAK (Semantic Mesh Augmented Kernel) - A semantic search and conte
 ## WHEN TO USE (Triggers)
 - **Intent discovery:** understand the "why" behind hacks, tradeoffs, or legacy behavior.
 - **1-hop context expansion:** starting from a relevant code hit, fetch linked issues/docs/tests via relations.
+- **Sidecar lifecycle operations:** when you need to inspect symbols or initialize/update intent+relations metadata for a concrete file selected from semantic search hits.
 
 ## STANDARD WORKFLOW (Must follow)
 1. `list_available_configs` to pick a valid `config`.
 2. `semantic_search` with natural-language intent query.
-3. `manage_sidecar` only after selecting a concrete hit.
+3. Choose one concrete hit and copy `exact_relative_path` exactly.
+4. Use sidecar tools in order as needed:
+   - `inspect_sidecar` to verify symbol UIDs available for that file.
+   - `init_sidecar` to scaffold sidecar entries.
+   - `update_sidecar` to write `intent` / `relations` updates.
 
-### manage_sidecar parameter rule (Strict)
+### sidecar parameter rule (Strict)
 - `file_path MUST EXACTLY match exact_relative_path from semantic_search hits`.
 - Never rewrite, normalize, or guess the path manually.
 
