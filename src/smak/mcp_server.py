@@ -145,8 +145,9 @@ class SmakMcpServer:
         Args:
             index_config: Index configuration object that exposes a ``path``
                 attribute pointing to the monitored folder.
-            file_path: A file path string — either absolute or relative to the
-                index root.
+            file_path: A file path string. Absolute paths are strongly
+                recommended to reduce agent ambiguity; relative paths are
+                still supported and resolved against the index root.
 
         Returns:
             Resolved absolute :class:`~pathlib.Path`.
@@ -250,8 +251,9 @@ class SmakMcpServer:
 
         Args:
             config: Registry key that identifies the project configuration.
-            file_path: Path to the source file — absolute or relative to the
-                index root.
+            file_path: Path to the source file. Prefer an absolute path to
+                minimize agent cognitive overhead; relative paths are still
+                accepted and resolved from the index root.
             index: Name of the index whose root is used to resolve relative
                 paths.  Defaults to ``"source_code"``.
 
@@ -283,8 +285,9 @@ class SmakMcpServer:
 
         Args:
             config: Registry key that identifies the project configuration.
-            file_path: Path to the source file or directory — absolute or
-                relative to the index root.
+            file_path: Path to the source file or directory. Prefer an
+                absolute path to minimize agent cognitive overhead; relative
+                paths are still accepted and resolved from the index root.
             index: Name of the index whose root is used to resolve relative
                 paths.  Defaults to ``"source_code"``.
 
@@ -316,7 +319,9 @@ class SmakMcpServer:
         Args:
             config: Registry key that identifies the project configuration.
             file_path: Path to the source file whose sidecar should be
-                updated — absolute or relative to the index root.
+                updated. Prefer an absolute path to minimize agent cognitive
+                overhead; relative paths are still accepted and resolved from
+                the index root.
             updates: List of update objects.  Each object must have:
 
                 * ``symbol`` *(str, required)* — UID of the target symbol.
@@ -466,8 +471,9 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         Args:
             config: Registry key identifying the project (see
                 ``list_available_configs``).
-            file_path: Path to the source file — absolute or relative to the
-                index root folder.
+            file_path: Path to the source file. Absolute paths are strongly
+                recommended to reduce agent ambiguity; relative paths are
+                still supported and resolved against the index root folder.
             index: Index whose root resolves relative paths.  Defaults to
                 ``"source_code"``.
 
@@ -497,8 +503,10 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         Args:
             config: Registry key identifying the project (see
                 ``list_available_configs``).
-            file_path: Path to a source file or directory — absolute or
-                relative to the index root folder.
+            file_path: Path to a source file or directory. Absolute paths
+                are strongly recommended to reduce agent ambiguity; relative
+                paths are still supported and resolved against the index root
+                folder.
             index: Index whose root resolves relative paths.  Defaults to
                 ``"source_code"``.
 
@@ -529,7 +537,9 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
             config: Registry key identifying the project (see
                 ``list_available_configs``).
             file_path: Path to the source file whose sidecar should be
-                updated — absolute or relative to the index root folder.
+                updated. Absolute paths are strongly recommended to reduce
+                agent ambiguity; relative paths are still supported and
+                resolved against the index root folder.
             updates: List of update objects.  Each object must include:
 
                 * ``symbol`` *(str, required)* — UID of the target symbol
