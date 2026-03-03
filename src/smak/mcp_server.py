@@ -46,7 +46,17 @@ class SmakMcpServer:
             )
 
     def _resolve_config_path(self, config_name: str) -> Path:
-        """Resolve the absolute path to a config file from a registry entry."""
+        """Resolve the absolute path to a config file from a registry entry.
+
+        Args:
+            config_name: Key name as declared in the registry YAML.
+
+        Returns:
+            Absolute ``Path`` to the config file.
+
+        Raises:
+            ValueError: If *config_name* is not present in the registry.
+        """
 
         if config_name not in self.configs:
             raise ValueError(f"Config '{config_name}' not found in registry.")
@@ -59,7 +69,20 @@ class SmakMcpServer:
         return target_path
 
     def _load_config(self, config_name: str) -> SmakConfig:
-        """Load and return the resolved SmakConfig for a registry entry."""
+        """Load and return the resolved SmakConfig for a registry entry.
+
+        The embedding dimensions are initialised as a side-effect so the
+        returned config is ready for immediate use.
+
+        Args:
+            config_name: Key name as declared in the registry YAML.
+
+        Returns:
+            Fully-initialised :class:`~smak.config.SmakConfig`.
+
+        Raises:
+            FileNotFoundError: If the resolved config file does not exist.
+        """
 
         config_path = self._resolve_config_path(config_name)
         if not config_path.exists():
@@ -71,6 +94,19 @@ class SmakMcpServer:
 
     @staticmethod
     def _get_index_config(config: SmakConfig, index: str) -> object:
+        """Return the index-level configuration block for *index*.
+
+        Args:
+            config: Top-level SMAK configuration.
+            index: Name of the index (e.g. ``"source_code"``).
+
+        Returns:
+            The index configuration object stored inside *config*.
+
+        Raises:
+            ValueError: If *index* is not found in *config*.
+        """
+
         index_config = config.get_index(index)
         if index_config is None:
             raise ValueError(f"Index '{index}' not found in configuration.")
@@ -81,10 +117,49 @@ class SmakMcpServer:
         config: SmakConfig,
         index: str,
     ) -> tuple[object, object]:
+        """Load and validate the vector store for a given index.
+
+        Args:
+            config: Top-level SMAK configuration.
+            index: Name of the index whose vector store should be loaded.
+
+        Returns:
+            A ``(vector_store, index_config)`` tuple ready for use by services.
+
+        Raises:
+            ValueError: If *index* is not found in *config* or the vector
+                store dimension does not match the configured embedding size.
+        """
+
         index_config = self._get_index_config(config, index)
         vector_store = _load_vector_store(index_config, config)
         validate_vector_store_dimension(vector_store, config.embedding_dimensions)
         return vector_store, index_config
+
+    def _resolve_source_path(self, index_config: object, file_path: str) -> Path:
+        """Resolve *file_path* to an absolute path relative to the index root.
+
+        Relative paths are anchored to ``index_config.path``; absolute paths
+        are returned as-is.
+
+        Args:
+            index_config: Index configuration object that exposes a ``path``
+                attribute pointing to the monitored folder.
+            file_path: A file path string — either absolute or relative to the
+                index root.
+
+        Returns:
+            Resolved absolute :class:`~pathlib.Path`.
+        """
+
+        raw = Path(file_path)
+        if raw.is_absolute():
+            return raw
+        return (Path(index_config.path) / raw).resolve()
+
+    # ------------------------------------------------------------------
+    # Public service methods
+    # ------------------------------------------------------------------
 
     def refresh_knowledge(
         self,
@@ -92,7 +167,23 @@ class SmakMcpServer:
         index: str = "source_code",
         follow_symlinks: bool = True,
     ) -> str:
-        """Ingest content into a target index (folder is defined by the index config)."""
+        """Ingest content into a target index (folder is defined by the index config).
+
+        Walks the folder associated with *index* and upserts all discovered
+        files into the vector store.  Existing vectors for unchanged files are
+        skipped automatically.
+
+        Args:
+            config: Registry key that identifies the project configuration.
+            index: Name of the index to refresh.  Defaults to
+                ``"source_code"``.
+            follow_symlinks: Whether to follow symbolic links while walking
+                the target folder.  Defaults to ``True``.
+
+        Returns:
+            A human-readable summary string with processed / skipped / added
+            file and vector counts.
+        """
 
         cfg = self._load_config(config)
         vector_store, index_config = self._load_index_vector_store(cfg, index)
@@ -115,7 +206,22 @@ class SmakMcpServer:
         index: str = "source_code",
         top_k: int = 5,
     ) -> dict[str, Any]:
-        """Run in-process semantic query and return serializable payload."""
+        """Run in-process semantic query and return serializable payload.
+
+        Embeds *query* using the configured embedding model, retrieves the
+        *top_k* nearest vectors from the index, and returns enriched results
+        that include sidecar metadata when available.
+
+        Args:
+            config: Registry key that identifies the project configuration.
+            query: Free-text search query.
+            index: Name of the index to query.  Defaults to ``"source_code"``.
+            top_k: Maximum number of results to return.  Defaults to ``5``.
+
+        Returns:
+            A serialisable :class:`dict` containing the search results, or an
+            empty dict if no results were found.
+        """
 
         cfg = self._load_config(config)
         vector_store, index_config = self._load_index_vector_store(cfg, index)
@@ -130,42 +236,124 @@ class SmakMcpServer:
         result = service.search(query, top_k=top_k)
         return result if isinstance(result, dict) else {}
 
-    def manage_sidecar(
+    def inspect_sidecar(
         self,
         config: str,
-        action: str,
         file_path: str,
-        updates: list[dict[str, Any]] | None = None,
         index: str = "source_code",
-    ) -> dict[str, Any] | list[str] | str:
-        """Manage sidecar metadata through one unified entrypoint."""
+    ) -> list[str]:
+        """Return the list of symbol UIDs parsed from a source file.
+
+        Parses *file_path* with the appropriate language parser and returns
+        the UID of every code unit found.  No sidecar file is read or written;
+        this is a read-only introspection operation.
+
+        Args:
+            config: Registry key that identifies the project configuration.
+            file_path: Path to the source file — absolute or relative to the
+                index root.
+            index: Name of the index whose root is used to resolve relative
+                paths.  Defaults to ``"source_code"``.
+
+        Returns:
+            Ordered list of symbol UID strings as produced by the parser.
+        """
 
         cfg = self._load_config(config)
         index_config = self._get_index_config(cfg, index)
-        raw_source_path = Path(file_path)
-        source_path = (
-            raw_source_path
-            if raw_source_path.is_absolute()
-            else (Path(index_config.path) / raw_source_path).resolve()
-        )
-        sidecar_store = SidecarStore()
-        service = SidecarService(sidecar_store=sidecar_store)
+        source_path = self._resolve_source_path(index_config, file_path)
+        service = SidecarService(sidecar_store=SidecarStore())
+        return service.inspect(source_path)
 
-        if action == "inspect":
-            return service.inspect(source_path)
-        if action == "init":
-            output = service.init(source_path)
-            return str(output)
-        if action == "update":
-            update_result = service.update(
-                source_path,
-                json.dumps(updates or [], ensure_ascii=False),
-            )
-            return update_result
-        raise ValueError("action must be one of: init, update, inspect")
+    def init_sidecar(
+        self,
+        config: str,
+        file_path: str,
+        index: str = "source_code",
+    ) -> str:
+        """Scaffold a sidecar YAML for a source file or directory.
+
+        For a **file**, creates a ``<file>.sidecar.yaml`` next to the source
+        containing one stub entry per parsed symbol.
+
+        For a **directory**, creates a single ``sidecar.yaml`` inside the
+        directory covering every non-sidecar source file found recursively.
+
+        Existing sidecar files are overwritten.
+
+        Args:
+            config: Registry key that identifies the project configuration.
+            file_path: Path to the source file or directory — absolute or
+                relative to the index root.
+            index: Name of the index whose root is used to resolve relative
+                paths.  Defaults to ``"source_code"``.
+
+        Returns:
+            Absolute path to the created sidecar file as a string.
+        """
+
+        cfg = self._load_config(config)
+        index_config = self._get_index_config(cfg, index)
+        source_path = self._resolve_source_path(index_config, file_path)
+        service = SidecarService(sidecar_store=SidecarStore())
+        output = service.init(source_path)
+        return str(output)
+
+    def update_sidecar(
+        self,
+        config: str,
+        file_path: str,
+        updates: list[dict[str, Any]],
+        index: str = "source_code",
+    ) -> dict[str, Any]:
+        """Merge metadata updates into the sidecar file for a source file.
+
+        Each entry in *updates* must contain a ``"symbol"`` key whose value
+        matches a UID in the sidecar.  Optional keys ``"intent"`` (str) and
+        ``"relations"`` (list[str]) are merged into the existing record.
+        Missing sidecar fields are left unchanged.
+
+        Args:
+            config: Registry key that identifies the project configuration.
+            file_path: Path to the source file whose sidecar should be
+                updated — absolute or relative to the index root.
+            updates: List of update objects.  Each object must have:
+
+                * ``symbol`` *(str, required)* — UID of the target symbol.
+                * ``intent`` *(str, optional)* — New intent description.
+                * ``relations`` *(list[str], optional)* — New relation list.
+
+            index: Name of the index whose root is used to resolve relative
+                paths.  Defaults to ``"source_code"``.
+
+        Returns:
+            A dict with keys ``file_path``, ``sidecar_path``,
+            ``applied_updates``, and ``total_symbols`` describing the result.
+        """
+
+        cfg = self._load_config(config)
+        index_config = self._get_index_config(cfg, index)
+        source_path = self._resolve_source_path(index_config, file_path)
+        service = SidecarService(sidecar_store=SidecarStore())
+        return service.update(source_path, json.dumps(updates, ensure_ascii=False))
 
     def validate_mesh(self, config: str) -> str:
-        """Run mesh/sidecar integrity checks in-process."""
+        """Run mesh/sidecar integrity checks in-process.
+
+        Loads every configured index and validates consistency between the
+        vector store, the source files, and the sidecar metadata.  Raises on
+        the first detected inconsistency.
+
+        Args:
+            config: Registry key that identifies the project configuration.
+
+        Returns:
+            A confirmation string if all diagnostics pass.
+
+        Raises:
+            Exception: Any exception raised by
+                :class:`~smak.services.DoctorService` when a problem is found.
+        """
 
         cfg = self._load_config(config)
 
@@ -186,6 +374,16 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
 
     @mcp.tool()
     def list_available_configs() -> dict[str, Any]:
+        """Return all project configurations registered in the registry file.
+
+        Use this tool to discover which *config* values are valid before
+        calling any other SMAK tool.
+
+        Returns:
+            A dict mapping each config name to its registry metadata (e.g.
+            ``config_path``).
+        """
+
         return smak_server.configs
 
     @mcp.tool()
@@ -194,6 +392,27 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         index: str = "source_code",
         follow_symlinks: bool = True,
     ) -> str:
+        """Ingest (or re-ingest) a source folder into a SMAK vector-store index.
+
+        Walks the folder bound to *index* in the project config and upserts
+        every file into the vector store.  Call this tool after adding,
+        modifying, or deleting source files so that ``semantic_search``
+        returns up-to-date results.
+
+        Args:
+            config: Registry key identifying the project (see
+                ``list_available_configs``).
+            index: Name of the index to refresh.  Defaults to
+                ``"source_code"``.
+            follow_symlinks: Whether to descend into symbolic links during
+                folder traversal.  Defaults to ``True``.
+
+        Returns:
+            A human-readable summary such as
+            ``"Ingestion Complete! Processed Files: 42, Skipped Files: 3,
+            Vectors Added: 210"``.
+        """
+
         return smak_server.refresh_knowledge(
             config=config,
             index=index,
@@ -207,6 +426,24 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         index: str = "source_code",
         top_k: int = 5,
     ) -> dict[str, Any]:
+        """Search a SMAK index with a natural-language query.
+
+        Embeds *query* and retrieves the *top_k* most similar code units from
+        the vector store.  Results are enriched with sidecar metadata
+        (``intent``, ``relations``) when available.
+
+        Args:
+            config: Registry key identifying the project (see
+                ``list_available_configs``).
+            query: Natural-language description of what you are looking for.
+            index: Name of the index to query.  Defaults to ``"source_code"``.
+            top_k: Maximum number of results to return.  Defaults to ``5``.
+
+        Returns:
+            A serialisable dict containing the ranked results, or ``{}`` when
+            the index is empty.
+        """
+
         return smak_server.semantic_search(
             config=config,
             query=query,
@@ -215,16 +452,108 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         )
 
     @mcp.tool()
-    def manage_sidecar(
+    def inspect_sidecar(
         config: str,
-        action: str,
         file_path: str,
-        updates: list[dict[str, Any]] | None = None,
         index: str = "source_code",
-    ) -> dict[str, Any] | list[str] | str:
-        return smak_server.manage_sidecar(
+    ) -> list[str]:
+        """List the symbol UIDs that SMAK can parse from a source file.
+
+        Runs the language-specific parser over *file_path* and returns the UID
+        of every discovered code unit.  No files are written.  Use the result
+        to know which symbol names are valid for ``update_sidecar``.
+
+        Args:
+            config: Registry key identifying the project (see
+                ``list_available_configs``).
+            file_path: Path to the source file — absolute or relative to the
+                index root folder.
+            index: Index whose root resolves relative paths.  Defaults to
+                ``"source_code"``.
+
+        Returns:
+            Ordered list of symbol UID strings (e.g.
+            ``["module::ClassName", "module::ClassName::method"]``).
+        """
+
+        return smak_server.inspect_sidecar(
             config=config,
-            action=action,
+            file_path=file_path,
+            index=index,
+        )
+
+    @mcp.tool()
+    def init_sidecar(
+        config: str,
+        file_path: str,
+        index: str = "source_code",
+    ) -> str:
+        """Create or overwrite a sidecar YAML stub for a file or directory.
+
+        Parses *file_path* (or every source file inside a directory) and
+        writes stub sidecar entries with empty ``intent`` and ``relations``
+        fields.  Populate those fields afterwards with ``update_sidecar``.
+
+        Args:
+            config: Registry key identifying the project (see
+                ``list_available_configs``).
+            file_path: Path to a source file or directory — absolute or
+                relative to the index root folder.
+            index: Index whose root resolves relative paths.  Defaults to
+                ``"source_code"``.
+
+        Returns:
+            Absolute path to the created sidecar file as a string.
+        """
+
+        return smak_server.init_sidecar(
+            config=config,
+            file_path=file_path,
+            index=index,
+        )
+
+    @mcp.tool()
+    def update_sidecar(
+        config: str,
+        file_path: str,
+        updates: list[dict[str, Any]],
+        index: str = "source_code",
+    ) -> dict[str, Any]:
+        """Merge intent and relation metadata into a sidecar file.
+
+        Each item in *updates* targets one symbol by UID and supplies new
+        values for ``intent`` and/or ``relations``.  Fields not mentioned in
+        an update object are left unchanged.
+
+        Args:
+            config: Registry key identifying the project (see
+                ``list_available_configs``).
+            file_path: Path to the source file whose sidecar should be
+                updated — absolute or relative to the index root folder.
+            updates: List of update objects.  Each object must include:
+
+                * ``symbol`` *(str, required)* — UID of the target symbol
+                  (as returned by ``inspect_sidecar``).
+                * ``intent`` *(str, optional)* — Human-readable description
+                  of what the symbol does.
+                * ``relations`` *(list[str], optional)* — UIDs of related
+                  symbols.
+
+            index: Index whose root resolves relative paths.  Defaults to
+                ``"source_code"``.
+
+        Returns:
+            A dict with the following keys:
+
+            * ``file_path`` — absolute path to the source file.
+            * ``sidecar_path`` — absolute path to the updated sidecar file.
+            * ``applied_updates`` — number of update entries processed.
+            * ``total_symbols`` — total symbol count in the sidecar after the
+              update.
+        """
+
+        return smak_server.update_sidecar(
+            config=config,
             file_path=file_path,
             updates=updates,
             index=index,
@@ -232,6 +561,20 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
 
     @mcp.tool()
     def validate_mesh(config: str) -> str:
+        """Run integrity diagnostics across the SMAK mesh for a project.
+
+        Checks that every source file tracked in the vector store still exists
+        on disk, that sidecar symbol references resolve correctly, and that
+        index dimensions are consistent.  Raises on the first problem found.
+
+        Args:
+            config: Registry key identifying the project (see
+                ``list_available_configs``).
+
+        Returns:
+            ``"Mesh diagnostics passed."`` if no issues are detected.
+        """
+
         return smak_server.validate_mesh(config=config)
 
     return mcp
