@@ -136,11 +136,32 @@ class SmakMcpServer:
         validate_vector_store_dimension(vector_store, config.embedding_dimensions)
         return vector_store, index_config
 
-    def _resolve_source_path(self, index_config: object, file_path: str) -> Path:
-        """Resolve *file_path* to an absolute path relative to the index root.
+    @staticmethod
+    def _format_candidates(candidates: list[str]) -> str:
+        """Format candidate path hints for human-readable error messages."""
 
-        Relative paths are anchored to ``index_config.path``; absolute paths
-        are returned as-is.
+        if len(candidates) == 1:
+            return f"'{candidates[0]}'"
+        if len(candidates) == 2:
+            return f"'{candidates[0]}' or '{candidates[1]}'"
+        quoted = [f"'{candidate}'" for candidate in candidates]
+        return ", ".join(quoted[:-1]) + f", or {quoted[-1]}"
+
+    def _resolve_source_path(
+        self,
+        config_name: str,
+        index: str,
+        index_config: object,
+        file_path: str,
+    ) -> Path:
+        """Resolve *file_path* with defensive fallback inside the index root.
+
+        Resolution order:
+
+        1. Try the provided path directly (absolute) or relative to index root.
+        2. If missing, scan index root with ``Path.rglob(f"*{name}")``.
+        3. Use unique hit silently, reject ambiguous hits, and fail actionable
+           when no candidates exist.
 
         Args:
             index_config: Index configuration object that exposes a ``path``
@@ -151,12 +172,37 @@ class SmakMcpServer:
 
         Returns:
             Resolved absolute :class:`~pathlib.Path`.
+
+        Raises:
+            ValueError: If fallback scanning finds multiple candidates.
+            FileNotFoundError: If no match can be found.
         """
 
-        raw = Path(file_path)
-        if raw.is_absolute():
-            return raw
-        return (Path(index_config.path) / raw).resolve()
+        index_root = Path(index_config.path).resolve()
+        raw_source_path = Path(file_path)
+        primary_path = (
+            raw_source_path
+            if raw_source_path.is_absolute()
+            else (index_root / raw_source_path).resolve()
+        )
+        if primary_path.exists():
+            return primary_path
+
+        file_name = raw_source_path.name
+        candidates = sorted(index_root.rglob(f"*{file_name}")) if file_name else []
+        if len(candidates) == 1:
+            return candidates[0].resolve()
+
+        relative_candidates = [str(path.resolve().relative_to(index_root)) for path in candidates]
+        if len(relative_candidates) > 1:
+            hints = self._format_candidates(relative_candidates)
+            raise ValueError(f"Ambiguous file path '{file_path}'. Did you mean {hints}?")
+
+        raise FileNotFoundError(
+            "File path resolution failed under index root "
+            f"'{index_root}' (config='{config_name}', index='{index}', file_path='{file_path}'). "
+            "Try using semantic_search first and pass one of the returned file paths."
+        )
 
     # ------------------------------------------------------------------
     # Public service methods
@@ -263,7 +309,7 @@ class SmakMcpServer:
 
         cfg = self._load_config(config)
         index_config = self._get_index_config(cfg, index)
-        source_path = self._resolve_source_path(index_config, file_path)
+        source_path = self._resolve_source_path(config, index, index_config, file_path)
         service = SidecarService(sidecar_store=SidecarStore())
         return service.inspect(source_path)
 
@@ -297,7 +343,7 @@ class SmakMcpServer:
 
         cfg = self._load_config(config)
         index_config = self._get_index_config(cfg, index)
-        source_path = self._resolve_source_path(index_config, file_path)
+        source_path = self._resolve_source_path(config, index, index_config, file_path)
         service = SidecarService(sidecar_store=SidecarStore())
         output = service.init(source_path)
         return str(output)
@@ -338,7 +384,7 @@ class SmakMcpServer:
 
         cfg = self._load_config(config)
         index_config = self._get_index_config(cfg, index)
-        source_path = self._resolve_source_path(index_config, file_path)
+        source_path = self._resolve_source_path(config, index, index_config, file_path)
         service = SidecarService(sidecar_store=SidecarStore())
         return service.update(source_path, json.dumps(updates, ensure_ascii=False))
 

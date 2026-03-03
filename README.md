@@ -41,13 +41,15 @@ SMAK ingests files into knowledge units, enriches them with sidecar metadata, co
 ```json
 {
   "hits": [
-    {"uid": "func_A", "match_type": "semantic", "score": 0.89, "content": "..."}
+    {"uid": "func_A", "exact_uid": "func_A", "exact_relative_path": "src/main.py", "match_type": "semantic", "score": 0.89, "content": "..."}
   ],
   "related_context": [
     {"uid": "issue_12", "match_type": "relation", "source_hit": "func_A", "content": "..."}
   ]
 }
 ```
+
+When calling sidecar APIs (`inspect_sidecar`, `init_sidecar`, `update_sidecar`), copy `hits[].exact_relative_path` directly as `file_path`. Do not rewrite or guess file paths.
 
 ### 1-Hop Semantic Mesh Traversal
 1. Run vector search for `top_k` semantic hits.
