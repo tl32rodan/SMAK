@@ -299,6 +299,57 @@ class TestQueryService(unittest.TestCase):
 
             self.assertEqual(payload["related_context"][0]["uid"], "issue:fresh")
 
+    def test_query_service_hit_contains_exact_relative_path(self) -> None:
+        store = SimpleNamespace(
+            search=lambda vector, top_k=5: [
+                {
+                    "uid": "src/a.py::func_a",
+                    "score": 0.8,
+                    "content": "def func_a(): pass",
+                    "metadata": {"source": "src/a.py"},
+                }
+            ],
+            get_by_id=lambda uid: None,
+        )
+        config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
+
+        payload = QueryService(
+            store,
+            config=config,
+            vector_store_loader=lambda index_config, cfg: store,
+            embedder=DummyEmbedder(),
+            index_config=config.indices[0],
+            relation_resolver=SidecarRelationResolver(SidecarStore()),
+        ).search("query", top_k=1)
+
+        self.assertEqual(payload["hits"][0]["exact_relative_path"], "src/a.py")
+        self.assertEqual(payload["hits"][0]["exact_uid"], "src/a.py::func_a")
+
+    def test_query_service_hit_exact_relative_path_is_none_when_source_missing(self) -> None:
+        store = SimpleNamespace(
+            search=lambda vector, top_k=5: [
+                {
+                    "uid": "func_a",
+                    "score": 0.8,
+                    "content": "def func_a(): pass",
+                    "metadata": {"symbol": "func_a"},
+                }
+            ],
+            get_by_id=lambda uid: None,
+        )
+        config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
+
+        payload = QueryService(
+            store,
+            config=config,
+            vector_store_loader=lambda index_config, cfg: store,
+            embedder=DummyEmbedder(),
+            index_config=config.indices[0],
+            relation_resolver=SidecarRelationResolver(SidecarStore()),
+        ).search("query", top_k=1)
+
+        self.assertIsNone(payload["hits"][0]["exact_relative_path"])
+
 
 if __name__ == "__main__":
     unittest.main()
