@@ -31,10 +31,10 @@ class TestMcpServer(unittest.TestCase):
         registry_path.write_text(
             "\n".join(
                 [
-                    "workspaces:",
-                    "  mock_workspace:",
-                    '    path: "./workspace"',
-                    '    description: "Mock workspace"',
+                    "configs:",
+                    "  mock_config:",
+                    '    config_path: "./workspace/workspace_config.yaml"',
+                    '    description: "Mock config"',
                     "",
                 ]
             ),
@@ -48,25 +48,28 @@ class TestMcpServer(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 SmakMcpServer(registry_path=missing)
 
-    def test_init_requires_non_empty_workspaces(self) -> None:
+    def test_init_requires_non_empty_configs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             registry_path = Path(tmp_dir) / "registry.yaml"
-            registry_path.write_text("workspaces:\n", encoding="utf-8")
+            registry_path.write_text("configs:\n", encoding="utf-8")
             with self.assertRaises(ValueError):
                 SmakMcpServer(registry_path=registry_path)
 
-    def test_get_workspace_path_resolves_relative_path(self) -> None:
+    def test_resolve_config_path_returns_absolute(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
-            workspace_path = server._get_workspace_path("mock_workspace")
-            self.assertTrue(workspace_path.is_absolute())
-            self.assertEqual(workspace_path, Path(tmp_dir).resolve() / "workspace")
+            config_path = server._resolve_config_path("mock_config")
+            self.assertTrue(config_path.is_absolute())
+            self.assertEqual(
+                config_path,
+                Path(tmp_dir).resolve() / "workspace" / "workspace_config.yaml",
+            )
 
-    def test_get_workspace_path_rejects_unknown_workspace(self) -> None:
+    def test_resolve_config_path_rejects_unknown(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
             with self.assertRaises(ValueError):
-                server._get_workspace_path("unknown")
+                server._resolve_config_path("unknown")
 
     @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
     @patch("smak.mcp_server._load_vector_store")
@@ -84,8 +87,7 @@ class TestMcpServer(unittest.TestCase):
             ingest_instance.ingest_folder.return_value = MagicMock(files=1, skipped=0, vectors=2)
 
             output = server.refresh_knowledge(
-                workspace="mock_workspace",
-                folder=".",
+                config="mock_config",
                 index="source_code",
             )
 
@@ -106,7 +108,7 @@ class TestMcpServer(unittest.TestCase):
             server = self._create_server(tmp_dir)
             query_cls.return_value.search.return_value = {"hits": [], "related_context": []}
 
-            result = server.semantic_search(workspace="mock_workspace", query="auth")
+            result = server.semantic_search(config="mock_config", query="auth")
 
             self.assertEqual(result, {"hits": [], "related_context": []})
             query_cls.return_value.search.assert_called_once_with("auth", top_k=5)
@@ -123,7 +125,7 @@ class TestMcpServer(unittest.TestCase):
             sidecar_cls.return_value.inspect.return_value = ["a.py::A"]
 
             symbols = server.manage_sidecar(
-                workspace="mock_workspace",
+                config="mock_config",
                 action="inspect",
                 file_path="a.py",
             )
@@ -142,9 +144,9 @@ class TestMcpServer(unittest.TestCase):
             sidecar_cls.return_value.update.return_value = {"applied_updates": 1}
 
             result = server.manage_sidecar(
-                workspace="mock_workspace",
+                config="mock_config",
                 action="update",
-                file_path="src/a.py",
+                file_path="a.py",
                 updates=[{"symbol": "x"}],
             )
 
@@ -161,7 +163,7 @@ class TestMcpServer(unittest.TestCase):
             server = self._create_server(tmp_dir)
             doctor_instance = doctor_cls.return_value
 
-            output = server.validate_mesh(workspace="mock_workspace")
+            output = server.validate_mesh(config="mock_config")
 
             self.assertEqual(output, "Mesh diagnostics passed.")
             doctor_instance.validate_all.assert_called_once()

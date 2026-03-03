@@ -20,7 +20,7 @@ related issues, so the mesh traversal works immediately after ingestion.
 
 ```
 demo/
-├── all_workspaces.yaml          # MCP server registry
+├── registry.yaml                # MCP server registry
 ├── workspace_a/
 │   ├── workspace_config.yaml   # 4 indices: source_code, issues, tests, documentation
 │   ├── src/
@@ -227,21 +227,21 @@ least one vector index. Run this after deleting or renaming files to catch dangl
 Start the server (from repository root, keep it running in a separate terminal):
 
 ```bash
-python -m smak.mcp_server --registry ./demo/all_workspaces.yaml
+python -m smak.mcp_server --registry ./demo/registry.yaml
 ```
 
 The following examples show each MCP tool call and its expected response.
 
-#### list_available_workspaces
+#### list_available_configs
 
 ```json
 // Tool call
-{ "name": "list_available_workspaces", "arguments": {} }
+{ "name": "list_available_configs", "arguments": {} }
 
 // Response
 {
-  "demo_flow_a": { "path": "./workspace_a", "description": "Demo workspace A for primary flow." },
-  "demo_flow_b": { "path": "./workspace_b", "description": "Demo workspace B for secondary flow." }
+  "demo_flow_a": { "config_path": "./workspace_a/workspace_config.yaml", "description": "Demo workspace A for primary flow." },
+  "demo_flow_b": { "config_path": "./workspace_b/workspace_config.yaml", "description": "Demo workspace B for secondary flow." }
 }
 ```
 
@@ -252,8 +252,7 @@ The following examples show each MCP tool call and its expected response.
 {
   "name": "refresh_knowledge",
   "arguments": {
-    "workspace": "demo_flow_a",
-    "folder": "./src",
+    "config": "demo_flow_a",
     "index": "source_code"
   }
 }
@@ -268,8 +267,7 @@ The following examples show each MCP tool call and its expected response.
 {
   "name": "refresh_knowledge",
   "arguments": {
-    "workspace": "demo_flow_a",
-    "folder": "./issues",
+    "config": "demo_flow_a",
     "index": "issues"
   }
 }
@@ -282,7 +280,7 @@ The following examples show each MCP tool call and its expected response.
 {
   "name": "semantic_search",
   "arguments": {
-    "workspace": "demo_flow_a",
+    "config": "demo_flow_a",
     "query": "why does update_cell raise an error",
     "index": "source_code",
     "top_k": 3
@@ -317,9 +315,9 @@ The following examples show each MCP tool call and its expected response.
 {
   "name": "manage_sidecar",
   "arguments": {
-    "workspace": "demo_flow_a",
+    "config": "demo_flow_a",
     "action": "inspect",
-    "file_path": "./src/csv_editor.py"
+    "file_path": "csv_editor.py"
   }
 }
 
@@ -333,9 +331,9 @@ The following examples show each MCP tool call and its expected response.
 {
   "name": "manage_sidecar",
   "arguments": {
-    "workspace": "demo_flow_a",
+    "config": "demo_flow_a",
     "action": "update",
-    "file_path": "./src/csv_editor.py",
+    "file_path": "csv_editor.py",
     "updates": [
       {
         "symbol": "CsvEditor.read_rows",
@@ -351,7 +349,7 @@ The following examples show each MCP tool call and its expected response.
 
 ```json
 // Tool call
-{ "name": "validate_mesh", "arguments": { "workspace": "demo_flow_a" } }
+{ "name": "validate_mesh", "arguments": { "config": "demo_flow_a" } }
 
 // Response
 "Mesh diagnostics passed."
@@ -484,7 +482,7 @@ smak doctor --config demo/workspace_b/workspace_config.yaml
 
 ### 2.2 MCP server walkthrough
 
-With the MCP server still running (`python -m smak.mcp_server --registry ./demo/all_workspaces.yaml`):
+With the MCP server still running (`python -m smak.mcp_server --registry ./demo/registry.yaml`):
 
 #### refresh_knowledge — ingest source_code
 
@@ -492,8 +490,7 @@ With the MCP server still running (`python -m smak.mcp_server --registry ./demo/
 {
   "name": "refresh_knowledge",
   "arguments": {
-    "workspace": "demo_flow_b",
-    "folder": "./src",
+    "config": "demo_flow_b",
     "index": "source_code"
   }
 }
@@ -505,8 +502,7 @@ With the MCP server still running (`python -m smak.mcp_server --registry ./demo/
 {
   "name": "refresh_knowledge",
   "arguments": {
-    "workspace": "demo_flow_b",
-    "folder": "./issues",
+    "config": "demo_flow_b",
     "index": "issues"
   }
 }
@@ -519,7 +515,7 @@ With the MCP server still running (`python -m smak.mcp_server --registry ./demo/
 {
   "name": "semantic_search",
   "arguments": {
-    "workspace": "demo_flow_b",
+    "config": "demo_flow_b",
     "query": "how are log entries parsed",
     "index": "source_code",
     "top_k": 3
@@ -553,9 +549,9 @@ With the MCP server still running (`python -m smak.mcp_server --registry ./demo/
 {
   "name": "manage_sidecar",
   "arguments": {
-    "workspace": "demo_flow_b",
+    "config": "demo_flow_b",
     "action": "inspect",
-    "file_path": "./src/log_analyzer.py"
+    "file_path": "log_analyzer.py"
   }
 }
 ```
@@ -563,14 +559,14 @@ With the MCP server still running (`python -m smak.mcp_server --registry ./demo/
 #### validate_mesh
 
 ```json
-{ "name": "validate_mesh", "arguments": { "workspace": "demo_flow_b" } }
+{ "name": "validate_mesh", "arguments": { "config": "demo_flow_b" } }
 ```
 
 ---
 
-## Part 3 — Workspace isolation
+## Part 3 — Config isolation
 
-Run the same query against both workspaces to confirm isolation:
+Run the same query against both configs to confirm isolation:
 
 **CLI:**
 
@@ -585,13 +581,13 @@ smak query "parse error handling" \
 ```
 
 The first returns CSV editor content; the second returns log analyzer content.
-Vector stores live in separate `smak_data/` directories inside each workspace root.
+Vector stores live in separate `smak_data/` directories inside each config's root.
 
-**MCP (same server, different `workspace` argument):**
+**MCP (same server, different `config` argument):**
 
 ```json
-{ "name": "semantic_search", "arguments": { "workspace": "demo_flow_a", "query": "parse error handling", "index": "source_code" } }
-{ "name": "semantic_search", "arguments": { "workspace": "demo_flow_b", "query": "parse error handling", "index": "source_code" } }
+{ "name": "semantic_search", "arguments": { "config": "demo_flow_a", "query": "parse error handling", "index": "source_code" } }
+{ "name": "semantic_search", "arguments": { "config": "demo_flow_b", "query": "parse error handling", "index": "source_code" } }
 ```
 
 ---
