@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 try:
@@ -115,7 +116,7 @@ class TestMcpServer(unittest.TestCase):
 
     @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
     @patch("smak.mcp_server.SidecarService")
-    def test_manage_sidecar_inspect(
+    def test_inspect_sidecar_uses_resolver(
         self,
         sidecar_cls: MagicMock,
         _: MagicMock,
@@ -123,18 +124,21 @@ class TestMcpServer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
             sidecar_cls.return_value.inspect.return_value = ["a.py::A"]
+            source_file = Path(tmp_dir) / "workspace" / "src" / "a.py"
+            source_file.parent.mkdir(parents=True)
+            source_file.write_text("print('ok')\n", encoding="utf-8")
 
-            symbols = server.manage_sidecar(
+            symbols = server.inspect_sidecar(
                 config="mock_config",
-                action="inspect",
                 file_path="a.py",
             )
 
             self.assertEqual(symbols, ["a.py::A"])
+            sidecar_cls.return_value.inspect.assert_called_once_with(source_file)
 
     @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
     @patch("smak.mcp_server.SidecarService")
-    def test_manage_sidecar_update(
+    def test_update_sidecar_uses_resolver(
         self,
         sidecar_cls: MagicMock,
         _: MagicMock,
@@ -142,15 +146,86 @@ class TestMcpServer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
             sidecar_cls.return_value.update.return_value = {"applied_updates": 1}
+            source_file = Path(tmp_dir) / "workspace" / "src" / "a.py"
+            source_file.parent.mkdir(parents=True)
+            source_file.write_text("print('ok')\n", encoding="utf-8")
+            updates = [{"symbol": "x"}]
 
-            result = server.manage_sidecar(
+            result = server.update_sidecar(
                 config="mock_config",
-                action="update",
                 file_path="a.py",
-                updates=[{"symbol": "x"}],
+                updates=updates,
             )
 
             self.assertEqual(result["applied_updates"], 1)
+            sidecar_cls.return_value.update.assert_called_once_with(
+                source_file,
+                '[{"symbol": "x"}]',
+            )
+
+    def test_resolve_source_path_falls_back_to_unique_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            candidate = root / "src" / "csv_editor.py"
+            candidate.parent.mkdir(parents=True)
+            candidate.write_text("# mock\n", encoding="utf-8")
+            index_config = SimpleNamespace(path=str(root))
+            server = self._create_server(tmp_dir)
+
+            resolved = server._resolve_source_path(
+                config_name="mock_config",
+                index="source_code",
+                index_config=index_config,
+                file_path="csv_editor.py",
+            )
+
+            self.assertEqual(resolved, candidate)
+
+    def test_resolve_source_path_raises_ambiguous_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            first = root / "src" / "csv_editor.py"
+            second = root / "tests" / "test_csv_editor.py"
+            first.parent.mkdir(parents=True)
+            second.parent.mkdir(parents=True)
+            first.write_text("# first\n", encoding="utf-8")
+            second.write_text("# second\n", encoding="utf-8")
+            index_config = SimpleNamespace(path=str(root))
+            server = self._create_server(tmp_dir)
+
+            with self.assertRaises(ValueError) as cm:
+                server._resolve_source_path(
+                    config_name="mock_config",
+                    index="source_code",
+                    index_config=index_config,
+                    file_path="csv_editor.py",
+                )
+
+            msg = str(cm.exception)
+            self.assertIn("Ambiguous file path 'csv_editor.py'", msg)
+            self.assertIn("src/csv_editor.py", msg)
+            self.assertIn("tests/test_csv_editor.py", msg)
+
+    def test_resolve_source_path_raises_actionable_not_found(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            index_config = SimpleNamespace(path=str(root))
+            server = self._create_server(tmp_dir)
+
+            with self.assertRaises(FileNotFoundError) as cm:
+                server._resolve_source_path(
+                    config_name="mock_config",
+                    index="source_code",
+                    index_config=index_config,
+                    file_path="missing.py",
+                )
+
+            msg = str(cm.exception)
+            self.assertIn("config='mock_config'", msg)
+            self.assertIn("index='source_code'", msg)
+            self.assertIn("file_path='missing.py'", msg)
+            self.assertIn(str(root), msg)
+            self.assertIn("semantic_search", msg)
 
     @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
     @patch("smak.mcp_server.DoctorService")
