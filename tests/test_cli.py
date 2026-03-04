@@ -132,7 +132,7 @@ class TestCli(unittest.TestCase):
             )
 
 
-    def test_ingest_command_forwards_follow_symlinks_option(self) -> None:
+    def test_ingest_command_forwards_follow_symlinks_option_and_sync(self) -> None:
         runner = CliRunner()
         with tempfile.TemporaryDirectory() as tmp_dir:
             folder = Path(tmp_dir) / "src"
@@ -153,7 +153,7 @@ class TestCli(unittest.TestCase):
 
                 def ingest_folder(self, *args: object, **kwargs: object) -> object:
                     captured.update(kwargs)
-                    return SimpleNamespace(files=0, skipped=0, vectors=0)
+                    return SimpleNamespace(files=0, skipped=0, vectors=0, deleted=0)
 
             with (
                 patch(
@@ -176,11 +176,14 @@ class TestCli(unittest.TestCase):
                         "--config",
                         str(config_path),
                         "--no-follow-symlinks",
+                        "--sync",
                     ],
                 )
 
             self.assertEqual(result.exit_code, 0)
             self.assertEqual(captured.get("follow_symlinks"), False)
+            self.assertEqual(captured.get("sync"), True)
+            self.assertIn("Ghost Files Pruned: 0", result.output)
 
     def test_sidecar_inspect_json_output(self) -> None:
         runner = CliRunner()

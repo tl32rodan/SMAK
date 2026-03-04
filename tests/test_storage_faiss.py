@@ -34,6 +34,8 @@ class FakeFaissEngine:
         self.docs: list[FakeVectorDocument] = []
         self.persisted = False
         self.deleted: list[tuple[str, object]] = []
+        self.deleted_ids: list[str] = []
+        self.tracked_sources: dict[str, list[str]] = {}
         self.last_update = datetime(2024, 1, 1)
 
     def add(self, docs: list[FakeVectorDocument]) -> None:
@@ -44,6 +46,12 @@ class FakeFaissEngine:
 
     def delete_by_metadata(self, key: str, value: object) -> None:
         self.deleted.append((key, value))
+
+    def delete(self, uids: list[str]) -> None:
+        self.deleted_ids.extend(uids)
+
+    def get_tracked_sources(self) -> dict[str, list[str]]:
+        return self.tracked_sources
 
     def search(self, embedding: list[float], top_k: int) -> list[FakeResult]:
         return [
@@ -171,6 +179,20 @@ class TestFaissAdapter(unittest.TestCase):
 
         self.assertEqual(store.count(), 0)
         self.assertEqual(store.last_update(), "2024-01-01T00:00:00")
+
+    def test_delete_by_ids_and_get_tracked_sources(self) -> None:
+        store = FaissVectorStore(uri="memory", collection_name="code", dim=3)
+        tracked_sources = {"src/a.py": ["id-1", "id-2"]}
+        deleted_ids: list[str] = []
+        store._engine.get_tracked_sources = lambda: tracked_sources
+        store._engine.delete = lambda uids: deleted_ids.extend(uids)
+
+        tracked = store.get_all_tracked_sources()
+        store.delete_by_ids(["id-1", "id-2"])
+
+        self.assertEqual(tracked, {"src/a.py": ["id-1", "id-2"]})
+        self.assertEqual(deleted_ids, ["id-1", "id-2"])
+        self.assertTrue(store._engine.persisted)
 
 
 if __name__ == "__main__":

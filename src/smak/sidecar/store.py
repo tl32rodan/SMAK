@@ -44,6 +44,10 @@ class YAMLSidecarStore:
         sidecar_path.write_text(safe_dump(payload), encoding="utf-8")
         return sidecar_path
 
+    def delete_sidecar_for_source(self, source_path: Path) -> None:
+        sidecar_path = self.resolve_sidecar_path(source_path)
+        sidecar_path.unlink(missing_ok=True)
+
     def merge_symbols_for_source(
         self,
         source_path: Path,
