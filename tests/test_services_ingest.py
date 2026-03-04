@@ -19,12 +19,20 @@ class FakeNode:
 class FakeVectorStore:
     def __init__(self) -> None:
         self.saved: list = []
+        self.deleted_ids: list[list[str]] = []
+        self.tracked_sources: dict[str, list[str]] = {}
 
     def add(self, nodes: list) -> None:
         self.saved.extend(nodes)
 
     def delete_by_metadata(self, key: str, value: str) -> None:
         return None
+
+    def get_all_tracked_sources(self) -> dict[str, list[str]]:
+        return self.tracked_sources
+
+    def delete_by_ids(self, uids: list[str]) -> None:
+        self.deleted_ids.append(uids)
 
 
 class DummyEmbedder:
@@ -106,6 +114,31 @@ class TestIngestService(unittest.TestCase):
                 side_effect=[UnicodeDecodeError("utf-8", b"", 0, 1, "boom"), "ok"],
             ):
                 self.assertEqual(ingest_module._read_text_with_fallback(path), "ok")
+
+    def test_ingest_service_sync_prunes_ghost_sources_and_sidecars(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source = root / "a.py"
+            source.write_text("def foo():\n    return 1\n", encoding="utf-8")
+
+            ghost_sidecar = root / ".ghost.py.sidecar.yaml"
+            ghost_sidecar.write_text("symbols: []\n", encoding="utf-8")
+
+            store = FakeVectorStore()
+            store.tracked_sources = {"ghost.py": ["ghost::1", "ghost::2"], "a.py": ["a::1"]}
+
+            service = IngestService(vector_store=store)
+            stats = service.ingest_folder(
+                root,
+                incremental=False,
+                sync=True,
+                node_class_loader=lambda: FakeNode,
+                embedder_loader=DummyEmbedder,
+            )
+
+            self.assertEqual(stats.deleted, 1)
+            self.assertEqual(store.deleted_ids, [["ghost::1", "ghost::2"]])
+            self.assertFalse(ghost_sidecar.exists())
 
 
 if __name__ == "__main__":

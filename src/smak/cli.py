@@ -87,12 +87,18 @@ def main() -> None:
     default=True,
     help="Follow symlinked directories during ingest",
 )
+@click.option(
+    "--sync",
+    is_flag=True,
+    help="Prune deleted files and their sidecars from the index",
+)
 def ingest(
     index: str,
     config: str,
     workers: int,
     incremental: bool,
     follow_symlinks: bool,
+    sync: bool,
 ) -> None:
     _, index_config, vector_store = _load_vector_store_for_cli(index, config)
     folder = Path(index_config.path)
@@ -106,6 +112,7 @@ def ingest(
             max_workers=workers,
             incremental=incremental,
             follow_symlinks=follow_symlinks,
+            sync=sync,
         )
     except IntegrityError as exc:
         raise click.ClickException(f"Sidecar integrity error: {exc}") from exc
@@ -113,6 +120,7 @@ def ingest(
     click.echo(f"   - Processed Files: {stats.files}")
     click.echo(f"   - Skipped Files: {stats.skipped}")
     click.echo(f"   - Vectors Added: {stats.vectors}")
+    click.echo(f"   - Ghost Files Pruned: {stats.deleted}")
 
 
 @main.command()

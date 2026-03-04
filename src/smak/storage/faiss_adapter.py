@@ -85,6 +85,13 @@ class FaissVectorStore:
             return
         logger.debug("Vector engine does not support delete_by_metadata; skipping cleanup.")
 
+    def delete_by_ids(self, uids: list[str]) -> None:
+        self._engine.delete(uids)
+        self._engine.persist()
+
+    def get_all_tracked_sources(self) -> dict[str, list[str]]:
+        return self._engine.get_tracked_sources()
+
     def search(self, embedding: Sequence[float], *, top_k: int = 5) -> list[dict[str, Any]]:
         results = self._engine.search(list(embedding), top_k)
         return [

@@ -26,6 +26,20 @@ class TestSidecarStore(unittest.TestCase):
             symbols = store.load_symbols_for_source(source)
             self.assertEqual(symbols[0]["name"], "src/a.py::foo")
 
+    def test_yaml_store_delete_sidecar_for_source_is_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "src" / "a.py"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("print('x')\n", encoding="utf-8")
+            sidecar = source.with_name(".a.py.sidecar.yaml")
+            sidecar.write_text("symbols: []\n", encoding="utf-8")
+
+            store = YAMLSidecarStore()
+            store.delete_sidecar_for_source(source)
+            store.delete_sidecar_for_source(source)
+
+            self.assertFalse(sidecar.exists())
+
     def test_yaml_store_runtime_protocol_compliance(self) -> None:
         self.assertIsInstance(YAMLSidecarStore(), SidecarStore)
 

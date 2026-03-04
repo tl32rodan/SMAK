@@ -10,7 +10,7 @@ from typing import Callable, Iterable
 
 from smak.services.ingest.parsers import get_parser_for_path
 from smak.services.ingest.pipeline import IngestPipeline
-from smak.sidecar import SIDECAR_SUFFIXES, SidecarManager
+from smak.sidecar import SIDECAR_SUFFIXES, SidecarManager, YAMLSidecarStore
 from smak.utils.embedding import EmbeddingProbe, InternalNomicEmbedding
 
 
@@ -19,6 +19,7 @@ class IngestStats:
     files: int
     vectors: int
     skipped: int
+    deleted: int = 0
 
 
 def _load_text_node_class():
@@ -93,17 +94,25 @@ class IngestService:
         node_class_loader: Callable[[], type] | None = None,
         embedder_loader: Callable[[], EmbeddingProbe] | None = None,
         follow_symlinks: bool = True,
+        sync: bool = False,
     ) -> IngestStats:
         embedder = (embedder_loader or InternalNomicEmbedding)()
         node_class = (node_class_loader or _load_text_node_class)()
         vector_store = self.vector_store
         sidecar_manager = SidecarManager()
+        tracked_sources = (
+            vector_store.get_all_tracked_sources() if sync else {}
+        )
+        visited_sources: set[str] = set()
 
         paths = list(_iter_source_files(folder, follow_symlinks=follow_symlinks))
         lock = threading.Lock()
         file_count = vector_count = skipped_count = 0
 
         def process(file_path: Path) -> tuple[int, bool]:
+            source_key = _source_key(file_path, folder)
+            with lock:
+                visited_sources.add(source_key)
             parser = get_parser_for_path(file_path, root_path=folder)
             content = _read_text_with_fallback(file_path)
             parsed_units = parser.parse(content, source=str(file_path))
@@ -132,7 +141,7 @@ class IngestService:
                     metadata={
                         "relations": list(unit.relations),
                         "meta": unit.metadata,
-                        "source": _source_key(file_path, folder),
+                        "source": source_key,
                         "source_mtime": source_mtime,
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     },
@@ -141,9 +150,7 @@ class IngestService:
                 nodes.append(node)
             with lock:
                 if hasattr(vector_store, "delete_by_metadata"):
-                    vector_store.delete_by_metadata(
-                        "source", _source_key(file_path, folder)
-                    )
+                    vector_store.delete_by_metadata("source", source_key)
                 if nodes:
                     vector_store.add(nodes)
             return len(result.units), False
@@ -156,4 +163,19 @@ class IngestService:
                 skipped_count += int(skipped)
                 file_count += 0 if skipped else 1
                 vector_count += units_count
-        return IngestStats(files=file_count, vectors=vector_count, skipped=skipped_count)
+
+        deleted_count = 0
+        if sync:
+            ghost_sources = set(tracked_sources.keys()) - visited_sources
+            sidecar_store = YAMLSidecarStore()
+            for ghost_source in ghost_sources:
+                vector_store.delete_by_ids(tracked_sources[ghost_source])
+                sidecar_store.delete_sidecar_for_source(folder / ghost_source)
+                deleted_count += 1
+
+        return IngestStats(
+            files=file_count,
+            vectors=vector_count,
+            skipped=skipped_count,
+            deleted=deleted_count,
+        )
