@@ -19,6 +19,19 @@ class TestSidecarService(unittest.TestCase):
             )
             self.assertEqual(result["applied_updates"], 1)
 
+
+    def test_sidecar_service_init_directory_writes_hidden_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source = root / "a.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+            service = SidecarService()
+
+            output = service.init(root)
+
+            self.assertEqual(output, root / ".sidecar.yaml")
+            self.assertTrue(output.exists())
+
     def test_sidecar_read_text_fallback_replaces_invalid_bytes(self) -> None:
         from smak.services import sidecar as sidecar_module
 

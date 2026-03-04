@@ -1,7 +1,9 @@
 import unittest
+from pathlib import Path
 
 from smak.core.domain import KnowledgeUnit
 from smak.sidecar.manager import IntegrityError, SidecarManager
+from smak.sidecar.paths import sidecar_path_for_source, source_path_from_sidecar
 
 
 class TestSidecarManager(unittest.TestCase):
@@ -85,6 +87,10 @@ class TestSidecarManager(unittest.TestCase):
 
         self.assertEqual(enriched[0].relations, ("issue:200",))
         self.assertEqual(enriched[0].metadata["mesh_relations"], ["issue:200"])
+
+    def test_sidecar_path_round_trip_preserves_source_name(self) -> None:
+        source = Path("src/foo.py")
+        self.assertEqual(source_path_from_sidecar(sidecar_path_for_source(source)), source)
 
     def test_sidecar_apply_inherits_class_relations_to_methods(self) -> None:
         loader = SidecarManager()

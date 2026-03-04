@@ -7,7 +7,7 @@ from smak.sidecar.paths import sidecar_path_for_source
 from smak.utils.yaml import safe_dump, safe_load
 
 
-class SidecarStore:
+class YAMLSidecarStore:
     """I/O boundary for sidecar persistence and source->sidecar mapping."""
 
     def __init__(self) -> None:

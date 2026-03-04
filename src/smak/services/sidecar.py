@@ -6,7 +6,8 @@ from typing import Any
 
 from smak.services.ingest.parsers import get_parser_for_path
 from smak.sidecar.paths import is_sidecar_file
-from smak.sidecar.store import SidecarStore
+from smak.sidecar.protocols import SidecarStore
+from smak.sidecar.store import YAMLSidecarStore
 
 
 def _read_text_with_fallback(path: Path) -> str:
@@ -24,7 +25,7 @@ def _iter_source_files(folder: Path):
 
 class SidecarService:
     def __init__(self, sidecar_store: SidecarStore | None = None) -> None:
-        self.sidecar_store = sidecar_store or SidecarStore()
+        self.sidecar_store = sidecar_store or YAMLSidecarStore()
 
     def inspect(self, path: Path) -> list[str]:
         parser = get_parser_for_path(path)
@@ -40,7 +41,7 @@ class SidecarService:
             for symbol in symbols:
                 lines.extend([f"  - name: {symbol}", '    intent: ""', "    relations: []"])
             payload = "\n".join(lines) + "\n" if symbols else "symbols: []\n"
-            output = target_path / "sidecar.yaml"
+            output = target_path / ".sidecar.yaml"
             output.write_text(payload, encoding="utf-8")
             return output
 

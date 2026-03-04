@@ -158,7 +158,11 @@ class TestCli(unittest.TestCase):
             with (
                 patch(
                     "smak.cli._load_vector_store_for_cli",
-                    new=lambda index, config: (SmakConfig(), IndexConfig(name="source_code", description="source", path=str(folder)), object()),
+                    new=lambda index, config: (
+                        SmakConfig(),
+                        IndexConfig(name="source_code", description="source", path=str(folder)),
+                        object(),
+                    ),
                 ),
                 patch("smak.cli.IngestService", new=FakeIngestService),
             ):
@@ -204,7 +208,7 @@ class TestCli(unittest.TestCase):
             )
             self.assertEqual(result.exit_code, 0)
             self.assertIn('{\n    "file_path"', result.output)
-            self.assertTrue((Path(tmp_dir) / "example.py.sidecar.yaml").exists())
+            self.assertTrue((Path(tmp_dir) / ".example.py.sidecar.yaml").exists())
 
     def test_query_command_outputs_structured_json(self) -> None:
         runner = CliRunner()
@@ -237,7 +241,7 @@ class TestCli(unittest.TestCase):
             source = workspace / "src" / "main.py"
             source.parent.mkdir(parents=True, exist_ok=True)
             source.write_text("def a():\n    pass\n", encoding="utf-8")
-            source.with_name("main.py.sidecar.yaml").write_text(
+            source.with_name(".main.py.sidecar.yaml").write_text(
                 "symbols:\n"
                 "  - name: func_A\n"
                 "    relations:\n"

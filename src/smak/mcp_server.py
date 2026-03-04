@@ -13,7 +13,7 @@ from smak.cli import _load_vector_store
 from smak.config import SmakConfig, load_config
 from smak.services import DoctorService, IngestService, QueryService, SidecarService
 from smak.services.relation_resolver import SidecarRelationResolver
-from smak.sidecar.store import SidecarStore
+from smak.sidecar.store import YAMLSidecarStore
 from smak.utils.embedding import (
     InternalNomicEmbedding,
     initialize_embedding_dimensions,
@@ -272,7 +272,7 @@ class SmakMcpServer:
 
         cfg = self._load_config(config)
         vector_store, index_config = self._load_index_vector_store(cfg, index)
-        sidecar_store = SidecarStore()
+        sidecar_store = YAMLSidecarStore()
         service = QueryService(
             vector_store=vector_store,
             config=cfg,
@@ -310,7 +310,7 @@ class SmakMcpServer:
         cfg = self._load_config(config)
         index_config = self._get_index_config(cfg, index)
         source_path = self._resolve_source_path(config, index, index_config, file_path)
-        service = SidecarService(sidecar_store=SidecarStore())
+        service = SidecarService(sidecar_store=YAMLSidecarStore())
         return service.inspect(source_path)
 
     def init_sidecar(
@@ -321,10 +321,10 @@ class SmakMcpServer:
     ) -> str:
         """Scaffold a sidecar YAML for a source file or directory.
 
-        For a **file**, creates a ``<file>.sidecar.yaml`` next to the source
+        For a **file**, creates a ``.<file>.sidecar.yaml`` next to the source
         containing one stub entry per parsed symbol.
 
-        For a **directory**, creates a single ``sidecar.yaml`` inside the
+        For a **directory**, creates a single ``.sidecar.yaml`` inside the
         directory covering every non-sidecar source file found recursively.
 
         Existing sidecar files are overwritten.
@@ -344,7 +344,7 @@ class SmakMcpServer:
         cfg = self._load_config(config)
         index_config = self._get_index_config(cfg, index)
         source_path = self._resolve_source_path(config, index, index_config, file_path)
-        service = SidecarService(sidecar_store=SidecarStore())
+        service = SidecarService(sidecar_store=YAMLSidecarStore())
         output = service.init(source_path)
         return str(output)
 
@@ -385,7 +385,7 @@ class SmakMcpServer:
         cfg = self._load_config(config)
         index_config = self._get_index_config(cfg, index)
         source_path = self._resolve_source_path(config, index, index_config, file_path)
-        service = SidecarService(sidecar_store=SidecarStore())
+        service = SidecarService(sidecar_store=YAMLSidecarStore())
         return service.update(source_path, json.dumps(updates, ensure_ascii=False))
 
     def validate_mesh(self, config: str) -> str:

@@ -25,7 +25,7 @@ demo/
 │   ├── workspace_config.yaml   # 4 indices: source_code, issues, tests, documentation
 │   ├── src/
 │   │   ├── csv_editor.py
-│   │   ├── csv_editor.py.sidecar.yaml   # pre-populated intent + relations
+│   │   ├── .csv_editor.py.sidecar.yaml   # pre-populated intent + relations
 │   │   └── tests/
 │   │       └── test_csv_editor.py
 │   ├── documentation/
@@ -36,7 +36,7 @@ demo/
     ├── workspace_config.yaml   # 4 indices: source_code, issues, tests, documentation
     ├── src/
     │   ├── log_analyzer.py
-    │   ├── log_analyzer.py.sidecar.yaml  # pre-populated intent + relations
+    │   ├── .log_analyzer.py.sidecar.yaml  # pre-populated intent + relations
     │   └── tests/
     │       └── test_log_analyzer.py
     ├── documentation/
@@ -98,7 +98,7 @@ Ingestion Complete!
 ```
 
 The Python parser extracts symbols from `csv_editor.py` and `test_csv_editor.py`.
-The sidecar file `csv_editor.py.sidecar.yaml` is picked up automatically — it enriches
+The sidecar file `.csv_editor.py.sidecar.yaml` is picked up automatically — it enriches
 each symbol with `intent` text and `relations` pointers.
 
 #### Step 2: Ingest issues
@@ -137,7 +137,7 @@ CsvEditor.update_cell
 CsvEditor.read_rows
 ```
 
-These names match the `name:` entries in `csv_editor.py.sidecar.yaml` exactly.
+These names match the `name:` entries in `.csv_editor.py.sidecar.yaml` exactly.
 
 #### Step 5: The semantic mesh query
 
@@ -382,7 +382,7 @@ Ingestion Complete!
    - Vectors Added: 6
 ```
 
-The sidecar `log_analyzer.py.sidecar.yaml` is picked up automatically, linking
+The sidecar `.log_analyzer.py.sidecar.yaml` is picked up automatically, linking
 `LogAnalyzer.parse` and `LogAnalyzer` to the `log-parse-error` issue UID.
 
 #### Step 2: Ingest issues
@@ -598,7 +598,7 @@ Sidecar files live next to their source file with the suffix `.sidecar.yaml`:
 
 ```
 src/csv_editor.py
-src/csv_editor.py.sidecar.yaml   ← sidecar
+src/.csv_editor.py.sidecar.yaml   ← sidecar
 ```
 
 Format:

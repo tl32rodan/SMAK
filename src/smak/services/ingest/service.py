@@ -36,7 +36,7 @@ def _read_text_with_fallback(path: Path) -> str:
 
 def _sidecar_payload(path: Path) -> str | None:
     for suffix in SIDECAR_SUFFIXES:
-        candidate = path.with_name(f"{path.name}{suffix}")
+        candidate = path.with_name(f".{path.name}{suffix}")
         if candidate.exists():
             return _read_text_with_fallback(candidate)
     return None
