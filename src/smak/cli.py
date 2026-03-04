@@ -11,7 +11,7 @@ from smak.config import IndexConfig, SmakConfig, load_config
 from smak.services import DoctorService, IngestService, QueryService, SidecarService
 from smak.services.ingest.pipeline import IntegrityError
 from smak.services.relation_resolver import SidecarRelationResolver
-from smak.sidecar.store import SidecarStore
+from smak.sidecar.store import YAMLSidecarStore
 from smak.utils.embedding import (
     InternalNomicEmbedding,
     initialize_embedding_dimensions,
@@ -57,7 +57,10 @@ def _default_config_template() -> str:
     )
 
 
-def _load_vector_store_for_cli(index: str, config_path: str) -> tuple[SmakConfig, IndexConfig, object]:
+def _load_vector_store_for_cli(
+    index: str,
+    config_path: str,
+) -> tuple[SmakConfig, IndexConfig, object]:
     cfg = load_config(config_path)
     index_config = cfg.get_index(index)
     if index_config is None:
@@ -130,7 +133,7 @@ def init(config_path: str, force: bool) -> None:
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 def query_command(text: str, index: str, top_k: int, config: str) -> None:
     cfg, index_config, vector_store = _load_vector_store_for_cli(index, config)
-    sidecar_store = SidecarStore()
+    sidecar_store = YAMLSidecarStore()
     service = QueryService(
         vector_store=vector_store,
         config=cfg,
@@ -152,7 +155,7 @@ def sidecar() -> None:
 def sidecar_init(target_path: Path) -> None:
     if not target_path.exists():
         raise click.ClickException(f"Path not found: {target_path}")
-    sidecar_store = SidecarStore()
+    sidecar_store = YAMLSidecarStore()
     output = SidecarService(sidecar_store).init(target_path)
     click.echo(f"Wrote sidecar template to {output}")
 
@@ -163,7 +166,7 @@ def sidecar_init(target_path: Path) -> None:
 def sidecar_inspect(file_path: Path, json_output: bool) -> None:
     if not file_path.exists() or not file_path.is_file():
         raise click.ClickException(f"Path must be a file: {file_path}")
-    sidecar_store = SidecarStore()
+    sidecar_store = YAMLSidecarStore()
     symbols = SidecarService(sidecar_store).inspect(file_path)
     if json_output:
         output_str = json.dumps(symbols, ensure_ascii=False, indent=4)

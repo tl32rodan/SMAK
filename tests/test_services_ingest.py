@@ -52,7 +52,7 @@ class TestIngestService(unittest.TestCase):
             self.assertGreaterEqual(stats.vectors, 1)
 
     def test_iter_source_files_can_toggle_symlink_following(self) -> None:
-        from smak.services import ingest as ingest_module
+        from smak.services.ingest import service as ingest_module
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -74,8 +74,20 @@ class TestIngestService(unittest.TestCase):
             self.assertNotIn("link/linked.py", without_paths)
             self.assertIn("link/linked.py", with_paths)
 
+
+    def test_sidecar_payload_uses_hidden_sidecar_file(self) -> None:
+        from smak.services.ingest import service as ingest_module
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "a.py"
+            source.write_text("print('x')\n", encoding="utf-8")
+            source.with_name(".a.py.sidecar.yaml").write_text("symbols: []\n", encoding="utf-8")
+
+            payload = ingest_module._sidecar_payload(source)
+            self.assertEqual(payload, "symbols: []\n")
+
     def test_ingest_read_text_fallback_replaces_invalid_bytes(self) -> None:
-        from smak.services import ingest as ingest_module
+        from smak.services.ingest import service as ingest_module
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "bad.py"
@@ -83,7 +95,7 @@ class TestIngestService(unittest.TestCase):
             self.assertEqual(ingest_module._read_text_with_fallback(path), "ok�")
 
     def test_ingest_read_text_fallback_handles_unicode_decode_error(self) -> None:
-        from smak.services import ingest as ingest_module
+        from smak.services.ingest import service as ingest_module
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "any.py"

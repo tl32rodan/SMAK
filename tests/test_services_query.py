@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from smak.config import IndexConfig, SmakConfig
 from smak.services.query import QueryService
 from smak.services.relation_resolver import SidecarRelationResolver
-from smak.sidecar.store import SidecarStore
+from smak.sidecar.store import YAMLSidecarStore
 
 
 class DummyEmbedder:
@@ -21,7 +21,7 @@ class TestQueryService(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             source = Path(tmp_dir) / "main.py"
             source.write_text("def a():\n    pass\n", encoding="utf-8")
-            source.with_name("main.py.sidecar.yaml").write_text(
+            source.with_name(".main.py.sidecar.yaml").write_text(
                 "symbols:\n"
                 "  - name: func_A\n"
                 "    relations:\n"
@@ -45,7 +45,8 @@ class TestQueryService(unittest.TestCase):
                 config=config,
                 vector_store_loader=lambda index_config, cfg: store,
                 embedder=DummyEmbedder(),
-                index_config=config.indices[0], relation_resolver=SidecarRelationResolver(SidecarStore()),
+                index_config=config.indices[0],
+                relation_resolver=SidecarRelationResolver(YAMLSidecarStore()),
             ).search("query", top_k=1)
             self.assertEqual(payload["hits"][0]["match_type"], "semantic")
             self.assertEqual(payload["related_context"][0]["source_hit"], "func_A")
@@ -103,7 +104,7 @@ class TestQueryService(unittest.TestCase):
             source = Path(tmp_dir) / "src" / "a.py"
             source.parent.mkdir(parents=True, exist_ok=True)
             source.write_text("def a():\n    pass\n", encoding="utf-8")
-            source.with_name("a.py.sidecar.yaml").write_text(
+            source.with_name(".a.py.sidecar.yaml").write_text(
                 "symbols:\n"
                 "  - name: func_A\n"
                 "    relations:\n"
@@ -115,7 +116,8 @@ class TestQueryService(unittest.TestCase):
                 config=config,
                 vector_store_loader=loader,
                 embedder=DummyEmbedder(),
-                index_config=config.indices[0], relation_resolver=SidecarRelationResolver(SidecarStore()),
+                index_config=config.indices[0],
+                relation_resolver=SidecarRelationResolver(YAMLSidecarStore()),
             ).search("query", top_k=1)
 
         self.assertEqual(primary.search_calls, 1)
@@ -152,7 +154,7 @@ class TestQueryService(unittest.TestCase):
             source = Path(tmp_dir) / "src" / "a.py"
             source.parent.mkdir(parents=True, exist_ok=True)
             source.write_text("def a():\n    pass\n", encoding="utf-8")
-            source.with_name("a.py.sidecar.yaml").write_text(
+            source.with_name(".a.py.sidecar.yaml").write_text(
                 "symbols:\n"
                 "  - name: func_A\n"
                 "    relations:\n"
@@ -164,7 +166,8 @@ class TestQueryService(unittest.TestCase):
                 config=config,
                 vector_store_loader=loader,
                 embedder=DummyEmbedder(),
-                index_config=config.indices[0], relation_resolver=SidecarRelationResolver(SidecarStore()),
+                index_config=config.indices[0],
+                relation_resolver=SidecarRelationResolver(YAMLSidecarStore()),
             ).search("query", top_k=1)
 
         self.assertEqual(loader_calls, ["source_code", "issues"])
@@ -193,7 +196,7 @@ class TestQueryService(unittest.TestCase):
                 if unit.metadata.get("symbol") == "CsvEditor.updatecell"
             )
 
-            source.with_name("csv_editor.py.sidecar.yaml").write_text(
+            source.with_name(".csv_editor.py.sidecar.yaml").write_text(
                 "symbols:\n"
                 "  - name: CsvEditor.updatecell\n"
                 "    relations:\n"
@@ -214,14 +217,17 @@ class TestQueryService(unittest.TestCase):
                 ],
                 get_by_id=lambda related_uid: {"uid": related_uid, "content": related_uid},
             )
-            config = SmakConfig(indices=[IndexConfig(name="source_code", description="source", path=tmp_dir)])
+            config = SmakConfig(
+                indices=[IndexConfig(name="source_code", description="source", path=tmp_dir)]
+            )
 
             payload = QueryService(
                 store,
                 config=config,
                 vector_store_loader=lambda index_config, cfg: store,
                 embedder=DummyEmbedder(),
-                index_config=config.indices[0], relation_resolver=SidecarRelationResolver(SidecarStore()),
+                index_config=config.indices[0],
+                relation_resolver=SidecarRelationResolver(YAMLSidecarStore()),
             ).search("query", top_k=1)
 
             self.assertEqual(payload["related_context"][0]["uid"], "issue:from-symbol")
@@ -232,7 +238,7 @@ class TestQueryService(unittest.TestCase):
             source = workspace_root / "src" / "csv_editor.py"
             source.parent.mkdir(parents=True, exist_ok=True)
             source.write_text("def updatecell():\n    return True\n", encoding="utf-8")
-            source.with_name("csv_editor.py.sidecar.yaml").write_text(
+            source.with_name(".csv_editor.py.sidecar.yaml").write_text(
                 "symbols:\n"
                 "  - name: updatecell\n"
                 "    relations:\n"
@@ -250,14 +256,17 @@ class TestQueryService(unittest.TestCase):
                 ],
                 get_by_id=lambda related_uid: {"uid": related_uid, "content": related_uid},
             )
-            config = SmakConfig(indices=[IndexConfig(name="source_code", description="source", path=tmp_dir)])
+            config = SmakConfig(
+                indices=[IndexConfig(name="source_code", description="source", path=tmp_dir)]
+            )
 
             payload = QueryService(
                 store,
                 config=config,
                 vector_store_loader=lambda index_config, cfg: store,
                 embedder=DummyEmbedder(),
-                index_config=config.indices[0], relation_resolver=SidecarRelationResolver(SidecarStore()),
+                index_config=config.indices[0],
+                relation_resolver=SidecarRelationResolver(YAMLSidecarStore()),
             ).search("query", top_k=1)
 
             self.assertEqual(payload["related_context"][0]["uid"], "issue:suffix-match")
@@ -266,7 +275,7 @@ class TestQueryService(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             source = Path(tmp_dir) / "module.py"
             source.write_text("def a():\n    pass\n", encoding="utf-8")
-            source.with_name("module.py.sidecar.yaml").write_text(
+            source.with_name(".module.py.sidecar.yaml").write_text(
                 "symbols:\n"
                 "  - name: func_A\n"
                 "    relations:\n"
@@ -294,7 +303,8 @@ class TestQueryService(unittest.TestCase):
                 config=config,
                 vector_store_loader=lambda index_config, cfg: store,
                 embedder=DummyEmbedder(),
-                index_config=config.indices[0], relation_resolver=SidecarRelationResolver(SidecarStore()),
+                index_config=config.indices[0],
+                relation_resolver=SidecarRelationResolver(YAMLSidecarStore()),
             ).search("query", top_k=1)
 
             self.assertEqual(payload["related_context"][0]["uid"], "issue:fresh")
@@ -319,7 +329,7 @@ class TestQueryService(unittest.TestCase):
             vector_store_loader=lambda index_config, cfg: store,
             embedder=DummyEmbedder(),
             index_config=config.indices[0],
-            relation_resolver=SidecarRelationResolver(SidecarStore()),
+            relation_resolver=SidecarRelationResolver(YAMLSidecarStore()),
         ).search("query", top_k=1)
 
         self.assertEqual(payload["hits"][0]["exact_relative_path"], "src/a.py")
@@ -345,7 +355,7 @@ class TestQueryService(unittest.TestCase):
             vector_store_loader=lambda index_config, cfg: store,
             embedder=DummyEmbedder(),
             index_config=config.indices[0],
-            relation_resolver=SidecarRelationResolver(SidecarStore()),
+            relation_resolver=SidecarRelationResolver(YAMLSidecarStore()),
         ).search("query", top_k=1)
 
         self.assertIsNone(payload["hits"][0]["exact_relative_path"])

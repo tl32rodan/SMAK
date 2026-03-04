@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from smak.sidecar.store import SidecarStore
+from smak.sidecar.protocols import SidecarLoader
+from smak.sidecar.store import YAMLSidecarStore
 
 
 def build_symbol_name_candidates(uid: str, metadata: dict[str, Any]) -> set[str]:
@@ -17,8 +18,8 @@ def build_symbol_name_candidates(uid: str, metadata: dict[str, Any]) -> set[str]
 
 
 class SidecarRelationResolver:
-    def __init__(self, sidecar_store: SidecarStore | None = None) -> None:
-        self.sidecar_store = sidecar_store or SidecarStore()
+    def __init__(self, sidecar_store: SidecarLoader | None = None) -> None:
+        self.sidecar_store = sidecar_store or YAMLSidecarStore()
 
     def resolve(self, uid: str, metadata: dict[str, Any]) -> list[str]:
         source = metadata.get("source")

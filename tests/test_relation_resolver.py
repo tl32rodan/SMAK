@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from smak.services.relation_resolver import SidecarRelationResolver, build_symbol_name_candidates
-from smak.sidecar.store import SidecarStore
+from smak.sidecar.store import YAMLSidecarStore
 
 
 class TestRelationResolver(unittest.TestCase):
@@ -28,7 +28,7 @@ class TestRelationResolver(unittest.TestCase):
             source = workspace_root / "src" / "csv_editor.py"
             source.parent.mkdir(parents=True, exist_ok=True)
             source.write_text("x=1\n", encoding="utf-8")
-            source.with_name("csv_editor.py.sidecar.yaml").write_text(
+            source.with_name(".csv_editor.py.sidecar.yaml").write_text(
                 "symbols:\n"
                 "  - name: CsvEditor.updatecell\n"
                 "    relations:\n"
@@ -36,7 +36,7 @@ class TestRelationResolver(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            resolver = SidecarRelationResolver(SidecarStore())
+            resolver = SidecarRelationResolver(YAMLSidecarStore())
             relations = resolver.resolve(
                 "src/csv_editor.py::CsvEditor.updatecell",
                 {"source": str(source), "symbol": "CsvEditor.updatecell"},
