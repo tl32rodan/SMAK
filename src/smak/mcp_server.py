@@ -637,6 +637,13 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         writes stub sidecar entries with empty ``intent`` and ``relations``
         fields.  Populate those fields afterwards with ``update_sidecar``.
 
+        **WARNING — destructive operation:** if a sidecar file already
+        exists, it is overwritten and all existing ``intent`` and
+        ``relations`` content is erased.  Only call ``init_sidecar`` when
+        bootstrapping a file that has no sidecar yet, or when you
+        intentionally want to reset all metadata to empty stubs.  To
+        partially update existing metadata, use ``update_sidecar`` instead.
+
         Args:
             config: Registry key identifying the project (see
                 ``list_available_configs``).

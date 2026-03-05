@@ -5,6 +5,61 @@ description: SMAK (Semantic Mesh Augmented Kernel) - A semantic search and conte
 
 # SMAK Skill (Compact / Strict)
 
+## QUICK START (5 calls, common case)
+
+> Goal: find code that handles a specific concern, then write intent metadata for it.
+
+**Step 1 — Discover valid configs**
+```
+list_available_configs()
+# → {"demo_flow_a": {"config_path": "..."}, "demo_flow_b": {...}}
+```
+
+**Step 2 — Discover indices for your chosen config**
+```
+list_available_indices(config="demo_flow_a")
+# → [{"name": "source_code", ...}, {"name": "issues", ...}, ...]
+```
+
+**Step 3 — Search semantically**
+```
+semantic_search(
+    config="demo_flow_a",
+    query="how cell updates are written back to the CSV file",
+    index="source_code",
+    top_k=5
+)
+```
+Copy `hits[0].exact_relative_path` verbatim from the result. Do not retype it.
+
+**Step 4 — Inspect symbols in that file**
+```
+inspect_sidecar(
+    config="demo_flow_a",
+    file_path="src/csv_editor.py",   ← exact_relative_path from step 3
+    index="source_code"
+)
+# → ["CsvEditor", "CsvEditor.append_row", "CsvEditor.update_cell", "CsvEditor.read_rows"]
+```
+
+**Step 5 — Write intent and relations**
+```
+update_sidecar(
+    config="demo_flow_a",
+    file_path="src/csv_editor.py",   ← same path as step 4
+    updates=[
+        {
+            "symbol": "CsvEditor.update_cell",
+            "intent": "Rewrites entire file to update one cell. Raises IndexError on out-of-range row/col.",
+            "relations": ["csv-editor-known-issues"]
+        }
+    ],
+    index="source_code"
+)
+```
+
+---
+
 ## WHAT SMAK IS (Authoritative)
 SMAK stands for **Semantic Mesh Augmented Kernel** and acts as a **passive MCP knowledge kernel**.
 
@@ -239,9 +294,13 @@ When `semantic_search` returns a hit, SMAK automatically loads the sidecar for t
 ---
 
 ## WHEN NOT TO USE (Hard bans)
-- DO NOT use SMAK for exact string matching (use `rg`, `grep`, or editor search).
-- DO NOT use SMAK for go-to-definition or symbol jump (use LSP / IDE navigation).
-- DO NOT use SMAK as the first step of repository exploration.
+- DO NOT use SMAK for exact string matching — use `rg`, `grep`, or editor search.
+  - Wrong: `semantic_search(query="IndexError")` to find all places that raise IndexError.
+  - Right: `rg "IndexError" src/`
+- DO NOT use SMAK for go-to-definition or symbol jump — use LSP / IDE navigation.
+  - Wrong: `semantic_search(query="CsvEditor.update_cell")` to locate the method definition.
+  - Right: LSP go-to-definition on the symbol.
+- DO NOT use SMAK as the first step of repository exploration — read the README, directory tree, or entry points first to orient yourself before running semantic search.
 
 ## WHEN TO USE (Triggers)
 - **Intent discovery:** understand the "why" behind hacks, tradeoffs, or legacy behavior.
