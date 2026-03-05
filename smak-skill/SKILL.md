@@ -44,7 +44,7 @@ SMAK ingests files into knowledge units, enriches them with sidecar metadata, co
 ```json
 {
   "hits": [
-    {"uid": "func_A", "exact_uid": "func_A", "exact_relative_path": "src/main.py", "match_type": "semantic", "score": 0.89, "content": "..."}
+    {"uid": "func_A", "exact_relative_path": "src/main.py", "match_type": "semantic", "score": 0.89, "content": "..."}
   ],
   "related_context": [
     {"uid": "issue_12", "match_type": "relation", "source_hit": "func_A", "content": "..."}

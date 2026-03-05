@@ -333,7 +333,7 @@ class TestQueryService(unittest.TestCase):
         ).search("query", top_k=1)
 
         self.assertEqual(payload["hits"][0]["exact_relative_path"], "src/a.py")
-        self.assertEqual(payload["hits"][0]["exact_uid"], "src/a.py::func_a")
+        self.assertNotIn("exact_uid", payload["hits"][0])
 
 
     def test_query_service_hit_exact_relative_path_is_none_when_source_missing(self) -> None:
