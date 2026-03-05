@@ -28,10 +28,11 @@ class SimpleLineParser:
         normalized_content = (content or "").strip()
         if not normalized_content:
             return []
-        symbol = str(Path(source).resolve()) if source else "content"
+        origin = str(Path(source).resolve()) if source else "content"
+        symbol = "*"
         return [
             KnowledgeUnit(
-                uid=symbol,
+                uid=f"{origin}::{symbol}",
                 content=normalized_content,
                 source_type="documentation",
                 metadata={"symbol": symbol, "source": source},

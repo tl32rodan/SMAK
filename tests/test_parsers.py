@@ -11,15 +11,15 @@ from smak.services.ingest.parsers import (
 
 
 class TestParsers(unittest.TestCase):
-    def test_simple_line_parser_creates_single_unit_with_absolute_path_symbol_uid(self) -> None:
+    def test_simple_line_parser_creates_single_unit_with_file_wildcard_symbol_uid(self) -> None:
         parser = SimpleLineParser()
         units = parser.parse("one\n\n two ", source="file.txt")
-        expected_symbol = str(Path("file.txt").resolve())
+        expected_origin = str(Path("file.txt").resolve())
 
         self.assertEqual(len(units), 1)
         self.assertEqual(units[0].content, "one\n\n two")
-        self.assertEqual(units[0].uid, expected_symbol)
-        self.assertEqual(units[0].metadata["symbol"], expected_symbol)
+        self.assertEqual(units[0].uid, f"{expected_origin}::*")
+        self.assertEqual(units[0].metadata["symbol"], "*")
 
     def test_simple_line_parser_returns_empty_for_empty_content(self) -> None:
         parser = SimpleLineParser()
