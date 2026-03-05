@@ -72,7 +72,6 @@ class QueryService:
             hits.append(
                 {
                     "uid": uid,
-                    "exact_uid": uid,
                     "match_type": "semantic",
                     "score": hit.get("score"),
                     "content": hit.get("content"),

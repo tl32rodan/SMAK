@@ -32,6 +32,18 @@ class TestSidecarService(unittest.TestCase):
             self.assertEqual(output, root / ".sidecar.yaml")
             self.assertTrue(output.exists())
 
+
+    def test_sidecar_service_init_for_markdown_uses_wildcard_symbol_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "note.md"
+            source.write_text("# title\ncontent\n", encoding="utf-8")
+            service = SidecarService()
+
+            sidecar_path = service.init(source)
+            payload = sidecar_path.read_text(encoding="utf-8")
+
+            self.assertIn("- name: *", payload)
+
     def test_sidecar_read_text_fallback_replaces_invalid_bytes(self) -> None:
         from smak.services import sidecar as sidecar_module
 

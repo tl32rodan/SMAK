@@ -32,7 +32,7 @@ class InternalNomicEmbedding(BaseEmbedding):
         *,
         api_base: str | None = None,
         model: str | None = None,
-        timeout: float = 30.0,
+        timeout: float = 600.0,
         headers: dict[str, str] | None = None,
         session: Any | None = None,
         embed_batch_size: int = 64,

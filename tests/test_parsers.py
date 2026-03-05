@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 
 from smak.services.ingest.parsers import (
-    IssueParser,
+    NullParser,
     PerlParser,
     PythonParser,
     SimpleLineParser,
@@ -11,11 +11,19 @@ from smak.services.ingest.parsers import (
 
 
 class TestParsers(unittest.TestCase):
-    def test_simple_line_parser_creates_units(self) -> None:
+    def test_simple_line_parser_creates_single_unit_with_file_wildcard_symbol_uid(self) -> None:
         parser = SimpleLineParser()
         units = parser.parse("one\n\n two ", source="file.txt")
-        self.assertEqual([unit.content for unit in units], ["one", "two"])
-        self.assertEqual([unit.uid for unit in units], ["file.txt:1", "file.txt:2"])
+        expected_origin = str(Path("file.txt").resolve())
+
+        self.assertEqual(len(units), 1)
+        self.assertEqual(units[0].content, "one\n\n two")
+        self.assertEqual(units[0].uid, f"{expected_origin}::*")
+        self.assertEqual(units[0].metadata["symbol"], "*")
+
+    def test_simple_line_parser_returns_empty_for_empty_content(self) -> None:
+        parser = SimpleLineParser()
+        self.assertEqual(parser.parse("   \n\n", source="file.txt"), [])
 
     def test_python_parser_extracts_symbols(self) -> None:
         units = PythonParser().parse(
@@ -82,35 +90,20 @@ class TestParsers(unittest.TestCase):
         self.assertEqual([unit.uid for unit in units], ["csv.pl::build_csv", "csv.pl::other"])
         self.assertIn("quote_char => '\"'", units[0].content)
 
-    def test_issue_parser_uses_symbol_from_frontmatter(self) -> None:
-        parser = IssueParser()
-        content = (
-            "---\n"
-            "symbol: csv-editor-known-issues\n"
-            "relations:\n"
-            "  - src/csv_editor.py::edit\n"
-            "---\n"
-            "# CSV Editor Known Issues\n"
-            "Body"
-        )
-        units = parser.parse(content, source="issue.md")
-        self.assertEqual(units[0].uid, "csv-editor-known-issues")
-        self.assertEqual(units[0].relations, ("src/csv_editor.py::edit",))
-
-    def test_issue_parser_falls_back_to_header_slug(self) -> None:
-        units = IssueParser().parse("# Login Issue Tracker\nDetails", source="issue.md")
-        self.assertEqual(units[0].uid, "login-issue-tracker")
-
-    def test_issue_parser_falls_back_to_filename_slug(self) -> None:
-        units = IssueParser().parse("No markdown header", source="docs/My Issue.md")
-        self.assertEqual(units[0].uid, "my-issue")
-
     def test_get_parser_for_path_routes_by_suffix(self) -> None:
         self.assertIsInstance(get_parser_for_path(Path("a.py")), PythonParser)
         self.assertIsInstance(get_parser_for_path(Path("a.pm")), PerlParser)
         self.assertIsInstance(get_parser_for_path(Path("a.t")), PerlParser)
-        self.assertIsInstance(get_parser_for_path(Path("a.md")), IssueParser)
+        self.assertIsInstance(get_parser_for_path(Path("a.md")), SimpleLineParser)
+        self.assertIsInstance(get_parser_for_path(Path("a.markdown")), SimpleLineParser)
         self.assertIsInstance(get_parser_for_path(Path("a.txt")), SimpleLineParser)
+        self.assertIsInstance(get_parser_for_path(Path("a.csv")), SimpleLineParser)
+        self.assertIsInstance(get_parser_for_path(Path("a.il")), SimpleLineParser)
+        self.assertIsInstance(get_parser_for_path(Path("a.json")), NullParser)
+
+    def test_null_parser_skips_content(self) -> None:
+        parser = NullParser()
+        self.assertEqual(parser.parse("anything", source="a.bin"), [])
 
     def test_python_parser_uses_relative_source_with_root(self) -> None:
         parser = PythonParser(root_path="/repo")

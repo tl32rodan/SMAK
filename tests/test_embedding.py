@@ -102,6 +102,12 @@ class TestEmbeddingHelpers(unittest.TestCase):
         self.assertEqual(embedder.model_name, "nomic-test")
         self.assertEqual(embedder.embed_batch_size, 16)
 
+
+    def test_internal_nomic_embedding_uses_600s_default_timeout(self) -> None:
+        embedder = InternalNomicEmbedding(session=DummySession())
+
+        self.assertEqual(embedder.timeout, 600.0)
+
     def test_internal_nomic_embedding_gets_embeddings(self) -> None:
         session = DummySession()
         embedder = InternalNomicEmbedding(session=session)
