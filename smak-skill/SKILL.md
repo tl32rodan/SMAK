@@ -144,11 +144,6 @@ SMAK uses **embedding-based semantic search**. Queries match on meaning and inte
 "TODO fix bug"       ← too vague; try the issues index with a symptom description
 ```
 
-### Score interpretation
-- **score ≥ 0.7** — strong semantic match, high confidence
-- **score 0.4–0.7** — moderate match, review content before acting
-- **score < 0.4** — likely irrelevant; reformulate the query or switch index
-
 ---
 
 ## QUERY & RELATION MODEL
@@ -180,7 +175,7 @@ SMAK uses **embedding-based semantic search**. Queries match on meaning and inte
 **Field reference:**
 - `uid` — globally unique symbol identifier; use this value in sidecar `relations` lists
 - `exact_relative_path` — copy this EXACTLY as `file_path` when calling sidecar tools; never rewrite or guess
-- `score` — cosine similarity (0–1); see score interpretation above
+- `score` — similarity score returned by the underlying vector store; do not rely on absolute values or thresholds — the direction and scale vary by backend implementation
 - `match_type: "semantic"` — retrieved directly by vector search
 - `match_type: "relation"` — auto-fetched via 1-hop traversal from a sidecar relation
 
@@ -326,6 +321,6 @@ When `semantic_search` returns a hit, SMAK automatically loads the sidecar for t
 ---
 
 ## ANTI-HALLUCINATION STOP RULE
-- If semantic results are low-relevance (`score < 0.4`) for the same task **2 times in a row**, STOP.
+- If semantic results are low-relevance for the same task **2 times in a row**, STOP.
 - Do not fabricate edits from weak matches.
 - Ask user for a narrower starting point (file, module, symbol, or concrete symptom).

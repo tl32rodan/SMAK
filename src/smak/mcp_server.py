@@ -520,10 +520,6 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
                   - ``"append_row"``  ← exact function name
                   - ``"csv_editor.py"``  ← exact filename
 
-                Score interpretation in results:
-                  - score ≥ 0.7: strong match
-                  - score 0.4–0.7: moderate match, review content before acting
-                  - score < 0.4: likely irrelevant; reformulate or switch index
 
             index: **Required in practice**. Always pass the explicit target
                 index name (discover with ``list_available_indices``).
@@ -543,8 +539,9 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
             A serialisable dict ``{"hits": [...], "related_context": [...]}``
             or ``{}`` when the index is empty.
 
-            Each hit contains: ``uid``, ``exact_relative_path``, ``score``,
-            ``match_type`` (``"semantic"``), and ``content``.
+            Each hit contains: ``uid``, ``exact_relative_path``, ``score``
+            (backend-dependent scale/direction — do not threshold on this
+            value), ``match_type`` (``"semantic"``), and ``content``.
 
             Each related_context entry contains: ``uid``, ``match_type``
             (``"relation"``), ``source_hit`` (uid of the hit that links here),
