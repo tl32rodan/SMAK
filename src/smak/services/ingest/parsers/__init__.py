@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Protocol
 
 from smak.core.domain import KnowledgeUnit
-from smak.services.ingest.parsers.issue import IssueParser
 from smak.services.ingest.parsers.perl import PerlParser
 from smak.services.ingest.parsers.python import PythonParser
 
@@ -17,36 +16,43 @@ class Parser(Protocol):
 
 
 @dataclass
+class NullParser:
+    def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:
+        _ = content, source
+        return []
+
+
+@dataclass
 class SimpleLineParser:
     def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:
-        lines = [line.strip() for line in content.splitlines() if line.strip()]
-        units = []
-        origin = source or "content"
-        for index, line in enumerate(lines, start=1):
-            units.append(
-                KnowledgeUnit(
-                    uid=f"{origin}:{index}",
-                    content=line,
-                    source_type="documentation",
-                    metadata={"line": index, "source": source},
-                )
+        normalized_content = (content or "").strip()
+        if not normalized_content:
+            return []
+        symbol = str(Path(source).resolve()) if source else "content"
+        return [
+            KnowledgeUnit(
+                uid=symbol,
+                content=normalized_content,
+                source_type="documentation",
+                metadata={"symbol": symbol, "source": source},
             )
-        return units
+        ]
 
 
 def get_parser_for_path(path: Path, root_path: Path | None = None) -> Parser:
+    _ = root_path
     suffix = path.suffix.lower()
     if suffix == ".py":
         return PythonParser(root_path=str(root_path) if root_path else None)
     if suffix in {".pl", ".pm", ".t"}:
         return PerlParser(root_path=str(root_path) if root_path else None)
-    if suffix in {".md", ".markdown"}:
-        return IssueParser()
-    return SimpleLineParser()
+    if suffix in {".md", ".markdown", ".txt", ".csv", ".il"}:
+        return SimpleLineParser()
+    return NullParser()
 
 
 __all__ = [
-    "IssueParser",
+    "NullParser",
     "Parser",
     "PerlParser",
     "PythonParser",

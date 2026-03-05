@@ -97,6 +97,21 @@ class TestMcpServer(unittest.TestCase):
             ingest_instance.ingest_folder.assert_called_once()
 
     @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
+    def test_list_available_indices_returns_name_and_description(
+        self,
+        _: MagicMock,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            server = self._create_server(tmp_dir)
+
+            indices = server.list_available_indices(config="mock_config")
+
+            self.assertEqual(
+                indices,
+                [{"name": "source_code", "description": "src"}],
+            )
+
+    @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
     @patch("smak.mcp_server._load_vector_store", return_value=object())
     @patch("smak.mcp_server.QueryService")
     def test_semantic_search_calls_query_service(

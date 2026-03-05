@@ -1,63 +1,7 @@
 # SMAK
 
-SMAK now stands for **Semantic Mesh Augmented Kernel** and is focused as a **passive MCP knowledge kernel**.
-
-It is the source-of-truth layer for:
-- code symbols,
-- sidecar intent metadata,
-- issue/document relations,
-- and semantic retrieval context.
-
-## What SMAK provides
-
-### 1) Ingestion kernel
-SMAK ingests files into knowledge units, enriches them with sidecar metadata, computes embeddings, and stores vectors.
-
-### 2) MCP-facing API surface
-`src/smak/mcp_server.py` exposes config-driven MCP tools:
-- `list_available_configs()`
-- `refresh_knowledge(config, index="source_code", follow_symlinks=True)`
-- `semantic_search(config, query, index="source_code", top_k=5)`
-- `manage_sidecar(config, action, file_path, updates=None, index="source_code")`
-- `validate_mesh(config)`
-
-> `registry.yaml` (or an equivalent registry file passed via `--registry`) is **mandatory**. The MCP server fails fast when the registry is missing or empty.
-
-### 3) CLI utilities
-- `smak init`
-- `smak ingest`
-- `smak query`
-- `smak sidecar init|update|inspect`
-- `smak doctor`
-
-> Deprecated commands removed: `search`, `stats`.
-
----
-
-## Query JSON output
-
-`smak query` returns structured JSON with semantic and relational context separated:
-
-```json
-{
-  "hits": [
-    {"uid": "func_A", "exact_uid": "func_A", "exact_relative_path": "src/main.py", "match_type": "semantic", "score": 0.89, "content": "..."}
-  ],
-  "related_context": [
-    {"uid": "issue_12", "match_type": "relation", "source_hit": "func_A", "content": "..."}
-  ]
-}
-```
-
-When calling sidecar APIs (`inspect_sidecar`, `init_sidecar`, `update_sidecar`), copy `hits[].exact_relative_path` directly as `file_path`. Do not rewrite or guess file paths.
-
-### 1-Hop Semantic Mesh Traversal
-1. Run vector search for `top_k` semantic hits.
-2. Read `relations` metadata on those hits.
-3. Fetch each related UID with `vector_store.get_by_id(uid)`.
-4. Append those nodes under `related_context` (strictly one hop).
-
----
+For SMAK concepts, MCP workflow conventions, and agent behavior guidance, see
+**[`smak-skill/SKILL.md`](smak-skill/SKILL.md)**.
 
 ## Quick start (CLI)
 

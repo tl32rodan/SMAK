@@ -262,7 +262,10 @@ class SmakMcpServer:
         Args:
             config: Registry key that identifies the project configuration.
             query: Free-text search query.
-            index: Name of the index to query.  Defaults to ``"source_code"``.
+            index: Name of the index to query. Always pass this explicitly so
+                search runs against the intended index for the selected
+                config. The default ``"source_code"`` is preserved only for
+                backwards compatibility.
             top_k: Maximum number of results to return.  Defaults to ``5``.
 
         Returns:
@@ -282,6 +285,25 @@ class SmakMcpServer:
         )
         result = service.search(query, top_k=top_k)
         return result if isinstance(result, dict) else {}
+
+    def list_available_indices(self, config: str) -> list[dict[str, str]]:
+        """Return all index names/descriptions for a config.
+
+        Args:
+            config: Registry key that identifies the project configuration.
+
+        Returns:
+            Ordered list of ``{"name": str, "description": str}`` objects.
+        """
+
+        cfg = self._load_config(config)
+        return [
+            {
+                "name": index.name,
+                "description": index.description,
+            }
+            for index in cfg.indices
+        ]
 
     def inspect_sidecar(
         self,
@@ -487,7 +509,11 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
             config: Registry key identifying the project (see
                 ``list_available_configs``).
             query: Natural-language description of what you are looking for.
-            index: Name of the index to query.  Defaults to ``"source_code"``.
+            index: **Required in practice**. Always pass the explicit target
+                index name (discover with ``list_available_indices``). The
+                default ``"source_code"`` is kept only for backward
+                compatibility and can point to the wrong index for multi-index
+                configs.
             top_k: Maximum number of results to return.  Defaults to ``5``.
 
         Returns:
@@ -501,6 +527,23 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
             index=index,
             top_k=top_k,
         )
+
+    @mcp.tool()
+    def list_available_indices(config: str) -> list[dict[str, str]]:
+        """List searchable indices for a specific config.
+
+        Use this tool before ``semantic_search`` whenever you are unsure
+        which indices are defined for the current project config.
+
+        Args:
+            config: Registry key identifying the project (see
+                ``list_available_configs``).
+
+        Returns:
+            Ordered list of objects containing ``name`` and ``description``.
+        """
+
+        return smak_server.list_available_indices(config=config)
 
     @mcp.tool()
     def inspect_sidecar(
