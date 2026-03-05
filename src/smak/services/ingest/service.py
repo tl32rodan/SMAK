@@ -65,6 +65,15 @@ def _source_mtime(path: Path) -> float:
     return path.stat().st_mtime
 
 
+
+
+def _absolute_unit_id(unit_id: str, source_path: Path) -> str:
+    absolute_source = str(source_path.resolve())
+    if "::" in unit_id:
+        _, symbol = unit_id.split("::", 1)
+        return f"{absolute_source}::{symbol}"
+    return absolute_source
+
 def _unit_up_to_date(vector_store: object, unit_id: str, file_mtime: float) -> bool:
     get_by_id = getattr(vector_store, "get_by_id", None)
     if not callable(get_by_id):
@@ -120,7 +129,11 @@ class IngestService:
             if (
                 incremental
                 and parsed_units
-                and _unit_up_to_date(vector_store, parsed_units[0].uid, source_mtime)
+                and _unit_up_to_date(
+                    vector_store,
+                    _absolute_unit_id(parsed_units[0].uid, file_path),
+                    source_mtime,
+                )
             ):
                 return 0, True
 
@@ -137,7 +150,7 @@ class IngestService:
             for unit, vector in zip(result.units, result.embeddings):
                 node = node_class(
                     text=unit.content,
-                    id_=unit.uid,
+                    id_=_absolute_unit_id(unit.uid, file_path),
                     metadata={
                         "relations": list(unit.relations),
                         "meta": unit.metadata,

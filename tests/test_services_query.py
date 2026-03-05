@@ -333,43 +333,8 @@ class TestQueryService(unittest.TestCase):
         ).search("query", top_k=1)
 
         self.assertEqual(payload["hits"][0]["exact_relative_path"], "src/a.py")
-        expected_uid = f"{Path('src/a.py').resolve()}::func_a"
-        self.assertEqual(payload["hits"][0]["exact_uid"], expected_uid)
+        self.assertEqual(payload["hits"][0]["exact_uid"], "src/a.py::func_a")
 
-
-    def test_query_service_hit_normalizes_relative_uid_to_absolute(self) -> None:
-        store = SimpleNamespace(
-            search=lambda vector, top_k=5: [
-                {
-                    "uid": "docs/guide.md::*",
-                    "score": 0.8,
-                    "content": "guide",
-                    "metadata": {"source": "docs/guide.md"},
-                }
-            ],
-            get_by_id=lambda uid: None,
-        )
-        config = SmakConfig(
-            indices=[
-                IndexConfig(
-                    name="documentation",
-                    description="docs",
-                    path="/repo",
-                )
-            ]
-        )
-
-        payload = QueryService(
-            store,
-            config=config,
-            vector_store_loader=lambda index_config, cfg: store,
-            embedder=DummyEmbedder(),
-            index_config=config.indices[0],
-            relation_resolver=SidecarRelationResolver(YAMLSidecarStore()),
-        ).search("query", top_k=1)
-
-        self.assertEqual(payload["hits"][0]["uid"], "/repo/docs/guide.md::*")
-        self.assertEqual(payload["hits"][0]["exact_uid"], "/repo/docs/guide.md::*")
 
     def test_query_service_hit_exact_relative_path_is_none_when_source_missing(self) -> None:
         store = SimpleNamespace(

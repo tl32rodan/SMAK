@@ -59,6 +59,27 @@ class TestIngestService(unittest.TestCase):
             self.assertEqual(stats.files, 1)
             self.assertGreaterEqual(stats.vectors, 1)
 
+
+    def test_ingest_service_stores_absolute_uid_for_python_symbols(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            src = root / "pkg" / "a.py"
+            src.parent.mkdir(parents=True)
+            src.write_text("def foo():\n    return 1\n", encoding="utf-8")
+
+            store = FakeVectorStore()
+            service = IngestService(vector_store=store)
+            service.ingest_folder(
+                root,
+                incremental=False,
+                node_class_loader=lambda: FakeNode,
+                embedder_loader=DummyEmbedder,
+            )
+
+            self.assertGreaterEqual(len(store.saved), 1)
+            self.assertTrue(store.saved[0].id_.startswith(str(src.resolve())))
+            self.assertIn("::foo", store.saved[0].id_)
+
     def test_iter_source_files_can_toggle_symlink_following(self) -> None:
         from smak.services.ingest import service as ingest_module
 

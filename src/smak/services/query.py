@@ -40,26 +40,6 @@ class QueryService:
             )
         return resolver_metadata
 
-    def _normalize_hit_uid(self, uid: str, metadata: dict[str, Any]) -> str:
-        """Normalize hit UID path segment to absolute when metadata source is relative."""
-
-        source = metadata.get("source")
-        if not isinstance(source, str) or not source:
-            return uid
-        if "::" not in uid:
-            return uid
-
-        uid_path, symbol = uid.split("::", 1)
-        source_path = Path(source)
-        if source_path.is_absolute():
-            normalized_source = str(source_path)
-        else:
-            normalized_source = str((Path(self.index_config.path) / source_path).resolve())
-
-        if uid_path == source or uid_path == str(source_path):
-            return f"{normalized_source}::{symbol}"
-        return uid
-
     def _get_payload_globally(self, uid: str) -> dict[str, Any] | None:
         payload = self.vector_store.get_by_id(uid)
         if isinstance(payload, dict):
@@ -87,9 +67,8 @@ class QueryService:
         for hit in semantic_hits:
             if not isinstance(hit, dict):
                 continue
-            raw_uid = str(hit.get("uid", ""))
+            uid = str(hit.get("uid", ""))
             metadata = hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
-            uid = self._normalize_hit_uid(raw_uid, metadata)
             hits.append(
                 {
                     "uid": uid,
