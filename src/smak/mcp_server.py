@@ -508,17 +508,47 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         Args:
             config: Registry key identifying the project (see
                 ``list_available_configs``).
-            query: Natural-language description of what you are looking for.
+            query: Natural-language description of the **intent or behavior**
+                you are looking for — not symbol names or file paths.
+
+                Good queries (intent-based):
+                  - ``"error handling for out-of-range index in cell update"``
+                  - ``"how log entries are parsed from structured log files"``
+                  - ``"retry logic for network failures"``
+
+                Bad queries (use grep/ripgrep instead):
+                  - ``"append_row"``  ← exact function name
+                  - ``"csv_editor.py"``  ← exact filename
+
+
             index: **Required in practice**. Always pass the explicit target
-                index name (discover with ``list_available_indices``). The
-                default ``"source_code"`` is kept only for backward
+                index name (discover with ``list_available_indices``).
+
+                Index selection guide:
+                  - ``"source_code"`` — code logic, implementation intent
+                  - ``"issues"`` — historical bugs, known problems, tickets
+                  - ``"tests"`` — test coverage, test cases
+                  - ``"documentation"`` — architecture docs, API docs
+
+                The default ``"source_code"`` is kept only for backward
                 compatibility and can point to the wrong index for multi-index
                 configs.
             top_k: Maximum number of results to return.  Defaults to ``5``.
 
         Returns:
-            A serialisable dict containing the ranked results, or ``{}`` when
-            the index is empty.
+            A serialisable dict ``{"hits": [...], "related_context": [...]}``
+            or ``{}`` when the index is empty.
+
+            Each hit contains: ``uid``, ``exact_relative_path``, ``score``
+            (backend-dependent scale/direction — do not threshold on this
+            value), ``match_type`` (``"semantic"``), and ``content``.
+
+            Each related_context entry contains: ``uid``, ``match_type``
+            (``"relation"``), ``source_hit`` (uid of the hit that links here),
+            and ``content``.
+
+            **Important:** copy ``hits[].exact_relative_path`` verbatim as the
+            ``file_path`` argument to sidecar tools — never rewrite it.
         """
 
         return smak_server.semantic_search(
@@ -534,6 +564,12 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
 
         Use this tool before ``semantic_search`` whenever you are unsure
         which indices are defined for the current project config.
+
+        Index purpose guide (typical multi-index project layout):
+          - ``"source_code"`` — code logic, function/class implementations
+          - ``"issues"`` — bug reports, GitHub issues, Jira tickets
+          - ``"tests"`` — unit/integration tests and test cases
+          - ``"documentation"`` — architecture docs, API references
 
         Args:
             config: Registry key identifying the project (see
@@ -554,21 +590,30 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         """List the symbol UIDs that SMAK can parse from a source file.
 
         Runs the language-specific parser over *file_path* and returns the UID
-        of every discovered code unit.  No files are written.  Use the result
-        to know which symbol names are valid for ``update_sidecar``.
+        of every discovered code unit.  No files are written.
+
+        **Always call this before ``update_sidecar``** to confirm which symbol
+        UIDs are valid for the target file.  Passing an unrecognised symbol to
+        ``update_sidecar`` will silently skip that entry.
 
         Args:
             config: Registry key identifying the project (see
                 ``list_available_configs``).
-            file_path: Path to the source file. Absolute paths are strongly
-                recommended to reduce agent ambiguity; relative paths are
-                still supported and resolved against the index root folder.
+            file_path: Path to the source file. Use the ``exact_relative_path``
+                value returned by ``semantic_search`` to avoid path errors.
+                Absolute paths are strongly recommended; relative paths are
+                resolved against the index root folder.
             index: Index whose root resolves relative paths.  Defaults to
                 ``"source_code"``.
 
         Returns:
-            Ordered list of symbol UID strings (e.g.
-            ``["module::ClassName", "module::ClassName::method"]``).
+            Ordered list of symbol UID strings.
+
+            Example: ``["CsvEditor", "CsvEditor.append_row",
+            "CsvEditor.update_cell", "CsvEditor.read_rows"]``
+
+            Use these exact strings as the ``"symbol"`` key in
+            ``update_sidecar`` update entries.
         """
 
         return smak_server.inspect_sidecar(
@@ -588,6 +633,13 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         Parses *file_path* (or every source file inside a directory) and
         writes stub sidecar entries with empty ``intent`` and ``relations``
         fields.  Populate those fields afterwards with ``update_sidecar``.
+
+        **WARNING — destructive operation:** if a sidecar file already
+        exists, it is overwritten and all existing ``intent`` and
+        ``relations`` content is erased.  Only call ``init_sidecar`` when
+        bootstrapping a file that has no sidecar yet, or when you
+        intentionally want to reset all metadata to empty stubs.  To
+        partially update existing metadata, use ``update_sidecar`` instead.
 
         Args:
             config: Registry key identifying the project (see
@@ -620,23 +672,49 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
 
         Each item in *updates* targets one symbol by UID and supplies new
         values for ``intent`` and/or ``relations``.  Fields not mentioned in
-        an update object are left unchanged.
+        an update object are left unchanged.  Symbols not mentioned in
+        *updates* are left untouched in the sidecar.
+
+        **Prerequisite:** call ``inspect_sidecar`` first to get the valid
+        symbol UIDs for the file.  An unrecognised ``"symbol"`` value will
+        be silently skipped.
 
         Args:
             config: Registry key identifying the project (see
                 ``list_available_configs``).
             file_path: Path to the source file whose sidecar should be
-                updated. Absolute paths are strongly recommended to reduce
-                agent ambiguity; relative paths are still supported and
-                resolved against the index root folder.
+                updated. Use the ``exact_relative_path`` returned by
+                ``semantic_search`` to avoid path errors. Absolute paths are
+                strongly recommended; relative paths are resolved against the
+                index root folder.
             updates: List of update objects.  Each object must include:
 
                 * ``symbol`` *(str, required)* — UID of the target symbol
-                  (as returned by ``inspect_sidecar``).
+                  exactly as returned by ``inspect_sidecar``.
                 * ``intent`` *(str, optional)* — Human-readable description
-                  of what the symbol does.
+                  of what the symbol does / why it exists.
                 * ``relations`` *(list[str], optional)* — UIDs of related
-                  symbols.
+                  entities (other code symbols, issue UIDs, doc UIDs).
+
+                Example::
+
+                    updates=[
+                        {
+                            "symbol": "CsvEditor",
+                            "intent": "Manages read, append, and in-place cell-update operations.",
+                            "relations": ["csv-editor-known-issues"]
+                        },
+                        {
+                            "symbol": "CsvEditor.update_cell",
+                            "intent": "Rewrites the entire file to update one cell. Raises IndexError on out-of-range.",
+                            "relations": ["csv-editor-known-issues"]
+                        },
+                        {
+                            "symbol": "CsvEditor.append_row",
+                            "intent": "Appends a list of string values as a new row at the end of the CSV file.",
+                            "relations": []
+                        }
+                    ]
 
             index: Index whose root resolves relative paths.  Defaults to
                 ``"source_code"``.
