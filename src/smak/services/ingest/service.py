@@ -206,23 +206,3 @@ class IngestService:
             deleted=deleted_count,
         )
 
-    def ingest_folder(
-        self,
-        folder: Path,
-        *,
-        max_workers: int = 4,
-        incremental: bool = True,
-        node_class_loader: Callable[[], type] | None = None,
-        embedder_loader: Callable[[], EmbeddingProbe] | None = None,
-        follow_symlinks: bool = True,
-        sync: bool = False,
-    ) -> IngestStats:
-        return self.ingest_paths(
-            [folder],
-            max_workers=max_workers,
-            incremental=incremental,
-            node_class_loader=node_class_loader,
-            embedder_loader=embedder_loader,
-            follow_symlinks=follow_symlinks,
-            sync=sync,
-        )

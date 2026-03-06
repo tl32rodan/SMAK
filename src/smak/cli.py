@@ -40,7 +40,6 @@ def _default_config_template() -> str:
             "  - name: source_code",
             "    description: Contains the project's source code (Python, Perl), "
             "function definitions, and logic.",
-            "    # Use 'paths' (list) to ingest from multiple directories, or 'path' for a single directory.",
             "    paths:",
             "      - ./src",
             "    # Customize uri if you want this index stored elsewhere.",
@@ -48,12 +47,17 @@ def _default_config_template() -> str:
             "  - name: issues",
             "    description: Contains historical bug reports, GitHub issues, "
             "and Jira tickets describing known problems.",
-            "    path: ./issues",
+            "    paths:",
+            "      - ./issues",
             "  - name: tests",
             "    description: Contains unit tests, integration tests, and test cases.",
+            "    paths:",
+            "      - ./tests",
             "  - name: documentation",
             "    description: Contains architecture diagrams, API docs, and "
             "general knowledge base.",
+            "    paths:",
+            "      - ./documentation",
             "",
         ]
     )

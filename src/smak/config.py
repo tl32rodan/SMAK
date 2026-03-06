@@ -78,14 +78,8 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
     if isinstance(indices_data, list):
         for entry in indices_data:
             if isinstance(entry, Mapping):
-                # Support both 'paths' (list) and legacy 'path' (str)
-                raw_paths = entry.get("paths")
-                if isinstance(raw_paths, list):
-                    paths = [str(p) for p in raw_paths]
-                elif raw_paths is not None:
-                    paths = [str(raw_paths)]
-                else:
-                    paths = [str(entry.get("path", "."))]
+                raw_paths = entry.get("paths", ["."])
+                paths = [str(p) for p in raw_paths] if isinstance(raw_paths, list) else [str(raw_paths)]
                 indices.append(
                     IndexConfig(
                         name=str(entry.get("name", "")),
