@@ -1,15 +1,19 @@
 indices:
   - name: source_code
     description: Contains the project's source code (Python, Perl), function definitions, and logic.
-    path: ./src
+    paths:
+      - ./src
     # Customize uri if you want this index stored elsewhere.
     uri: ./smak_data/source_code
   - name: issues
     description: Contains historical bug reports, GitHub issues, and Jira tickets describing known problems.
-    path: ./issues
+    paths:
+      - ./issues
   - name: tests
     description: Contains unit tests, integration tests, and test cases.
-    path: ./src/tests
+    paths:
+      - ./src/tests
   - name: documentation
     description: Contains architecture diagrams, API docs, and general knowledge base.
-    path: ./documentation
+    paths:
+      - ./documentation

@@ -86,6 +86,7 @@ class TestCli(unittest.TestCase):
         self.assertIn("Customize uri", template)
         self.assertNotIn("storage:", template)
         self.assertNotIn("llm:", template)
+        self.assertIn("paths:", template)
 
     def test_load_vector_store_for_cli_raises_for_unknown_index(self) -> None:
         cli = importlib.import_module("smak.cli")
@@ -151,7 +152,7 @@ class TestCli(unittest.TestCase):
                 def __init__(self, vector_store: object) -> None:
                     self.vector_store = vector_store
 
-                def ingest_folder(self, *args: object, **kwargs: object) -> object:
+                def ingest_paths(self, *args: object, **kwargs: object) -> object:
                     captured.update(kwargs)
                     return SimpleNamespace(files=0, skipped=0, vectors=0, deleted=0)
 
@@ -160,7 +161,7 @@ class TestCli(unittest.TestCase):
                     "smak.cli._load_vector_store_for_cli",
                     new=lambda index, config: (
                         SmakConfig(),
-                        IndexConfig(name="source_code", description="source", path=str(folder)),
+                        IndexConfig(name="source_code", description="source", paths=[str(folder)]),
                         object(),
                     ),
                 ),
@@ -259,7 +260,7 @@ class TestCli(unittest.TestCase):
                         SmakConfig(
                             indices=[IndexConfig(name="source_code", description="source")]
                         ),
-                        IndexConfig(name="source_code", description="source", path=str(workspace)),
+                        IndexConfig(name="source_code", description="source", paths=[str(workspace)]),
                         QueryStore(),
                     ),
                 ),

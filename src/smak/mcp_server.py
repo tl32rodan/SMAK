@@ -154,21 +154,21 @@ class SmakMcpServer:
         index_config: object,
         file_path: str,
     ) -> Path:
-        """Resolve *file_path* with defensive fallback inside the index root.
+        """Resolve *file_path* with defensive fallback across all index roots.
 
         Resolution order:
 
-        1. Try the provided path directly (absolute) or relative to index root.
-        2. If missing, scan index root with ``Path.rglob(f"*{name}")``.
+        1. Try the provided path directly (absolute) or relative to each index root.
+        2. If missing, scan all index roots with ``Path.rglob(f"*{name}")``.
         3. Use unique hit silently, reject ambiguous hits, and fail actionable
            when no candidates exist.
 
         Args:
-            index_config: Index configuration object that exposes a ``path``
-                attribute pointing to the monitored folder.
+            index_config: Index configuration object that exposes a ``paths``
+                attribute listing the monitored folders.
             file_path: A file path string. Absolute paths are strongly
                 recommended to reduce agent ambiguity; relative paths are
-                still supported and resolved against the index root.
+                still supported and resolved against each index root.
 
         Returns:
             Resolved absolute :class:`~pathlib.Path`.
@@ -178,29 +178,50 @@ class SmakMcpServer:
             FileNotFoundError: If no match can be found.
         """
 
-        index_root = Path(index_config.path).resolve()
+        index_roots = [Path(p).resolve() for p in index_config.paths]
         raw_source_path = Path(file_path)
-        primary_path = (
-            raw_source_path
-            if raw_source_path.is_absolute()
-            else (index_root / raw_source_path).resolve()
-        )
-        if primary_path.exists():
-            return primary_path
 
+        # Try absolute path directly, or relative to each index root
+        if raw_source_path.is_absolute():
+            if raw_source_path.exists():
+                return raw_source_path
+        else:
+            for index_root in index_roots:
+                primary_path = (index_root / raw_source_path).resolve()
+                if primary_path.exists():
+                    return primary_path
+
+        # Fallback: scan all roots for filename match
         file_name = raw_source_path.name
-        candidates = sorted(index_root.rglob(f"*{file_name}")) if file_name else []
+        all_candidates: list[Path] = []
+        for index_root in index_roots:
+            all_candidates.extend(index_root.rglob(f"*{file_name}") if file_name else [])
+        candidates = sorted(all_candidates)
+
         if len(candidates) == 1:
             return candidates[0].resolve()
 
-        relative_candidates = [str(path.resolve().relative_to(index_root)) for path in candidates]
-        if len(relative_candidates) > 1:
+        if len(candidates) > 1:
+            # Build relative paths from whichever root contains each candidate
+            relative_candidates: list[str] = []
+            for candidate in candidates:
+                for index_root in index_roots:
+                    try:
+                        relative_candidates.append(
+                            str(candidate.resolve().relative_to(index_root))
+                        )
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    relative_candidates.append(str(candidate.resolve()))
             hints = self._format_candidates(relative_candidates)
             raise ValueError(f"Ambiguous file path '{file_path}'. Did you mean {hints}?")
 
+        roots_display = ", ".join(f"'{r}'" for r in index_roots)
         raise FileNotFoundError(
-            "File path resolution failed under index root "
-            f"'{index_root}' (config='{config_name}', index='{index}', file_path='{file_path}'). "
+            f"File path resolution failed under index roots [{roots_display}] "
+            f"(config='{config_name}', index='{index}', file_path='{file_path}'). "
             "Try using semantic_search first and pass one of the returned file paths."
         )
 
@@ -214,9 +235,9 @@ class SmakMcpServer:
         index: str = "source_code",
         follow_symlinks: bool = True,
     ) -> str:
-        """Ingest content into a target index (folder is defined by the index config).
+        """Ingest content into a target index (folders are defined by the index config).
 
-        Walks the folder associated with *index* and upserts all discovered
+        Walks all folders associated with *index* and upserts all discovered
         files into the vector store.  Existing vectors for unchanged files are
         skipped automatically.
 
@@ -225,7 +246,7 @@ class SmakMcpServer:
             index: Name of the index to refresh.  Defaults to
                 ``"source_code"``.
             follow_symlinks: Whether to follow symbolic links while walking
-                the target folder.  Defaults to ``True``.
+                the target folders.  Defaults to ``True``.
 
         Returns:
             A human-readable summary string with processed / skipped / added
@@ -234,10 +255,10 @@ class SmakMcpServer:
 
         cfg = self._load_config(config)
         vector_store, index_config = self._load_index_vector_store(cfg, index)
-        target_folder = Path(index_config.path)
+        target_folders = [Path(p) for p in index_config.paths]
         service = IngestService(vector_store=vector_store)
-        stats = service.ingest_folder(
-            target_folder,
+        stats = service.ingest_paths(
+            target_folders,
             follow_symlinks=follow_symlinks,
         )
         return (

@@ -92,5 +92,40 @@ class TestConfig(unittest.TestCase):
             self.assertTrue(config.indices[0].uri.endswith("smak_data/docs"))
 
 
+    def test_load_config_supports_paths_list(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code files\n"
+                "    paths:\n"
+                "      - ./src\n"
+                "      - ./lib\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+            self.assertEqual(len(config.indices[0].paths), 2)
+            self.assertTrue(config.indices[0].paths[0].endswith("src"))
+            self.assertTrue(config.indices[0].paths[1].endswith("lib"))
+
+    def test_load_config_default_path_is_list(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: docs\n"
+                "    description: docs index\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+            self.assertIsInstance(config.indices[0].paths, list)
+            self.assertEqual(len(config.indices[0].paths), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

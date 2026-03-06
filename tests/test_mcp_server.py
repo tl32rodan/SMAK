@@ -85,7 +85,7 @@ class TestMcpServer(unittest.TestCase):
             server = self._create_server(tmp_dir)
             load_store.return_value = object()
             ingest_instance = ingest_cls.return_value
-            ingest_instance.ingest_folder.return_value = MagicMock(files=1, skipped=0, vectors=2)
+            ingest_instance.ingest_paths.return_value = MagicMock(files=1, skipped=0, vectors=2)
 
             output = server.refresh_knowledge(
                 config="mock_config",
@@ -94,7 +94,7 @@ class TestMcpServer(unittest.TestCase):
 
             self.assertIn("Ingestion Complete", output)
             ingest_cls.assert_called_once()
-            ingest_instance.ingest_folder.assert_called_once()
+            ingest_instance.ingest_paths.assert_called_once()
 
     @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
     def test_list_available_indices_returns_name_and_description(
@@ -184,7 +184,7 @@ class TestMcpServer(unittest.TestCase):
             candidate = root / "src" / "csv_editor.py"
             candidate.parent.mkdir(parents=True)
             candidate.write_text("# mock\n", encoding="utf-8")
-            index_config = SimpleNamespace(path=str(root))
+            index_config = SimpleNamespace(paths=[str(root)])
             server = self._create_server(tmp_dir)
 
             resolved = server._resolve_source_path(
@@ -205,7 +205,7 @@ class TestMcpServer(unittest.TestCase):
             second.parent.mkdir(parents=True)
             first.write_text("# first\n", encoding="utf-8")
             second.write_text("# second\n", encoding="utf-8")
-            index_config = SimpleNamespace(path=str(root))
+            index_config = SimpleNamespace(paths=[str(root)])
             server = self._create_server(tmp_dir)
 
             with self.assertRaises(ValueError) as cm:
@@ -224,7 +224,7 @@ class TestMcpServer(unittest.TestCase):
     def test_resolve_source_path_raises_actionable_not_found(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            index_config = SimpleNamespace(path=str(root))
+            index_config = SimpleNamespace(paths=[str(root)])
             server = self._create_server(tmp_dir)
 
             with self.assertRaises(FileNotFoundError) as cm:

@@ -15,7 +15,7 @@ class IndexConfig:
 
     name: str
     description: str
-    path: str = "."
+    paths: list[str] = field(default_factory=lambda: ["."])
     uri: str | None = None
 
 
@@ -47,7 +47,7 @@ def _resolve_config(cfg: SmakConfig, config_path: str | Path) -> SmakConfig:
     base_path = config_file.resolve().parent if config_file.exists() else Path.cwd().resolve()
     resolved_indices = []
     for index in cfg.indices:
-        resolved_path = _resolve_absolute_path(index.path, base_path)
+        resolved_paths = [_resolve_absolute_path(p, base_path) for p in index.paths]
         if index.uri:
             resolved_uri = _resolve_absolute_path(index.uri, base_path)
         else:
@@ -56,7 +56,7 @@ def _resolve_config(cfg: SmakConfig, config_path: str | Path) -> SmakConfig:
             IndexConfig(
                 name=index.name,
                 description=index.description,
-                path=resolved_path,
+                paths=resolved_paths,
                 uri=resolved_uri,
             )
         )
@@ -78,11 +78,13 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
     if isinstance(indices_data, list):
         for entry in indices_data:
             if isinstance(entry, Mapping):
+                raw_paths = entry.get("paths", ["."])
+                paths = [str(p) for p in raw_paths] if isinstance(raw_paths, list) else [str(raw_paths)]
                 indices.append(
                     IndexConfig(
                         name=str(entry.get("name", "")),
                         description=str(entry.get("description", "")),
-                        path=str(entry.get("path", ".")),
+                        paths=paths,
                         uri=(
                             str(entry["uri"])
                             if entry.get("uri") is not None

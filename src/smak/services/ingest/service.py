@@ -94,9 +94,9 @@ class IngestService:
     def __init__(self, vector_store: object) -> None:
         self.vector_store = vector_store
 
-    def ingest_folder(
+    def ingest_paths(
         self,
-        folder: Path,
+        folders: list[Path],
         *,
         max_workers: int = 4,
         incremental: bool = True,
@@ -105,6 +105,12 @@ class IngestService:
         follow_symlinks: bool = True,
         sync: bool = False,
     ) -> IngestStats:
+        """Ingest content from multiple folders into the vector store.
+
+        Handles sync correctly across all paths: ghost detection is deferred
+        until all folders have been visited, so sources from one folder are
+        not mistakenly pruned while another folder is being processed.
+        """
         embedder = (embedder_loader or InternalNomicEmbedding)()
         node_class = (node_class_loader or _load_text_node_class)()
         vector_store = self.vector_store
@@ -112,17 +118,22 @@ class IngestService:
         tracked_sources = (
             vector_store.get_all_tracked_sources() if sync else {}
         )
-        visited_sources: set[str] = set()
+        all_visited_sources: set[str] = set()
 
-        paths = list(_iter_source_files(folder, follow_symlinks=follow_symlinks))
+        # Collect (file_path, root_folder) pairs from all folders
+        all_files: list[tuple[Path, Path]] = []
+        for folder in folders:
+            for file_path in _iter_source_files(folder, follow_symlinks=follow_symlinks):
+                all_files.append((file_path, folder))
+
         lock = threading.Lock()
         file_count = vector_count = skipped_count = 0
 
-        def process(file_path: Path) -> tuple[int, bool]:
-            source_key = _source_key(file_path, folder)
+        def process(file_path: Path, root_folder: Path) -> tuple[int, bool]:
+            source_key = _source_key(file_path, root_folder)
             with lock:
-                visited_sources.add(source_key)
-            parser = get_parser_for_path(file_path, root_path=folder)
+                all_visited_sources.add(source_key)
+            parser = get_parser_for_path(file_path, root_path=root_folder)
             content = _read_text_with_fallback(file_path)
             parsed_units = parser.parse(content, source=str(file_path))
             source_mtime = _source_mtime(file_path)
@@ -170,7 +181,7 @@ class IngestService:
 
         max_workers = max(1, min(max_workers, os.cpu_count() or max_workers))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(process, path) for path in paths]
+            futures = [executor.submit(process, fp, rf) for fp, rf in all_files]
             for future in as_completed(futures):
                 units_count, skipped = future.result()
                 skipped_count += int(skipped)
@@ -179,11 +190,13 @@ class IngestService:
 
         deleted_count = 0
         if sync:
-            ghost_sources = set(tracked_sources.keys()) - visited_sources
+            ghost_sources = set(tracked_sources.keys()) - all_visited_sources
             sidecar_store = YAMLSidecarStore()
             for ghost_source in ghost_sources:
                 vector_store.delete_by_ids(tracked_sources[ghost_source])
-                sidecar_store.delete_sidecar_for_source(folder / ghost_source)
+                # Try each folder since the ghost key is relative to one of them
+                for folder in folders:
+                    sidecar_store.delete_sidecar_for_source(folder / ghost_source)
                 deleted_count += 1
 
         return IngestStats(
@@ -192,3 +205,4 @@ class IngestService:
             skipped=skipped_count,
             deleted=deleted_count,
         )
+

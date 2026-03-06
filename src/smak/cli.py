@@ -40,18 +40,24 @@ def _default_config_template() -> str:
             "  - name: source_code",
             "    description: Contains the project's source code (Python, Perl), "
             "function definitions, and logic.",
-            "    path: ./src",
+            "    paths:",
+            "      - ./src",
             "    # Customize uri if you want this index stored elsewhere.",
             "    uri: ./smak_data/source_code",
             "  - name: issues",
             "    description: Contains historical bug reports, GitHub issues, "
             "and Jira tickets describing known problems.",
-            "    path: ./issues",
+            "    paths:",
+            "      - ./issues",
             "  - name: tests",
             "    description: Contains unit tests, integration tests, and test cases.",
+            "    paths:",
+            "      - ./tests",
             "  - name: documentation",
             "    description: Contains architecture diagrams, API docs, and "
             "general knowledge base.",
+            "    paths:",
+            "      - ./documentation",
             "",
         ]
     )
@@ -101,14 +107,16 @@ def ingest(
     sync: bool,
 ) -> None:
     _, index_config, vector_store = _load_vector_store_for_cli(index, config)
-    folder = Path(index_config.path)
-    if not folder.exists() or not folder.is_dir():
-        raise click.ClickException(f"Folder not found: {folder}")
+    folders = [Path(p) for p in index_config.paths]
+    for folder in folders:
+        if not folder.exists() or not folder.is_dir():
+            raise click.ClickException(f"Folder not found: {folder}")
     service = IngestService(vector_store=vector_store)
-    click.echo(f"Starting ingestion for '{folder}' -> Index: '{index}'...")
+    paths_display = ", ".join(f"'{f}'" for f in folders)
+    click.echo(f"Starting ingestion for {paths_display} -> Index: '{index}'...")
     try:
-        stats = service.ingest_folder(
-            folder,
+        stats = service.ingest_paths(
+            folders,
             max_workers=workers,
             incremental=incremental,
             follow_symlinks=follow_symlinks,

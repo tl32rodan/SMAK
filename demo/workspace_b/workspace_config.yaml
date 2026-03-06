@@ -1,14 +1,18 @@
 indices:
   - name: source_code
     description: Python source code for the log-analysis library (classes and functions).
-    path: ./src
+    paths:
+      - ./src
     uri: ./smak_data/source_code
   - name: issues
     description: Bug reports and known limitations of the log analyzer.
-    path: ./issues
+    paths:
+      - ./issues
   - name: tests
     description: Unit tests for the log analyzer.
-    path: ./src/tests
+    paths:
+      - ./src/tests
   - name: documentation
     description: Design notes and API reference for the log analyzer.
-    path: ./documentation
+    paths:
+      - ./documentation
