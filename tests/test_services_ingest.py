@@ -162,5 +162,58 @@ class TestIngestService(unittest.TestCase):
             self.assertFalse(ghost_sidecar.exists())
 
 
+    def test_ingest_paths_processes_multiple_folders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            src = root / "src"
+            src.mkdir()
+            lib = root / "lib"
+            lib.mkdir()
+            (src / "a.py").write_text("def foo():\n    return 1\n", encoding="utf-8")
+            (lib / "b.py").write_text("def bar():\n    return 2\n", encoding="utf-8")
+
+            store = FakeVectorStore()
+            service = IngestService(vector_store=store)
+            stats = service.ingest_paths(
+                [src, lib],
+                incremental=False,
+                node_class_loader=lambda: FakeNode,
+                embedder_loader=DummyEmbedder,
+            )
+
+            self.assertEqual(stats.files, 2)
+            self.assertGreaterEqual(stats.vectors, 2)
+
+    def test_ingest_paths_sync_prunes_only_true_ghosts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            src = root / "src"
+            src.mkdir()
+            lib = root / "lib"
+            lib.mkdir()
+            (src / "a.py").write_text("def foo():\n    return 1\n", encoding="utf-8")
+            (lib / "b.py").write_text("def bar():\n    return 2\n", encoding="utf-8")
+
+            # 'ghost.py' is tracked but does not exist in either folder
+            store = FakeVectorStore()
+            store.tracked_sources = {
+                "a.py": ["src_a::1"],
+                "b.py": ["lib_b::1"],
+                "ghost.py": ["ghost::1"],
+            }
+
+            service = IngestService(vector_store=store)
+            stats = service.ingest_paths(
+                [src, lib],
+                incremental=False,
+                sync=True,
+                node_class_loader=lambda: FakeNode,
+                embedder_loader=DummyEmbedder,
+            )
+
+            self.assertEqual(stats.deleted, 1)
+            self.assertEqual(store.deleted_ids, [["ghost::1"]])
+
+
 if __name__ == "__main__":
     unittest.main()

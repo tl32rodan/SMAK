@@ -75,10 +75,11 @@ class DoctorService:
         issues = []
         dangling = []
         for index_config in self.config.indices:
-            target_path = Path(index_config.path)
-            if target_path.exists():
-                issues.extend(self.validate_sidecars(target_path))
-                dangling.extend(self.validate_mesh_integrity(target_path))
+            for path_str in index_config.paths:
+                target_path = Path(path_str)
+                if target_path.exists():
+                    issues.extend(self.validate_sidecars(target_path))
+                    dangling.extend(self.validate_mesh_integrity(target_path))
         problems = [*issues, *dangling]
         if problems:
             raise RuntimeError("\n".join(problems))

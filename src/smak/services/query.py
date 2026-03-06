@@ -30,14 +30,24 @@ class QueryService:
     def _build_resolver_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
         """Return a copy of *metadata* with 'source' made absolute for sidecar lookup.
 
-        The stored source path is relative to the index root. The relation resolver
+        The stored source path is relative to one of the index roots. The relation resolver
         needs an absolute path to locate the .sidecar.yaml file on disk.
         """
         resolver_metadata = dict(metadata)
         if "source" in resolver_metadata:
-            resolver_metadata["source"] = str(
-                Path(self.index_config.path) / resolver_metadata["source"]
-            )
+            source = resolver_metadata["source"]
+            source_path = Path(source)
+            if not source_path.is_absolute():
+                # Try each index root to find the one containing this source
+                for path_str in self.index_config.paths:
+                    candidate = Path(path_str) / source_path
+                    if candidate.exists():
+                        resolver_metadata["source"] = str(candidate)
+                        break
+                else:
+                    resolver_metadata["source"] = str(
+                        Path(self.index_config.paths[0]) / source_path
+                    )
         return resolver_metadata
 
     def _get_payload_globally(self, uid: str) -> dict[str, Any] | None:

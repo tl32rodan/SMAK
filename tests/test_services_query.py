@@ -96,8 +96,8 @@ class TestQueryService(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = SmakConfig(
                 indices=[
-                    IndexConfig(name="source_code", description="source", path=tmp_dir),
-                    IndexConfig(name="issues", description="issues", path=tmp_dir),
+                    IndexConfig(name="source_code", description="source", paths=[tmp_dir]),
+                    IndexConfig(name="issues", description="issues", paths=[tmp_dir]),
                 ]
             )
 
@@ -146,8 +146,8 @@ class TestQueryService(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = SmakConfig(
                 indices=[
-                    IndexConfig(name="source_code", description="source", path=tmp_dir),
-                    IndexConfig(name="issues", description="issues", path=tmp_dir),
+                    IndexConfig(name="source_code", description="source", paths=[tmp_dir]),
+                    IndexConfig(name="issues", description="issues", paths=[tmp_dir]),
                 ]
             )
 
@@ -218,7 +218,7 @@ class TestQueryService(unittest.TestCase):
                 get_by_id=lambda related_uid: {"uid": related_uid, "content": related_uid},
             )
             config = SmakConfig(
-                indices=[IndexConfig(name="source_code", description="source", path=tmp_dir)]
+                indices=[IndexConfig(name="source_code", description="source", paths=[tmp_dir])]
             )
 
             payload = QueryService(
@@ -257,7 +257,7 @@ class TestQueryService(unittest.TestCase):
                 get_by_id=lambda related_uid: {"uid": related_uid, "content": related_uid},
             )
             config = SmakConfig(
-                indices=[IndexConfig(name="source_code", description="source", path=tmp_dir)]
+                indices=[IndexConfig(name="source_code", description="source", paths=[tmp_dir])]
             )
 
             payload = QueryService(
