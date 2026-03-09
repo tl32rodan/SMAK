@@ -22,7 +22,7 @@ class PerlParser:
     def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:
         original = content or ""
         cleaned = _clean_for_structure_scan(original)
-        abs_source = str(Path(source).resolve()) if source else None
+        abs_source = str(Path(source).absolute()) if source else None
 
         units: list[KnowledgeUnit] = []
         cursor = 0

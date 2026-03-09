@@ -14,7 +14,7 @@ class PythonParser:
 
     def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:
         tree = ast.parse(content or "")
-        abs_source = str(Path(source).resolve()) if source else None
+        abs_source = str(Path(source).absolute()) if source else None
         units: list[KnowledgeUnit] = []
 
         class Visitor(ast.NodeVisitor):

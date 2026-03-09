@@ -28,7 +28,7 @@ class SimpleLineParser:
         normalized_content = (content or "").strip()
         if not normalized_content:
             return []
-        origin = str(Path(source).resolve()) if source else "content"
+        origin = str(Path(source).absolute()) if source else "content"
         symbol = "*"
         return [
             KnowledgeUnit(
