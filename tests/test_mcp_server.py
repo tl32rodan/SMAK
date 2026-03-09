@@ -160,22 +160,52 @@ class TestMcpServer(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             server = self._create_server(tmp_dir)
-            sidecar_cls.return_value.update.return_value = {"applied_updates": 1}
+            sidecar_cls.return_value.update.return_value = {"total_symbols": 1}
             source_file = Path(tmp_dir) / "workspace" / "src" / "a.py"
             source_file.parent.mkdir(parents=True)
             source_file.write_text("print('ok')\n", encoding="utf-8")
-            updates = [{"symbol": "x"}]
 
             result = server.update_sidecar(
                 config="mock_config",
                 file_path="a.py",
-                updates=updates,
+                symbol="x",
+                intent="test intent",
             )
 
-            self.assertEqual(result["applied_updates"], 1)
+            self.assertEqual(result["total_symbols"], 1)
             sidecar_cls.return_value.update.assert_called_once_with(
                 source_file,
-                '[{"symbol": "x"}]',
+                symbol="x",
+                intent="test intent",
+                relations=None,
+            )
+
+    @patch("smak.mcp_server.initialize_embedding_dimensions", side_effect=lambda cfg, _: cfg)
+    @patch("smak.mcp_server.SidecarService")
+    def test_clear_sidecar_symbol_uses_resolver(
+        self,
+        sidecar_cls: MagicMock,
+        _: MagicMock,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            server = self._create_server(tmp_dir)
+            sidecar_cls.return_value.clear_symbol.return_value = {
+                "cleared_symbol": "x",
+                "remaining_symbols": 0,
+            }
+            source_file = Path(tmp_dir) / "workspace" / "src" / "a.py"
+            source_file.parent.mkdir(parents=True)
+            source_file.write_text("print('ok')\n", encoding="utf-8")
+
+            result = server.clear_sidecar_symbol(
+                config="mock_config",
+                file_path="a.py",
+                symbol="x",
+            )
+
+            self.assertEqual(result["cleared_symbol"], "x")
+            sidecar_cls.return_value.clear_symbol.assert_called_once_with(
+                source_file, "x"
             )
 
     def test_resolve_source_path_falls_back_to_unique_candidate(self) -> None:

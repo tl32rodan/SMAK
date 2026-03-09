@@ -18,12 +18,11 @@ _DOUBLE_QUOTE_REGEX = re.compile(r'"(?:\\.|[^"\\\n])*"')
 
 @dataclass
 class PerlParser:
-    root_path: str | None = None
 
     def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:
         original = content or ""
         cleaned = _clean_for_structure_scan(original)
-        rel_source = _relative_source(source, self.root_path)
+        abs_source = str(Path(source).absolute()) if source else None
 
         units: list[KnowledgeUnit] = []
         cursor = 0
@@ -43,10 +42,10 @@ class PerlParser:
             segment = original[match.start() : body_end + 1].strip()
             units.append(
                 KnowledgeUnit(
-                    uid=f"{rel_source}::{name}" if rel_source else name,
+                    uid=f"{abs_source}::{name}" if abs_source else name,
                     content=segment,
                     source_type="source_code",
-                    metadata={"language": "perl", "symbol": name, "source": rel_source},
+                    metadata={"language": "perl", "symbol": name, "source": abs_source},
                 )
             )
             cursor = body_end + 1
@@ -131,12 +130,3 @@ def _find_matching_brace(content: str, start_index: int) -> int | None:
     return None
 
 
-def _relative_source(source: str | None, root_path: str | None) -> str | None:
-    if source is None:
-        return None
-    if root_path is None:
-        return source
-    try:
-        return Path(source).resolve().relative_to(Path(root_path).resolve()).as_posix()
-    except ValueError:
-        return Path(source).as_posix()

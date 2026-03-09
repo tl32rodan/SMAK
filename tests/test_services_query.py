@@ -188,7 +188,7 @@ class TestQueryService(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            parser = PythonParser(root_path=str(workspace_root))
+            parser = PythonParser()
             parsed_units = parser.parse(source.read_text(encoding="utf-8"), source=str(source))
             target_unit = next(
                 unit

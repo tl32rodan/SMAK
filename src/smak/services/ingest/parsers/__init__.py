@@ -28,7 +28,7 @@ class SimpleLineParser:
         normalized_content = (content or "").strip()
         if not normalized_content:
             return []
-        origin = str(Path(source).resolve()) if source else "content"
+        origin = str(Path(source).absolute()) if source else "content"
         symbol = "*"
         return [
             KnowledgeUnit(
@@ -40,13 +40,12 @@ class SimpleLineParser:
         ]
 
 
-def get_parser_for_path(path: Path, root_path: Path | None = None) -> Parser:
-    _ = root_path
+def get_parser_for_path(path: Path) -> Parser:
     suffix = path.suffix.lower()
     if suffix == ".py":
-        return PythonParser(root_path=str(root_path) if root_path else None)
+        return PythonParser()
     if suffix in {".pl", ".pm", ".t"}:
-        return PerlParser(root_path=str(root_path) if root_path else None)
+        return PerlParser()
     if suffix in {".md", ".markdown", ".txt", ".csv", ".il"}:
         return SimpleLineParser()
     return NullParser()
