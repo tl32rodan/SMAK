@@ -5,7 +5,7 @@ description: SMAK (Semantic Mesh Augmented Kernel) - A semantic search and conte
 
 # SMAK Skill (Compact / Strict)
 
-## QUICK START (5 calls, common case)
+## QUICK START (4 calls, common case)
 
 > Goal: find code that handles a specific concern, then write intent metadata for it.
 
@@ -32,29 +32,23 @@ semantic_search(
 ```
 Copy `hits[0].exact_relative_path` verbatim from the result. Do not retype it.
 
-**Step 4 — Inspect symbols in that file**
+**Step 4 — Sync sidecar and write intent/relations per symbol**
 ```
-inspect_sidecar(
+# Full sync (creates sidecar if missing, preserves existing relations)
+update_sidecar(
     config="demo_flow_a",
     file_path="src/csv_editor.py",   ← exact_relative_path from step 3
     index="source_code"
 )
-# → ["CsvEditor", "CsvEditor.append_row", "CsvEditor.update_cell", "CsvEditor.read_rows"]
-```
 
-**Step 5 — Write intent and relations**
-```
+# Then update individual symbols
 update_sidecar(
     config="demo_flow_a",
-    file_path="src/csv_editor.py",   ← same path as step 4
-    updates=[
-        {
-            "symbol": "CsvEditor.update_cell",
-            "intent": "Rewrites entire file to update one cell. Raises IndexError on out-of-range row/col.",
-            "relations": ["csv-editor-known-issues"]
-        }
-    ],
-    index="source_code"
+    file_path="src/csv_editor.py",
+    index="source_code",
+    symbol="CsvEditor.update_cell",
+    intent="Rewrites entire file to update one cell. Raises IndexError on out-of-range row/col.",
+    relations=["csv-editor-known-issues"]
 )
 ```
 
@@ -99,8 +93,8 @@ registry.yaml                          ← pass --registry to MCP server
 - `refresh_knowledge(config, index="source_code", follow_symlinks=True)`
 - `semantic_search(config, query, index="source_code", top_k=5)`
 - `inspect_sidecar(config, file_path, index="source_code")`
-- `init_sidecar(config, file_path, index="source_code")`
-- `update_sidecar(config, file_path, updates, index="source_code")`
+- `update_sidecar(config, file_path, index="source_code", symbol=None, intent=None, relations=None)`
+- `clear_sidecar_symbol(config, file_path, symbol, index="source_code")`
 - `validate_mesh(config)`
 
 > `registry.yaml` (or an equivalent registry file passed via `--registry`) is **mandatory**. The MCP server fails fast when the registry is missing or empty.
@@ -109,7 +103,7 @@ registry.yaml                          ← pass --registry to MCP server
 - `smak init`
 - `smak ingest`
 - `smak query`
-- `smak sidecar init|update|inspect`
+- `smak sidecar update|clear|inspect`
 - `smak doctor`
 
 ---
@@ -189,7 +183,7 @@ SMAK uses **embedding-based semantic search**. Queries match on meaning and inte
 
 ## SIDECAR WORKFLOW (Step-by-Step)
 
-Use this workflow when you need to read, initialize, or update sidecar intent/relation metadata for a source file.
+Use this workflow when you need to read or update sidecar intent/relation metadata for a source file.
 
 ### Step 1 — Semantic search to find the target file
 ```
@@ -212,53 +206,65 @@ inspect_sidecar(
 ```
 → Returns: `["CsvEditor", "CsvEditor.append_row", "CsvEditor.update_cell", "CsvEditor.read_rows"]`
 
-> Always call `inspect_sidecar` before `update_sidecar` to confirm valid symbol UIDs.
+> Always call `inspect_sidecar` before `update_sidecar` (single-symbol mode) to confirm valid symbol UIDs.
 
-### Step 3 — Initialize sidecar stubs (only if sidecar does not exist yet)
+### Step 3 — Sync sidecar with current source symbols
 ```
-init_sidecar(
+update_sidecar(
   config="demo_flow_a",
   file_path="src/csv_editor.py",
   index="source_code"
 )
 ```
-→ Creates `.csv_editor.py.sidecar.yaml` next to the source file with one stub entry per symbol (empty `intent`, empty `relations`).
+→ Creates sidecar if it doesn't exist, or syncs it to match the current symbols in the source file.
+→ Existing `intent` and `relations` are **preserved** for symbols that still exist.
+→ New symbols get empty stubs.
+→ Returns: `{"file_path": "...", "sidecar_path": "...", "total_symbols": 4, "added": 0, "removed": 0}`
 
-Skip this step if the sidecar already exists — `update_sidecar` merges into existing records without overwriting unmentioned symbols.
+> If sync is blocked because a deleted symbol still has relations, the error message lists the exact `clear_sidecar_symbol` calls needed.
 
-### Step 4 — Update intent and relations
+### Step 4 — Update intent and relations per symbol
 ```
 update_sidecar(
   config="demo_flow_a",
   file_path="src/csv_editor.py",
   index="source_code",
-  updates=[
-    {
-      "symbol": "CsvEditor",
-      "intent": "Manages read, append, and in-place cell-update operations on CSV files.",
-      "relations": ["csv-editor-known-issues"]
-    },
-    {
-      "symbol": "CsvEditor.append_row",
-      "intent": "Appends a list of string values as a new row at the end of the CSV file.",
-      "relations": []
-    },
-    {
-      "symbol": "CsvEditor.update_cell",
-      "intent": "Rewrites the entire file to update one cell at the given row/column position. Raises IndexError when the row or column index is out of range (see ISSUE-001).",
-      "relations": ["csv-editor-known-issues"]
-    }
-  ]
+  symbol="CsvEditor",
+  intent="Manages read, append, and in-place cell-update operations on CSV files.",
+  relations=["csv-editor-known-issues"]
+)
+
+update_sidecar(
+  config="demo_flow_a",
+  file_path="src/csv_editor.py",
+  index="source_code",
+  symbol="CsvEditor.update_cell",
+  intent="Rewrites the entire file to update one cell at the given row/column position. Raises IndexError when the row or column index is out of range (see ISSUE-001).",
+  relations=["csv-editor-known-issues"]
 )
 ```
-→ Returns: `{"file_path": "...", "sidecar_path": "...", "applied_updates": 3, "total_symbols": 4}`
+→ Returns: `{"file_path": "...", "sidecar_path": "...", "total_symbols": 4}`
 
-**`updates` parameter rules:**
-- Each entry **must** have `"symbol"` — the UID as returned by `inspect_sidecar`.
-- `"intent"` *(optional str)* — human-readable description of what the symbol does.
-- `"relations"` *(optional list[str])* — UIDs of related entities (other symbols, issue UIDs, doc UIDs).
-- Unmentioned symbols in the sidecar are left unchanged.
-- Unmentioned fields (`intent` or `relations`) within an entry are left unchanged.
+**`update_sidecar` modes:**
+
+| Mode | When | What happens |
+|---|---|---|
+| Full sync (no `symbol`) | Create/sync sidecar | Creates if missing; preserves existing metadata; blocks removal of symbols with relations |
+| Single-symbol (`symbol` provided) | Update one symbol | Updates only `intent` and/or `relations` for that symbol; at least one must be given |
+
+### Step 5 — Clear a symbol (if needed before sync)
+
+If sync fails because a removed symbol still has relations, clear it first:
+```
+clear_sidecar_symbol(
+  config="demo_flow_a",
+  file_path="src/csv_editor.py",
+  symbol="CsvEditor.old_method",
+  index="source_code"
+)
+```
+→ Removes the symbol entry from the sidecar regardless of its relations.
+→ Then re-run `update_sidecar` (full sync) to complete the cleanup.
 
 ---
 
@@ -268,7 +274,6 @@ Sidecar files are stored on disk as hidden YAML files next to the source file.
 
 **Naming convention:**
 - Source file `src/csv_editor.py` → sidecar `src/.csv_editor.py.sidecar.yaml`
-- Directory `src/` → sidecar `src/.sidecar.yaml`
 
 **Format:**
 ```yaml
@@ -311,8 +316,9 @@ When `semantic_search` returns a hit, SMAK automatically loads the sidecar for t
 4. Choose one concrete hit and copy `exact_relative_path` exactly.
 5. Use sidecar tools in order as needed (see **Sidecar Workflow** above):
    - `inspect_sidecar` to verify symbol UIDs available for that file.
-   - `init_sidecar` to scaffold sidecar entries (only if sidecar does not exist yet).
-   - `update_sidecar` to write `intent` / `relations` updates.
+   - `update_sidecar` (no `symbol`) to sync the sidecar with current source symbols.
+   - `update_sidecar` (with `symbol`) to write `intent` / `relations` for individual symbols.
+   - `clear_sidecar_symbol` to remove a symbol entry before re-syncing (only when sync is blocked).
 
 ### sidecar parameter rule (Strict)
 - `file_path MUST EXACTLY match exact_relative_path from semantic_search hits`.
