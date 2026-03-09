@@ -29,7 +29,10 @@ class SidecarService:
     def inspect(self, path: Path) -> list[str]:
         parser = get_parser_for_path(path)
         content = _read_text_with_fallback(path)
-        return [unit.uid for unit in parser.parse(content, source=str(path))]
+        return [
+            unit.metadata.get("symbol", unit.uid)
+            for unit in parser.parse(content, source=str(path))
+        ]
 
     def update(
         self,

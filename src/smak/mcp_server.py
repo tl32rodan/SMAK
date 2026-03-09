@@ -429,6 +429,36 @@ class SmakMcpServer:
         service = SidecarService(sidecar_store=YAMLSidecarStore())
         return service.clear_symbol(source_path, symbol)
 
+    def lookup_symbol(
+        self,
+        config: str,
+        uid: str,
+        index: str = "source_code",
+    ) -> dict[str, Any]:
+        """Check whether a UID exists in the vector store.
+
+        Args:
+            config: Registry key that identifies the project configuration.
+            uid: The full UID to look up (format: ``{absolute_path}::{symbol}``).
+            index: Name of the index to query.  Defaults to ``"source_code"``.
+
+        Returns:
+            A dict with ``found`` (bool), ``uid``, and — when found —
+            ``content`` and ``metadata``.
+        """
+
+        cfg = self._load_config(config)
+        vector_store, _ = self._load_index_vector_store(cfg, index)
+        payload = vector_store.get_by_id(uid)
+        if isinstance(payload, dict):
+            return {
+                "found": True,
+                "uid": uid,
+                "content": payload.get("content"),
+                "metadata": payload.get("metadata"),
+            }
+        return {"found": False, "uid": uid}
+
     def validate_mesh(self, config: str) -> str:
         """Run mesh/sidecar integrity checks in-process.
 
@@ -721,6 +751,39 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
             config=config,
             file_path=file_path,
             symbol=symbol,
+            index=index,
+        )
+
+    @mcp.tool()
+    def lookup_symbol(
+        config: str,
+        uid: str,
+        index: str = "source_code",
+    ) -> dict[str, Any]:
+        """Check whether a specific UID exists in the SMAK vector store.
+
+        Use this to verify that a symbol has been ingested before relying on
+        it in ``semantic_search`` or sidecar ``relations``.
+
+        The UID format is ``{absolute_path}::{symbol_name}`` — copy the
+        ``uid`` value from a ``semantic_search`` hit or construct it from
+        ``inspect_sidecar`` output.
+
+        Args:
+            config: Registry key identifying the project (see
+                ``list_available_configs``).
+            uid: Full UID to look up
+                (e.g. ``"/home/user/project/src/foo.py::ClassName"``).
+            index: Index to query.  Defaults to ``"source_code"``.
+
+        Returns:
+            A dict with ``found`` (bool) and ``uid``.  When found, also
+            includes ``content`` and ``metadata``.
+        """
+
+        return smak_server.lookup_symbol(
+            config=config,
+            uid=uid,
             index=index,
         )
 

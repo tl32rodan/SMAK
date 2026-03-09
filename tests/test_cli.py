@@ -196,7 +196,7 @@ class TestCli(unittest.TestCase):
             self.assertEqual(result.exit_code, 0)
             self.assertIn("[\n    ", result.output)
             payload = json.loads(result.output)
-            self.assertIn("::hello", payload[0])
+            self.assertEqual(payload[0], "hello")
 
     def test_sidecar_update_full_sync_creates_sidecar(self) -> None:
         runner = CliRunner()

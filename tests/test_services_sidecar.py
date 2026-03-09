@@ -67,7 +67,7 @@ class TestSidecarService(unittest.TestCase):
                 source,
                 [
                     {"name": hello_uid, "intent": "", "relations": []},
-                    {"name": "main.py::old_func", "intent": "old", "relations": ["issue-2"]},
+                    {"name": "old_func", "intent": "old", "relations": ["issue-2"]},
                 ],
             )
             service = SidecarService(sidecar_store=store)
@@ -77,7 +77,7 @@ class TestSidecarService(unittest.TestCase):
 
             msg = str(ctx.exception)
             self.assertIn("Cannot remove symbols with existing relations", msg)
-            self.assertIn('--symbol "main.py::old_func"', msg)
+            self.assertIn('--symbol "old_func"', msg)
 
     def test_update_removes_symbol_without_relations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -92,7 +92,7 @@ class TestSidecarService(unittest.TestCase):
                 source,
                 [
                     {"name": hello_uid, "intent": "", "relations": []},
-                    {"name": "main.py::old_func", "intent": "old", "relations": []},
+                    {"name": "old_func", "intent": "old", "relations": []},
                 ],
             )
             service = SidecarService(sidecar_store=store)
@@ -103,7 +103,7 @@ class TestSidecarService(unittest.TestCase):
             self.assertEqual(result["total_symbols"], 1)
             symbols = store.load_symbols_for_source(source)
             names = [s["name"] for s in symbols]
-            self.assertNotIn("main.py::old_func", names)
+            self.assertNotIn("old_func", names)
 
     def test_update_single_symbol_intent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -112,7 +112,7 @@ class TestSidecarService(unittest.TestCase):
             service = SidecarService()
 
             result = service.update(
-                source, symbol="main.py::hello", intent="greeting function"
+                source, symbol="hello", intent="greeting function"
             )
 
             self.assertEqual(result["total_symbols"], 1)
@@ -127,11 +127,11 @@ class TestSidecarService(unittest.TestCase):
             store = YAMLSidecarStore()
             store.save_symbols_for_source(
                 source,
-                [{"name": "main.py::hello", "intent": "greet", "relations": []}],
+                [{"name": "hello", "intent": "greet", "relations": []}],
             )
             service = SidecarService(sidecar_store=store)
 
-            service.update(source, symbol="main.py::hello", relations=["issue-1"])
+            service.update(source, symbol="hello", relations=["issue-1"])
 
             symbols = store.load_symbols_for_source(source)
             self.assertEqual(symbols[0]["relations"], ["issue-1"])
@@ -144,7 +144,7 @@ class TestSidecarService(unittest.TestCase):
             service = SidecarService()
 
             with self.assertRaises(ValueError) as ctx:
-                service.update(source, symbol="main.py::hello")
+                service.update(source, symbol="hello")
 
             self.assertIn("--intent or --relations", str(ctx.exception))
 
@@ -156,19 +156,19 @@ class TestSidecarService(unittest.TestCase):
             store.save_symbols_for_source(
                 source,
                 [
-                    {"name": "main.py::hello", "intent": "", "relations": ["issue-1"]},
-                    {"name": "main.py::world", "intent": "", "relations": []},
+                    {"name": "hello", "intent": "", "relations": ["issue-1"]},
+                    {"name": "world", "intent": "", "relations": []},
                 ],
             )
             service = SidecarService(sidecar_store=store)
 
-            result = service.clear_symbol(source, "main.py::hello")
+            result = service.clear_symbol(source, "hello")
 
-            self.assertEqual(result["cleared_symbol"], "main.py::hello")
+            self.assertEqual(result["cleared_symbol"], "hello")
             self.assertEqual(result["remaining_symbols"], 1)
             symbols = store.load_symbols_for_source(source)
             self.assertEqual(len(symbols), 1)
-            self.assertEqual(symbols[0]["name"], "main.py::world")
+            self.assertEqual(symbols[0]["name"], "world")
 
     def test_clear_symbol_not_found(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -177,12 +177,12 @@ class TestSidecarService(unittest.TestCase):
             store = YAMLSidecarStore()
             store.save_symbols_for_source(
                 source,
-                [{"name": "main.py::hello", "intent": "", "relations": []}],
+                [{"name": "hello", "intent": "", "relations": []}],
             )
             service = SidecarService(sidecar_store=store)
 
             with self.assertRaises(ValueError) as ctx:
-                service.clear_symbol(source, "main.py::nonexistent")
+                service.clear_symbol(source, "nonexistent")
 
             self.assertIn("not found", str(ctx.exception))
 
