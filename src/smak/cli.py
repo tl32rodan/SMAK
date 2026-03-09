@@ -166,16 +166,6 @@ def sidecar() -> None:
     """Manage sidecar files."""
 
 
-@sidecar.command("init")
-@click.argument("target_path", type=click.Path(path_type=Path))
-def sidecar_init(target_path: Path) -> None:
-    if not target_path.exists():
-        raise click.ClickException(f"Path not found: {target_path}")
-    sidecar_store = YAMLSidecarStore()
-    output = SidecarService(sidecar_store).init(target_path)
-    click.echo(f"Wrote sidecar template to {output}")
-
-
 @sidecar.command("inspect")
 @click.argument("file_path", type=click.Path(path_type=Path))
 @click.option("--json-output", is_flag=True, help="Emit machine-readable JSON")
@@ -194,14 +184,38 @@ def sidecar_inspect(file_path: Path, json_output: bool) -> None:
 
 @sidecar.command("update")
 @click.argument("file_path", type=click.Path(path_type=Path))
-@click.option("--updates", required=True, help="JSON list of symbol updates")
-def sidecar_update(file_path: Path, updates: str) -> None:
+@click.option("--symbol", default=None, help="Target a single symbol by name")
+@click.option("--intent", default=None, help="Intent description for the symbol")
+@click.option("--relations", default=None, help="Comma-separated list of relation UIDs")
+def sidecar_update(
+    file_path: Path,
+    symbol: str | None,
+    intent: str | None,
+    relations: str | None,
+) -> None:
+    if not file_path.exists() or not file_path.is_file():
+        raise click.ClickException(f"Source file not found: {file_path}")
+    parsed_relations = None
+    if relations is not None:
+        parsed_relations = [r.strip() for r in relations.split(",") if r.strip()]
+    try:
+        result = SidecarService().update(
+            file_path, symbol=symbol, intent=intent, relations=parsed_relations
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    output_str = json.dumps(result, ensure_ascii=False, indent=4)
+    click.echo(output_str.encode("utf-8"))
+
+
+@sidecar.command("clear")
+@click.argument("file_path", type=click.Path(path_type=Path))
+@click.option("--symbol", required=True, help="Symbol name to remove from sidecar")
+def sidecar_clear(file_path: Path, symbol: str) -> None:
     if not file_path.exists() or not file_path.is_file():
         raise click.ClickException(f"Source file not found: {file_path}")
     try:
-        result = SidecarService().update(file_path, updates)
-    except json.JSONDecodeError as exc:
-        raise click.ClickException(f"Invalid updates JSON: {exc}") from exc
+        result = SidecarService().clear_symbol(file_path, symbol)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
     output_str = json.dumps(result, ensure_ascii=False, indent=4)
@@ -239,7 +253,7 @@ __all__ = [
     "main",
     "query_command",
     "sidecar",
-    "sidecar_init",
+    "sidecar_clear",
     "sidecar_inspect",
     "sidecar_update",
     "doctor",

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -356,80 +355,79 @@ class SmakMcpServer:
         service = SidecarService(sidecar_store=YAMLSidecarStore())
         return service.inspect(source_path)
 
-    def init_sidecar(
-        self,
-        config: str,
-        file_path: str,
-        index: str = "source_code",
-    ) -> str:
-        """Scaffold a sidecar YAML for a source file or directory.
-
-        For a **file**, creates a ``.<file>.sidecar.yaml`` next to the source
-        containing one stub entry per parsed symbol.
-
-        For a **directory**, creates a single ``.sidecar.yaml`` inside the
-        directory covering every non-sidecar source file found recursively.
-
-        Existing sidecar files are overwritten.
-
-        Args:
-            config: Registry key that identifies the project configuration.
-            file_path: Path to the source file or directory. Prefer an
-                absolute path to minimize agent cognitive overhead; relative
-                paths are still accepted and resolved from the index root.
-            index: Name of the index whose root is used to resolve relative
-                paths.  Defaults to ``"source_code"``.
-
-        Returns:
-            Absolute path to the created sidecar file as a string.
-        """
-
-        cfg = self._load_config(config)
-        index_config = self._get_index_config(cfg, index)
-        source_path = self._resolve_source_path(config, index, index_config, file_path)
-        service = SidecarService(sidecar_store=YAMLSidecarStore())
-        output = service.init(source_path)
-        return str(output)
-
     def update_sidecar(
         self,
         config: str,
         file_path: str,
-        updates: list[dict[str, Any]],
         index: str = "source_code",
+        symbol: str | None = None,
+        intent: str | None = None,
+        relations: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Merge metadata updates into the sidecar file for a source file.
+        """Sync or update sidecar metadata for a source file.
 
-        Each entry in *updates* must contain a ``"symbol"`` key whose value
-        matches a UID in the sidecar.  Optional keys ``"intent"`` (str) and
-        ``"relations"`` (list[str]) are merged into the existing record.
-        Missing sidecar fields are left unchanged.
+        **Full sync** (no ``symbol``): parses the source file and creates or
+        updates the sidecar so that it contains exactly the symbols currently
+        in the source.  Existing ``intent`` and ``relations`` are preserved.
+        If a symbol would be removed but still has relations, the operation
+        fails and lists the ``clear_sidecar_symbol`` calls needed first.
+
+        **Single-symbol update** (``symbol`` provided): updates only the
+        specified symbol's ``intent`` and/or ``relations``.
 
         Args:
             config: Registry key that identifies the project configuration.
             file_path: Path to the source file whose sidecar should be
-                updated. Prefer an absolute path to minimize agent cognitive
-                overhead; relative paths are still accepted and resolved from
-                the index root.
-            updates: List of update objects.  Each object must have:
-
-                * ``symbol`` *(str, required)* — UID of the target symbol.
-                * ``intent`` *(str, optional)* — New intent description.
-                * ``relations`` *(list[str], optional)* — New relation list.
-
-            index: Name of the index whose root is used to resolve relative
-                paths.  Defaults to ``"source_code"``.
+                updated.  Absolute paths are strongly recommended.
+            index: Index whose root resolves relative paths.  Defaults to
+                ``"source_code"``.
+            symbol: UID of a single symbol to update.  When omitted the full
+                sync mode is used instead.
+            intent: New intent description (only with ``symbol``).
+            relations: New relation list (only with ``symbol``).
 
         Returns:
-            A dict with keys ``file_path``, ``sidecar_path``,
-            ``applied_updates``, and ``total_symbols`` describing the result.
+            A dict describing the result of the operation.
         """
 
         cfg = self._load_config(config)
         index_config = self._get_index_config(cfg, index)
         source_path = self._resolve_source_path(config, index, index_config, file_path)
         service = SidecarService(sidecar_store=YAMLSidecarStore())
-        return service.update(source_path, json.dumps(updates, ensure_ascii=False))
+        return service.update(
+            source_path, symbol=symbol, intent=intent, relations=relations
+        )
+
+    def clear_sidecar_symbol(
+        self,
+        config: str,
+        file_path: str,
+        symbol: str,
+        index: str = "source_code",
+    ) -> dict[str, Any]:
+        """Remove a single symbol entry from a sidecar file.
+
+        Use this to clear a symbol that has relations before running a full
+        ``update_sidecar`` sync, which would otherwise refuse to delete it.
+
+        Args:
+            config: Registry key that identifies the project configuration.
+            file_path: Path to the source file whose sidecar should be
+                modified.  Absolute paths are strongly recommended.
+            symbol: UID of the symbol to remove.
+            index: Index whose root resolves relative paths.  Defaults to
+                ``"source_code"``.
+
+        Returns:
+            A dict with ``file_path``, ``sidecar_path``, ``cleared_symbol``,
+            and ``remaining_symbols``.
+        """
+
+        cfg = self._load_config(config)
+        index_config = self._get_index_config(cfg, index)
+        source_path = self._resolve_source_path(config, index, index_config, file_path)
+        service = SidecarService(sidecar_store=YAMLSidecarStore())
+        return service.clear_symbol(source_path, symbol)
 
     def validate_mesh(self, config: str) -> str:
         """Run mesh/sidecar integrity checks in-process.
@@ -614,8 +612,7 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         of every discovered code unit.  No files are written.
 
         **Always call this before ``update_sidecar``** to confirm which symbol
-        UIDs are valid for the target file.  Passing an unrecognised symbol to
-        ``update_sidecar`` will silently skip that entry.
+        UIDs are valid for the target file.
 
         Args:
             config: Registry key identifying the project (see
@@ -633,8 +630,8 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
             Example: ``["CsvEditor", "CsvEditor.append_row",
             "CsvEditor.update_cell", "CsvEditor.read_rows"]``
 
-            Use these exact strings as the ``"symbol"`` key in
-            ``update_sidecar`` update entries.
+            Use these exact strings as the ``symbol`` argument in
+            ``update_sidecar`` calls.
         """
 
         return smak_server.inspect_sidecar(
@@ -644,116 +641,86 @@ def build_mcp_server(registry_path: str | Path) -> FastMCP:
         )
 
     @mcp.tool()
-    def init_sidecar(
-        config: str,
-        file_path: str,
-        index: str = "source_code",
-    ) -> str:
-        """Create or overwrite a sidecar YAML stub for a file or directory.
-
-        Parses *file_path* (or every source file inside a directory) and
-        writes stub sidecar entries with empty ``intent`` and ``relations``
-        fields.  Populate those fields afterwards with ``update_sidecar``.
-
-        **WARNING — destructive operation:** if a sidecar file already
-        exists, it is overwritten and all existing ``intent`` and
-        ``relations`` content is erased.  Only call ``init_sidecar`` when
-        bootstrapping a file that has no sidecar yet, or when you
-        intentionally want to reset all metadata to empty stubs.  To
-        partially update existing metadata, use ``update_sidecar`` instead.
-
-        Args:
-            config: Registry key identifying the project (see
-                ``list_available_configs``).
-            file_path: Path to a source file or directory. Absolute paths
-                are strongly recommended to reduce agent ambiguity; relative
-                paths are still supported and resolved against the index root
-                folder.
-            index: Index whose root resolves relative paths.  Defaults to
-                ``"source_code"``.
-
-        Returns:
-            Absolute path to the created sidecar file as a string.
-        """
-
-        return smak_server.init_sidecar(
-            config=config,
-            file_path=file_path,
-            index=index,
-        )
-
-    @mcp.tool()
     def update_sidecar(
         config: str,
         file_path: str,
-        updates: list[dict[str, Any]],
         index: str = "source_code",
+        symbol: str | None = None,
+        intent: str | None = None,
+        relations: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Merge intent and relation metadata into a sidecar file.
+        """Sync or update sidecar metadata for a source file.
 
-        Each item in *updates* targets one symbol by UID and supplies new
-        values for ``intent`` and/or ``relations``.  Fields not mentioned in
-        an update object are left unchanged.  Symbols not mentioned in
-        *updates* are left untouched in the sidecar.
+        **Full sync mode** (omit ``symbol``): parses the source file and
+        creates or updates the sidecar so it contains exactly the symbols
+        currently present in the source.  Existing ``intent`` and
+        ``relations`` values are preserved for symbols that still exist.
+        New symbols get empty stubs.  If a symbol would be removed but still
+        has relations, the call fails with an error listing the
+        ``clear_sidecar_symbol`` calls needed first.
 
-        **Prerequisite:** call ``inspect_sidecar`` first to get the valid
-        symbol UIDs for the file.  An unrecognised ``"symbol"`` value will
-        be silently skipped.
+        **Single-symbol mode** (provide ``symbol``): updates only the named
+        symbol's ``intent`` and/or ``relations``.  At least one of
+        ``intent`` or ``relations`` must be supplied.
 
         Args:
             config: Registry key identifying the project (see
                 ``list_available_configs``).
             file_path: Path to the source file whose sidecar should be
-                updated. Use the ``exact_relative_path`` returned by
-                ``semantic_search`` to avoid path errors. Absolute paths are
-                strongly recommended; relative paths are resolved against the
-                index root folder.
-            updates: List of update objects.  Each object must include:
-
-                * ``symbol`` *(str, required)* — UID of the target symbol
-                  exactly as returned by ``inspect_sidecar``.
-                * ``intent`` *(str, optional)* — Human-readable description
-                  of what the symbol does / why it exists.
-                * ``relations`` *(list[str], optional)* — UIDs of related
-                  entities (other code symbols, issue UIDs, doc UIDs).
-
-                Example::
-
-                    updates=[
-                        {
-                            "symbol": "CsvEditor",
-                            "intent": "Manages read, append, and in-place cell-update operations.",
-                            "relations": ["csv-editor-known-issues"]
-                        },
-                        {
-                            "symbol": "CsvEditor.update_cell",
-                            "intent": "Rewrites the entire file to update one cell. Raises IndexError on out-of-range.",
-                            "relations": ["csv-editor-known-issues"]
-                        },
-                        {
-                            "symbol": "CsvEditor.append_row",
-                            "intent": "Appends a list of string values as a new row at the end of the CSV file.",
-                            "relations": []
-                        }
-                    ]
-
+                updated.  Absolute paths are strongly recommended; relative
+                paths are resolved against the index root folder.
             index: Index whose root resolves relative paths.  Defaults to
                 ``"source_code"``.
+            symbol: UID of a single symbol to update.  When omitted the full
+                sync mode is used.
+            intent: New intent description (only used with ``symbol``).
+            relations: New relation list (only used with ``symbol``).
 
         Returns:
-            A dict with the following keys:
-
-            * ``file_path`` — absolute path to the source file.
-            * ``sidecar_path`` — absolute path to the updated sidecar file.
-            * ``applied_updates`` — number of update entries processed.
-            * ``total_symbols`` — total symbol count in the sidecar after the
-              update.
+            A dict describing the result of the operation.
         """
 
         return smak_server.update_sidecar(
             config=config,
             file_path=file_path,
-            updates=updates,
+            index=index,
+            symbol=symbol,
+            intent=intent,
+            relations=relations,
+        )
+
+    @mcp.tool()
+    def clear_sidecar_symbol(
+        config: str,
+        file_path: str,
+        symbol: str,
+        index: str = "source_code",
+    ) -> dict[str, Any]:
+        """Remove a symbol entry from a sidecar file.
+
+        Deletes the named symbol from the sidecar regardless of whether it
+        has relations.  Use this before ``update_sidecar`` (full sync) when
+        the sync would otherwise refuse to remove a symbol that still
+        carries relation metadata.
+
+        Args:
+            config: Registry key identifying the project (see
+                ``list_available_configs``).
+            file_path: Path to the source file whose sidecar should be
+                modified.  Absolute paths are strongly recommended.
+            symbol: Exact UID of the symbol to remove from the sidecar.
+            index: Index whose root resolves relative paths.  Defaults to
+                ``"source_code"``.
+
+        Returns:
+            A dict with ``file_path``, ``sidecar_path``,
+            ``cleared_symbol``, and ``remaining_symbols``.
+        """
+
+        return smak_server.clear_sidecar_symbol(
+            config=config,
+            file_path=file_path,
+            symbol=symbol,
             index=index,
         )
 

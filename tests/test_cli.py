@@ -198,21 +198,56 @@ class TestCli(unittest.TestCase):
             payload = json.loads(result.output)
             self.assertIn("::hello", payload[0])
 
-    def test_sidecar_update_merges_metadata(self) -> None:
+    def test_sidecar_update_full_sync_creates_sidecar(self) -> None:
         runner = CliRunner()
         with tempfile.TemporaryDirectory() as tmp_dir:
             source = Path(tmp_dir) / "example.py"
             source.write_text("def hello():\n    return True\n", encoding="utf-8")
             cli = importlib.import_module("smak.cli")
-            updates = json.dumps(
-                [{"symbol": "example.py::hello", "intent": "greeting", "relations": ["issue:1"]}]
-            )
+            result = runner.invoke(cli.main, ["sidecar", "update", str(source)])
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn('"total_symbols"', result.output)
+            self.assertTrue((Path(tmp_dir) / ".example.py.sidecar.yaml").exists())
+
+    def test_sidecar_update_single_symbol(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "example.py"
+            source.write_text("def hello():\n    return True\n", encoding="utf-8")
+            cli = importlib.import_module("smak.cli")
             result = runner.invoke(
-                cli.main, ["sidecar", "update", str(source), "--updates", updates]
+                cli.main,
+                [
+                    "sidecar", "update", str(source),
+                    "--symbol", "example.py::hello",
+                    "--intent", "greeting",
+                    "--relations", "issue:1",
+                ],
             )
             self.assertEqual(result.exit_code, 0)
-            self.assertIn('{\n    "file_path"', result.output)
+            self.assertIn('"total_symbols"', result.output)
             self.assertTrue((Path(tmp_dir) / ".example.py.sidecar.yaml").exists())
+
+    def test_sidecar_clear_removes_symbol(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "example.py"
+            source.write_text("def hello():\n    return True\n", encoding="utf-8")
+            cli = importlib.import_module("smak.cli")
+            runner.invoke(
+                cli.main,
+                [
+                    "sidecar", "update", str(source),
+                    "--symbol", "example.py::hello",
+                    "--intent", "greeting",
+                ],
+            )
+            result = runner.invoke(
+                cli.main,
+                ["sidecar", "clear", str(source), "--symbol", "example.py::hello"],
+            )
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn('"cleared_symbol"', result.output)
 
     def test_query_command_outputs_structured_json(self) -> None:
         runner = CliRunner()

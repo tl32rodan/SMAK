@@ -1,48 +1,190 @@
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from smak.services.sidecar import SidecarService
+from smak.sidecar.store import YAMLSidecarStore
+from smak.utils.yaml import safe_dump
 
 
 class TestSidecarService(unittest.TestCase):
-    def test_sidecar_service_update(self) -> None:
+    def test_update_creates_sidecar_when_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             source = Path(tmp_dir) / "main.py"
             source.write_text("def hello():\n  return True\n", encoding="utf-8")
             service = SidecarService()
-            result = service.update(
-                source, json.dumps([{"symbol": "main.py::hello", "relations": ["issue-1"]}])
-            )
-            self.assertEqual(result["applied_updates"], 1)
 
+            result = service.update(source)
 
-    def test_sidecar_service_init_directory_writes_hidden_sidecar(self) -> None:
+            self.assertEqual(result["total_symbols"], 1)
+            self.assertEqual(result["added"], 1)
+            self.assertEqual(result["removed"], 0)
+            sidecar = Path(tmp_dir) / ".main.py.sidecar.yaml"
+            self.assertTrue(sidecar.exists())
+
+    def test_update_preserves_existing_relations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            source = root / "a.py"
+            source = Path(tmp_dir) / "main.py"
+            source.write_text(
+                "def hello():\n  return True\ndef world():\n  pass\n",
+                encoding="utf-8",
+            )
+            # First, find out the actual UIDs the parser produces
+            service = SidecarService()
+            uids = service.inspect(source)
+            hello_uid = [u for u in uids if "hello" in u][0]
+
+            store = YAMLSidecarStore()
+            store.save_symbols_for_source(
+                source,
+                [
+                    {"name": hello_uid, "intent": "greet", "relations": ["issue-1"]},
+                ],
+            )
+            service = SidecarService(sidecar_store=store)
+
+            result = service.update(source)
+
+            self.assertEqual(result["total_symbols"], 2)
+            self.assertEqual(result["added"], 1)
+            symbols = store.load_symbols_for_source(source)
+            hello = next(s for s in symbols if s["name"] == hello_uid)
+            self.assertEqual(hello["intent"], "greet")
+            self.assertEqual(hello["relations"], ["issue-1"])
+
+    def test_update_blocks_removal_of_symbol_with_relations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+            service = SidecarService()
+            uids = service.inspect(source)
+            hello_uid = uids[0]
+
+            store = YAMLSidecarStore()
+            store.save_symbols_for_source(
+                source,
+                [
+                    {"name": hello_uid, "intent": "", "relations": []},
+                    {"name": "main.py::old_func", "intent": "old", "relations": ["issue-2"]},
+                ],
+            )
+            service = SidecarService(sidecar_store=store)
+
+            with self.assertRaises(ValueError) as ctx:
+                service.update(source)
+
+            msg = str(ctx.exception)
+            self.assertIn("Cannot remove symbols with existing relations", msg)
+            self.assertIn('--symbol "main.py::old_func"', msg)
+
+    def test_update_removes_symbol_without_relations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+            service = SidecarService()
+            uids = service.inspect(source)
+            hello_uid = uids[0]
+
+            store = YAMLSidecarStore()
+            store.save_symbols_for_source(
+                source,
+                [
+                    {"name": hello_uid, "intent": "", "relations": []},
+                    {"name": "main.py::old_func", "intent": "old", "relations": []},
+                ],
+            )
+            service = SidecarService(sidecar_store=store)
+
+            result = service.update(source)
+
+            self.assertEqual(result["removed"], 1)
+            self.assertEqual(result["total_symbols"], 1)
+            symbols = store.load_symbols_for_source(source)
+            names = [s["name"] for s in symbols]
+            self.assertNotIn("main.py::old_func", names)
+
+    def test_update_single_symbol_intent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
             source.write_text("def hello():\n  return True\n", encoding="utf-8")
             service = SidecarService()
 
-            output = service.init(root)
+            result = service.update(
+                source, symbol="main.py::hello", intent="greeting function"
+            )
 
-            self.assertEqual(output, root / ".sidecar.yaml")
-            self.assertTrue(output.exists())
+            self.assertEqual(result["total_symbols"], 1)
+            store = YAMLSidecarStore()
+            symbols = store.load_symbols_for_source(source)
+            self.assertEqual(symbols[0]["intent"], "greeting function")
 
-
-    def test_sidecar_service_init_for_markdown_uses_wildcard_symbol_name(self) -> None:
+    def test_update_single_symbol_relations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            source = Path(tmp_dir) / "note.md"
-            source.write_text("# title\ncontent\n", encoding="utf-8")
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+            store = YAMLSidecarStore()
+            store.save_symbols_for_source(
+                source,
+                [{"name": "main.py::hello", "intent": "greet", "relations": []}],
+            )
+            service = SidecarService(sidecar_store=store)
+
+            service.update(source, symbol="main.py::hello", relations=["issue-1"])
+
+            symbols = store.load_symbols_for_source(source)
+            self.assertEqual(symbols[0]["relations"], ["issue-1"])
+            self.assertEqual(symbols[0]["intent"], "greet")
+
+    def test_update_single_symbol_requires_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
             service = SidecarService()
 
-            sidecar_path = service.init(source)
-            payload = sidecar_path.read_text(encoding="utf-8")
+            with self.assertRaises(ValueError) as ctx:
+                service.update(source, symbol="main.py::hello")
 
-            self.assertIn("- name: *", payload)
+            self.assertIn("--intent or --relations", str(ctx.exception))
+
+    def test_clear_symbol(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+            store = YAMLSidecarStore()
+            store.save_symbols_for_source(
+                source,
+                [
+                    {"name": "main.py::hello", "intent": "", "relations": ["issue-1"]},
+                    {"name": "main.py::world", "intent": "", "relations": []},
+                ],
+            )
+            service = SidecarService(sidecar_store=store)
+
+            result = service.clear_symbol(source, "main.py::hello")
+
+            self.assertEqual(result["cleared_symbol"], "main.py::hello")
+            self.assertEqual(result["remaining_symbols"], 1)
+            symbols = store.load_symbols_for_source(source)
+            self.assertEqual(len(symbols), 1)
+            self.assertEqual(symbols[0]["name"], "main.py::world")
+
+    def test_clear_symbol_not_found(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+            store = YAMLSidecarStore()
+            store.save_symbols_for_source(
+                source,
+                [{"name": "main.py::hello", "intent": "", "relations": []}],
+            )
+            service = SidecarService(sidecar_store=store)
+
+            with self.assertRaises(ValueError) as ctx:
+                service.clear_symbol(source, "main.py::nonexistent")
+
+            self.assertIn("not found", str(ctx.exception))
 
     def test_sidecar_read_text_fallback_replaces_invalid_bytes(self) -> None:
         from smak.services import sidecar as sidecar_module
@@ -50,7 +192,7 @@ class TestSidecarService(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "bad.py"
             path.write_bytes(b"ok\x80")
-            self.assertEqual(sidecar_module._read_text_with_fallback(path), "ok�")
+            self.assertEqual(sidecar_module._read_text_with_fallback(path), "ok\ufffd")
 
 
 if __name__ == "__main__":

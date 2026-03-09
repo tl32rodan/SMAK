@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -32,62 +31,94 @@ class SidecarService:
         content = _read_text_with_fallback(path)
         return [unit.uid for unit in parser.parse(content, source=str(path))]
 
-    def init(self, target_path: Path) -> Path:
-        if target_path.is_dir():
-            symbols: list[str] = []
-            for source_path in sorted(_iter_source_files(target_path)):
-                symbols.extend(self.inspect(source_path))
-            lines = ["symbols:"]
-            for symbol in symbols:
-                lines.extend([f"  - name: {symbol}", '    intent: ""', "    relations: []"])
-            payload = "\n".join(lines) + "\n" if symbols else "symbols: []\n"
-            output = target_path / ".sidecar.yaml"
-            output.write_text(payload, encoding="utf-8")
-            return output
+    def update(
+        self,
+        file_path: Path,
+        *,
+        symbol: str | None = None,
+        intent: str | None = None,
+        relations: list[str] | None = None,
+    ) -> dict[str, Any]:
+        if symbol is not None:
+            return self._update_single_symbol(file_path, symbol, intent, relations)
+        return self._update_full_sync(file_path)
 
-        parser = get_parser_for_path(target_path)
-        units = parser.parse(_read_text_with_fallback(target_path), source=str(target_path))
-        symbols = [
-            {
-                "name": str(unit.metadata.get("symbol", unit.uid)),
-                "intent": "",
-                "relations": [],
-            }
-            for unit in units
-        ]
-        return self.sidecar_store.save_symbols_for_source(target_path, symbols)
+    def _update_full_sync(self, file_path: Path) -> dict[str, Any]:
+        current_uids = set(self.inspect(file_path))
+        existing = self.sidecar_store.load_symbols_for_source(file_path)
+        existing_by_name: dict[str, dict[str, Any]] = {
+            e["name"]: e for e in existing if isinstance(e.get("name"), str)
+        }
 
-    def update(self, file_path: Path, updates: str) -> dict[str, Any]:
-        parsed_updates = json.loads(updates)
-        normalized = self._normalize_updates(parsed_updates)
+        deleted = set(existing_by_name.keys()) - current_uids
+        blocked = sorted(
+            name for name in deleted if existing_by_name[name].get("relations")
+        )
+        if blocked:
+            cmds = "\n".join(
+                f'  smak sidecar clear {file_path} --symbol "{name}"'
+                for name in blocked
+            )
+            raise ValueError(
+                f"Cannot remove symbols with existing relations. "
+                f"Clear them first:\n{cmds}"
+            )
+
+        merged: list[dict[str, Any]] = []
+        added = 0
+        for uid in sorted(current_uids):
+            if uid in existing_by_name:
+                merged.append(existing_by_name[uid])
+            else:
+                merged.append({"name": uid, "intent": "", "relations": []})
+                added += 1
+
+        sidecar_path = self.sidecar_store.save_symbols_for_source(file_path, merged)
+        return {
+            "file_path": str(file_path),
+            "sidecar_path": str(sidecar_path),
+            "total_symbols": len(merged),
+            "added": added,
+            "removed": len(deleted),
+        }
+
+    def _update_single_symbol(
+        self,
+        file_path: Path,
+        symbol: str,
+        intent: str | None,
+        relations: list[str] | None,
+    ) -> dict[str, Any]:
+        if intent is None and relations is None:
+            raise ValueError(
+                "At least one of --intent or --relations is required with --symbol."
+            )
+        update_entry: dict[str, Any] = {"name": symbol}
+        if intent is not None:
+            update_entry["intent"] = intent
+        if relations is not None:
+            update_entry["relations"] = relations
+
         sidecar_path, total_symbols = self.sidecar_store.merge_symbols_for_source(
-            file_path,
-            normalized,
+            file_path, [update_entry]
         )
         return {
             "file_path": str(file_path),
             "sidecar_path": str(sidecar_path),
-            "applied_updates": len(normalized),
             "total_symbols": total_symbols,
         }
 
-    def _normalize_updates(self, updates: Any) -> list[dict[str, Any]]:
-        if not isinstance(updates, list):
-            raise ValueError("'updates' must be a list.")
-        normalized = []
-        for entry in updates:
-            if not isinstance(entry, dict):
-                raise ValueError("Each update must be an object.")
-            symbol = entry.get("symbol")
-            if not isinstance(symbol, str) or not symbol:
-                raise ValueError("Each update requires a non-empty 'symbol'.")
-            record = {"name": symbol}
-            if "intent" in entry:
-                record["intent"] = str(entry.get("intent") or "")
-            if "relations" in entry:
-                relations = entry.get("relations")
-                if not isinstance(relations, list):
-                    raise ValueError("'relations' must be a list when provided.")
-                record["relations"] = [str(item) for item in relations]
-            normalized.append(record)
-        return normalized
+    def clear_symbol(self, file_path: Path, symbol_name: str) -> dict[str, Any]:
+        existing = self.sidecar_store.load_symbols_for_source(file_path)
+        filtered = [e for e in existing if e.get("name") != symbol_name]
+        if len(filtered) == len(existing):
+            raise ValueError(
+                f"Symbol '{symbol_name}' not found in sidecar for {file_path}"
+            )
+        sidecar_path = self.sidecar_store.save_symbols_for_source(file_path, filtered)
+        return {
+            "file_path": str(file_path),
+            "sidecar_path": str(sidecar_path),
+            "cleared_symbol": symbol_name,
+            "remaining_symbols": len(filtered),
+        }
