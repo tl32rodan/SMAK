@@ -67,13 +67,6 @@ def _source_mtime(path: Path) -> float:
 
 
 
-def _absolute_unit_id(unit_id: str, source_path: Path) -> str:
-    absolute_source = str(source_path.resolve())
-    if "::" in unit_id:
-        _, symbol = unit_id.split("::", 1)
-        return f"{absolute_source}::{symbol}"
-    return absolute_source
-
 def _unit_up_to_date(vector_store: object, unit_id: str, file_mtime: float) -> bool:
     get_by_id = getattr(vector_store, "get_by_id", None)
     if not callable(get_by_id):
@@ -133,7 +126,7 @@ class IngestService:
             source_key = _source_key(file_path, root_folder)
             with lock:
                 all_visited_sources.add(source_key)
-            parser = get_parser_for_path(file_path, root_path=root_folder)
+            parser = get_parser_for_path(file_path)
             content = _read_text_with_fallback(file_path)
             parsed_units = parser.parse(content, source=str(file_path))
             source_mtime = _source_mtime(file_path)
@@ -142,7 +135,7 @@ class IngestService:
                 and parsed_units
                 and _unit_up_to_date(
                     vector_store,
-                    _absolute_unit_id(parsed_units[0].uid, file_path),
+                    parsed_units[0].uid,
                     source_mtime,
                 )
             ):
@@ -161,7 +154,7 @@ class IngestService:
             for unit, vector in zip(result.units, result.embeddings):
                 node = node_class(
                     text=unit.content,
-                    id_=_absolute_unit_id(unit.uid, file_path),
+                    id_=unit.uid,
                     metadata={
                         "relations": list(unit.relations),
                         "meta": unit.metadata,

@@ -46,9 +46,9 @@ update_sidecar(
     config="demo_flow_a",
     file_path="src/csv_editor.py",
     index="source_code",
-    symbol="src/csv_editor.py::CsvEditor.update_cell",
+    symbol="/home/user/project/src/csv_editor.py::CsvEditor.update_cell",
     intent="Rewrites entire file to update one cell. Raises IndexError on out-of-range row/col.",
-    relations=["issues/csv-editor-known-issues.md::*"]
+    relations=["/home/user/project/issues/csv-editor-known-issues.md::*"]
 )
 ```
 
@@ -148,7 +148,7 @@ SMAK uses **embedding-based semantic search**. Queries match on meaning and inte
 {
   "hits": [
     {
-      "uid": "src/csv_editor.py::CsvEditor.update_cell",
+      "uid": "/home/user/project/src/csv_editor.py::CsvEditor.update_cell",
       "exact_relative_path": "src/csv_editor.py",
       "match_type": "semantic",
       "score": 0.89,
@@ -157,9 +157,9 @@ SMAK uses **embedding-based semantic search**. Queries match on meaning and inte
   ],
   "related_context": [
     {
-      "uid": "issues/csv-editor-known-issues.md::*",
+      "uid": "/home/user/project/issues/csv-editor-known-issues.md::*",
       "match_type": "relation",
-      "source_hit": "src/csv_editor.py::CsvEditor.update_cell",
+      "source_hit": "/home/user/project/src/csv_editor.py::CsvEditor.update_cell",
       "content": "..."
     }
   ]
@@ -167,7 +167,7 @@ SMAK uses **embedding-based semantic search**. Queries match on meaning and inte
 ```
 
 **Field reference:**
-- `uid` — globally unique identifier in format `{relative_path}::{symbol}`; use this value in sidecar `relations` lists
+- `uid` — globally unique identifier in format `{absolute_path}::{symbol}`; use this value in sidecar `relations` lists
 - `exact_relative_path` — copy this EXACTLY as `file_path` when calling sidecar tools; never rewrite or guess
 - `score` — similarity score returned by the underlying vector store; do not rely on absolute values or thresholds — the direction and scale vary by backend implementation
 - `match_type: "semantic"` — retrieved directly by vector search
@@ -194,7 +194,7 @@ semantic_search(
   top_k=3
 )
 ```
-→ Returns hit: `{"uid": "src/csv_editor.py::CsvEditor.append_row", "exact_relative_path": "src/csv_editor.py", "score": 0.89, ...}`
+→ Returns hit: `{"uid": "/home/user/project/src/csv_editor.py::CsvEditor.append_row", "exact_relative_path": "src/csv_editor.py", "score": 0.89, ...}`
 
 ### Step 2 — Inspect available symbol UIDs
 ```
@@ -204,7 +204,7 @@ inspect_sidecar(
   index="source_code"
 )
 ```
-→ Returns: `["src/csv_editor.py::CsvEditor", "src/csv_editor.py::CsvEditor.append_row", "src/csv_editor.py::CsvEditor.update_cell", "src/csv_editor.py::CsvEditor.read_rows"]`
+→ Returns: `["/home/user/project/src/csv_editor.py::CsvEditor", "/home/user/project/src/csv_editor.py::CsvEditor.append_row", "/home/user/project/src/csv_editor.py::CsvEditor.update_cell", "/home/user/project/src/csv_editor.py::CsvEditor.read_rows"]`
 
 > Always call `inspect_sidecar` before `update_sidecar` (single-symbol mode) to confirm valid symbol UIDs.
 
@@ -229,18 +229,18 @@ update_sidecar(
   config="demo_flow_a",
   file_path="src/csv_editor.py",
   index="source_code",
-  symbol="src/csv_editor.py::CsvEditor",
+  symbol="/home/user/project/src/csv_editor.py::CsvEditor",
   intent="Manages read, append, and in-place cell-update operations on CSV files.",
-  relations=["issues/csv-editor-known-issues.md::*"]
+  relations=["/home/user/project/issues/csv-editor-known-issues.md::*"]
 )
 
 update_sidecar(
   config="demo_flow_a",
   file_path="src/csv_editor.py",
   index="source_code",
-  symbol="src/csv_editor.py::CsvEditor.update_cell",
+  symbol="/home/user/project/src/csv_editor.py::CsvEditor.update_cell",
   intent="Rewrites the entire file to update one cell at the given row/column position. Raises IndexError when the row or column index is out of range (see ISSUE-001).",
-  relations=["issues/csv-editor-known-issues.md::*"]
+  relations=["/home/user/project/issues/csv-editor-known-issues.md::*"]
 )
 ```
 → Returns: `{"file_path": "...", "sidecar_path": "...", "total_symbols": 4}`
@@ -259,7 +259,7 @@ If sync fails because a removed symbol still has relations, clear it first:
 clear_sidecar_symbol(
   config="demo_flow_a",
   file_path="src/csv_editor.py",
-  symbol="src/csv_editor.py::CsvEditor.old_method",
+  symbol="/home/user/project/src/csv_editor.py::CsvEditor.old_method",
   index="source_code"
 )
 ```
@@ -278,12 +278,12 @@ Sidecar files are stored on disk as hidden YAML files next to the source file.
 **Format:**
 ```yaml
 symbols:
-  - name: src/csv_editor.py::ClassName            # symbol UID — must match inspect_sidecar output
-    intent: "What this symbol does"               # free-text; empty string if unknown
-    relations:                                    # list of related UIDs (other symbols, issues, docs)
-      - "issues/csv-editor-known-issues.md::*"    # UID of an entity in the issues index
-      - "src/other.py::OtherClass.some_method"    # UID of another code symbol
-  - name: src/csv_editor.py::ClassName.method_name
+  - name: /home/user/project/src/csv_editor.py::ClassName       # symbol UID — must match inspect_sidecar output
+    intent: "What this symbol does"                              # free-text; empty string if unknown
+    relations:                                                   # list of related UIDs (other symbols, issues, docs)
+      - "/home/user/project/issues/csv-editor-known-issues.md::*"   # UID of an entity in the issues index
+      - "/home/user/project/src/other.py::OtherClass.some_method"   # UID of another code symbol
+  - name: /home/user/project/src/csv_editor.py::ClassName.method_name
     intent: ""
     relations: []
 ```

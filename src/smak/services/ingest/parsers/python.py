@@ -11,11 +11,10 @@ from smak.core.domain import KnowledgeUnit
 
 @dataclass
 class PythonParser:
-    root_path: str | None = None
 
     def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:
         tree = ast.parse(content or "")
-        rel_source = _relative_source(source, self.root_path)
+        abs_source = str(Path(source).resolve()) if source else None
         units: list[KnowledgeUnit] = []
 
         class Visitor(ast.NodeVisitor):
@@ -27,13 +26,13 @@ class PythonParser:
                 segment = ast.get_source_segment(content, node) or node.name
                 units.append(
                     KnowledgeUnit(
-                        uid=f"{rel_source}::{symbol}" if rel_source else symbol,
+                        uid=f"{abs_source}::{symbol}" if abs_source else symbol,
                         content=segment,
                         source_type="source_code",
                         metadata={
                             "language": "python",
                             "symbol": symbol,
-                            "source": rel_source,
+                            "source": abs_source,
                             "symbol_type": "class",
                         },
                     )
@@ -53,13 +52,13 @@ class PythonParser:
                 segment = ast.get_source_segment(content, node) or node.name
                 units.append(
                     KnowledgeUnit(
-                        uid=f"{rel_source}::{symbol}" if rel_source else symbol,
+                        uid=f"{abs_source}::{symbol}" if abs_source else symbol,
                         content=segment,
                         source_type="source_code",
                         metadata={
                             "language": "python",
                             "symbol": symbol,
-                            "source": rel_source,
+                            "source": abs_source,
                             "symbol_type": "method" if self.class_stack else "function",
                             "parent_class": self.class_stack[-1] if self.class_stack else None,
                         },
@@ -69,14 +68,3 @@ class PythonParser:
 
         Visitor().visit(tree)
         return units
-
-
-def _relative_source(source: str | None, root_path: str | None) -> str | None:
-    if source is None:
-        return None
-    if root_path is None:
-        return source
-    try:
-        return Path(source).resolve().relative_to(Path(root_path).resolve()).as_posix()
-    except ValueError:
-        return Path(source).as_posix()

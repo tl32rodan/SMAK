@@ -29,11 +29,19 @@ class TestParsers(unittest.TestCase):
         units = PythonParser().parse(
             "def login():\n    return True\n\nclass User:\n    pass\n", source="main.py"
         )
-        self.assertEqual([unit.uid for unit in units], ["main.py::login", "main.py::User"])
+        expected_source = str(Path("main.py").resolve())
+        self.assertEqual(
+            [unit.uid for unit in units],
+            [f"{expected_source}::login", f"{expected_source}::User"],
+        )
 
     def test_perl_parser_extracts_subs(self) -> None:
         units = PerlParser().parse("sub login {\n}\n\nsub logout {\n}\n", source="main.pl")
-        self.assertEqual([unit.uid for unit in units], ["main.pl::login", "main.pl::logout"])
+        expected_source = str(Path("main.pl").resolve())
+        self.assertEqual(
+            [unit.uid for unit in units],
+            [f"{expected_source}::login", f"{expected_source}::logout"],
+        )
 
     def test_perl_parser_extracts_sub_blocks_with_nested_braces(self) -> None:
         content = (
@@ -71,7 +79,8 @@ class TestParsers(unittest.TestCase):
 
         units = PerlParser().parse(content, source="main.pl")
 
-        self.assertEqual([unit.uid for unit in units], ["main.pl::alpha", "main.pl::beta"])
+        expected_source = str(Path("main.pl").resolve())
+        self.assertEqual([unit.uid for unit in units], [f"{expected_source}::alpha", f"{expected_source}::beta"])
         self.assertNotIn("fake_from_pod", "\n".join(unit.content for unit in units))
 
     def test_perl_parser_handles_single_quote_with_double_quote_char(self) -> None:
@@ -87,7 +96,11 @@ class TestParsers(unittest.TestCase):
 
         units = PerlParser().parse(content, source="csv.pl")
 
-        self.assertEqual([unit.uid for unit in units], ["csv.pl::build_csv", "csv.pl::other"])
+        expected_source = str(Path("csv.pl").resolve())
+        self.assertEqual(
+            [unit.uid for unit in units],
+            [f"{expected_source}::build_csv", f"{expected_source}::other"],
+        )
         self.assertIn("quote_char => '\"'", units[0].content)
 
     def test_get_parser_for_path_routes_by_suffix(self) -> None:
@@ -105,10 +118,10 @@ class TestParsers(unittest.TestCase):
         parser = NullParser()
         self.assertEqual(parser.parse("anything", source="a.bin"), [])
 
-    def test_python_parser_uses_relative_source_with_root(self) -> None:
-        parser = PythonParser(root_path="/repo")
+    def test_python_parser_always_uses_absolute_source(self) -> None:
+        parser = PythonParser()
         units = parser.parse("def login():\n    return True\n", source="/repo/src/auth.py")
-        self.assertEqual(units[0].uid, "src/auth.py::login")
+        self.assertEqual(units[0].uid, "/repo/src/auth.py::login")
 
 
 if __name__ == "__main__":
