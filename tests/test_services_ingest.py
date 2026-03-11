@@ -104,16 +104,23 @@ class TestIngestService(unittest.TestCase):
             self.assertIn("link/linked.py", with_paths)
 
 
-    def test_sidecar_payload_uses_hidden_sidecar_file(self) -> None:
+    def test_skip_file_predicate_filters_files(self) -> None:
         from smak.services.ingest import service as ingest_module
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            source = Path(tmp_dir) / "a.py"
-            source.write_text("print('x')\n", encoding="utf-8")
-            source.with_name(".a.py.sidecar.yaml").write_text("symbols: []\n", encoding="utf-8")
+            root = Path(tmp_dir)
+            (root / "a.py").write_text("x = 1\n", encoding="utf-8")
+            (root / "b.sidecar.yaml").write_text("symbols: []\n", encoding="utf-8")
 
-            payload = ingest_module._sidecar_payload(source)
-            self.assertEqual(payload, "symbols: []\n")
+            all_files = list(ingest_module._iter_source_files(root))
+            filtered = list(
+                ingest_module._iter_source_files(
+                    root, skip_file=lambda p: p.name.endswith(".sidecar.yaml")
+                )
+            )
+            self.assertEqual(len(all_files), 2)
+            self.assertEqual(len(filtered), 1)
+            self.assertTrue(filtered[0].name.endswith(".py"))
 
     def test_ingest_read_text_fallback_replaces_invalid_bytes(self) -> None:
         from smak.services.ingest import service as ingest_module
@@ -136,7 +143,7 @@ class TestIngestService(unittest.TestCase):
             ):
                 self.assertEqual(ingest_module._read_text_with_fallback(path), "ok")
 
-    def test_ingest_service_sync_prunes_ghost_sources_and_sidecars(self) -> None:
+    def test_ingest_service_sync_prunes_ghost_sources_and_calls_callback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             source = root / "a.py"
@@ -148,6 +155,16 @@ class TestIngestService(unittest.TestCase):
             store = FakeVectorStore()
             store.tracked_sources = {"ghost.py": ["ghost::1", "ghost::2"], "a.py": ["a::1"]}
 
+            ghost_callbacks: list[tuple[str, list[Path]]] = []
+
+            def on_ghost(source_key: str, folders: list[Path]) -> None:
+                ghost_callbacks.append((source_key, folders))
+                # Simulate sidecar cleanup
+                for folder in folders:
+                    sidecar = folder / f".{Path(source_key).name}.sidecar.yaml"
+                    if sidecar.exists():
+                        sidecar.unlink()
+
             service = IngestService(vector_store=store)
             stats = service.ingest_paths(
                 [root],
@@ -155,10 +172,13 @@ class TestIngestService(unittest.TestCase):
                 sync=True,
                 node_class_loader=lambda: FakeNode,
                 embedder_loader=DummyEmbedder,
+                on_ghost_source=on_ghost,
             )
 
             self.assertEqual(stats.deleted, 1)
             self.assertEqual(store.deleted_ids, [["ghost::1", "ghost::2"]])
+            self.assertEqual(len(ghost_callbacks), 1)
+            self.assertEqual(ghost_callbacks[0][0], "ghost.py")
             self.assertFalse(ghost_sidecar.exists())
 
 

@@ -10,7 +10,6 @@ from typing import Callable, Iterable
 
 from smak.parsers import get_parser_for_path
 from smak.services.ingest.pipeline import IngestPipeline
-from smak.sidecar import SIDECAR_SUFFIXES, SidecarManager, YAMLSidecarStore
 from smak.utils.embedding import EmbeddingProbe, InternalNomicEmbedding
 
 
@@ -35,20 +34,17 @@ def _read_text_with_fallback(path: Path) -> str:
         return path.read_text(encoding="utf-8", errors="replace")
 
 
-def _sidecar_payload(path: Path) -> str | None:
-    for suffix in SIDECAR_SUFFIXES:
-        candidate = path.with_name(f".{path.name}{suffix}")
-        if candidate.exists():
-            return _read_text_with_fallback(candidate)
-    return None
-
-
-def _iter_source_files(folder: Path, *, follow_symlinks: bool = True) -> Iterable[Path]:
+def _iter_source_files(
+    folder: Path,
+    *,
+    follow_symlinks: bool = True,
+    skip_file: Callable[[Path], bool] | None = None,
+) -> Iterable[Path]:
     for root, _, files in os.walk(folder, followlinks=follow_symlinks):
         root_path = Path(root)
         for filename in files:
             path = root_path / filename
-            if not path.name.endswith(SIDECAR_SUFFIXES):
+            if skip_file is None or not skip_file(path):
                 yield path
 
 
@@ -63,8 +59,6 @@ def _source_key(path: Path, root_path: Path | None = None) -> str:
 
 def _source_mtime(path: Path) -> float:
     return path.stat().st_mtime
-
-
 
 
 def _unit_up_to_date(vector_store: object, unit_id: str, file_mtime: float) -> bool:
@@ -97,6 +91,8 @@ class IngestService:
         embedder_loader: Callable[[], EmbeddingProbe] | None = None,
         follow_symlinks: bool = True,
         sync: bool = False,
+        skip_file: Callable[[Path], bool] | None = None,
+        on_ghost_source: Callable[[str, list[Path]], None] | None = None,
     ) -> IngestStats:
         """Ingest content from multiple folders into the vector store.
 
@@ -107,7 +103,6 @@ class IngestService:
         embedder = (embedder_loader or InternalNomicEmbedding)()
         node_class = (node_class_loader or _load_text_node_class)()
         vector_store = self.vector_store
-        sidecar_manager = SidecarManager()
         tracked_sources = (
             vector_store.get_all_tracked_sources() if sync else {}
         )
@@ -116,7 +111,9 @@ class IngestService:
         # Collect (file_path, root_folder) pairs from all folders
         all_files: list[tuple[Path, Path]] = []
         for folder in folders:
-            for file_path in _iter_source_files(folder, follow_symlinks=follow_symlinks):
+            for file_path in _iter_source_files(
+                folder, follow_symlinks=follow_symlinks, skip_file=skip_file
+            ):
                 all_files.append((file_path, folder))
 
         lock = threading.Lock()
@@ -141,13 +138,10 @@ class IngestService:
             ):
                 return 0, True
 
-            pipeline = IngestPipeline(
-                parser=parser, embedder=embedder, sidecar_manager=sidecar_manager
-            )
+            pipeline = IngestPipeline(parser=parser, embedder=embedder)
             result = pipeline.run(
                 content,
                 source=str(file_path),
-                sidecar_payload=_sidecar_payload(file_path),
                 compute_embeddings=True,
             )
             nodes = []
@@ -184,12 +178,10 @@ class IngestService:
         deleted_count = 0
         if sync:
             ghost_sources = set(tracked_sources.keys()) - all_visited_sources
-            sidecar_store = YAMLSidecarStore()
             for ghost_source in ghost_sources:
                 vector_store.delete_by_ids(tracked_sources[ghost_source])
-                # Try each folder since the ghost key is relative to one of them
-                for folder in folders:
-                    sidecar_store.delete_sidecar_for_source(folder / ghost_source)
+                if on_ghost_source:
+                    on_ghost_source(ghost_source, folders)
                 deleted_count += 1
 
         return IngestStats(
@@ -198,4 +190,3 @@ class IngestService:
             skipped=skipped_count,
             deleted=deleted_count,
         )
-

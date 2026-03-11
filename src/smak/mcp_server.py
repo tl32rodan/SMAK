@@ -12,6 +12,7 @@ from smak.cli import _load_vector_store
 from smak.config import SmakConfig, load_config
 from smak.services import DoctorService, IngestService, QueryService, SidecarService
 from smak.services.relation_resolver import SidecarRelationResolver
+from smak.sidecar import is_sidecar_file
 from smak.sidecar.store import YAMLSidecarStore
 from smak.utils.embedding import (
     InternalNomicEmbedding,
@@ -256,9 +257,17 @@ class SmakMcpServer:
         vector_store, index_config = self._load_index_vector_store(cfg, index)
         target_folders = [Path(p) for p in index_config.paths]
         service = IngestService(vector_store=vector_store)
+
+        def _on_ghost_source(source: str, search_folders: list[Path]) -> None:
+            sidecar_store = YAMLSidecarStore()
+            for folder in search_folders:
+                sidecar_store.delete_sidecar_for_source(folder / source)
+
         stats = service.ingest_paths(
             target_folders,
             follow_symlinks=follow_symlinks,
+            skip_file=is_sidecar_file,
+            on_ghost_source=_on_ghost_source,
         )
         return (
             "Ingestion Complete! "

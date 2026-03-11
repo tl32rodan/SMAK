@@ -9,8 +9,8 @@ import click
 
 from smak.config import IndexConfig, SmakConfig, load_config
 from smak.services import DoctorService, IngestService, QueryService, SidecarService
-from smak.services.ingest.pipeline import IntegrityError
 from smak.services.relation_resolver import SidecarRelationResolver
+from smak.sidecar import is_sidecar_file
 from smak.sidecar.store import YAMLSidecarStore
 from smak.utils.embedding import (
     InternalNomicEmbedding,
@@ -114,16 +114,21 @@ def ingest(
     service = IngestService(vector_store=vector_store)
     paths_display = ", ".join(f"'{f}'" for f in folders)
     click.echo(f"Starting ingestion for {paths_display} -> Index: '{index}'...")
-    try:
-        stats = service.ingest_paths(
-            folders,
-            max_workers=workers,
-            incremental=incremental,
-            follow_symlinks=follow_symlinks,
-            sync=sync,
-        )
-    except IntegrityError as exc:
-        raise click.ClickException(f"Sidecar integrity error: {exc}") from exc
+
+    def _on_ghost_source(source: str, search_folders: list[Path]) -> None:
+        sidecar_store = YAMLSidecarStore()
+        for folder in search_folders:
+            sidecar_store.delete_sidecar_for_source(folder / source)
+
+    stats = service.ingest_paths(
+        folders,
+        max_workers=workers,
+        incremental=incremental,
+        follow_symlinks=follow_symlinks,
+        sync=sync,
+        skip_file=is_sidecar_file,
+        on_ghost_source=_on_ghost_source,
+    )
     click.echo("Ingestion Complete!")
     click.echo(f"   - Processed Files: {stats.files}")
     click.echo(f"   - Skipped Files: {stats.skipped}")
