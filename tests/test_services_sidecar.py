@@ -186,6 +186,49 @@ class TestSidecarService(unittest.TestCase):
 
             self.assertIn("not found", str(ctx.exception))
 
+    def test_validate_passes_for_valid_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+            service = SidecarService()
+            uids = service.inspect(source)
+
+            store = YAMLSidecarStore()
+            store.save_symbols_for_source(
+                source, [{"name": uids[0], "intent": "greet", "relations": []}]
+            )
+            service = SidecarService(sidecar_store=store)
+
+            result = service.validate(source)
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["issues"], [])
+
+    def test_validate_fails_for_stale_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+
+            store = YAMLSidecarStore()
+            store.save_symbols_for_source(
+                source, [{"name": "nonexistent_func", "intent": "", "relations": []}]
+            )
+            service = SidecarService(sidecar_store=store)
+
+            result = service.validate(source)
+            self.assertFalse(result["valid"])
+            self.assertEqual(len(result["issues"]), 1)
+            self.assertIn("nonexistent_func", result["issues"][0])
+
+    def test_validate_passes_when_no_sidecar_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+            service = SidecarService()
+
+            result = service.validate(source)
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["issues"], [])
+
     def test_sidecar_read_text_fallback_replaces_invalid_bytes(self) -> None:
         from smak.services import sidecar as sidecar_module
 
