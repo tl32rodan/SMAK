@@ -120,9 +120,8 @@ class TestCli(unittest.TestCase):
                 return SimpleNamespace(dimension=1)
 
             with (
-                patch("smak.cli._load_vector_store", new=fake_loader),
-                patch("smak.cli.validate_vector_store_dimension", new=lambda store, dim: None),
-                patch("smak.cli.initialize_embedding_dimensions", new=lambda cfg, emb: cfg),
+                patch("smak.cli.load_and_validate_vector_store", new=fake_loader),
+                patch("smak.cli.init_config", new=lambda cfg: cfg),
             ):
                 cli._load_vector_store_for_cli("docs", str(config_path))
 
