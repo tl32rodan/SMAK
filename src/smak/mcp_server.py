@@ -457,16 +457,16 @@ class SmakMcpServer:
         """
 
         cfg = self._load_config(config)
-        vector_store, _ = self._load_index_vector_store(cfg, index)
-        payload = vector_store.get_by_id(uid)
-        if isinstance(payload, dict):
-            return {
-                "found": True,
-                "uid": uid,
-                "content": payload.get("content"),
-                "metadata": payload.get("metadata"),
-            }
-        return {"found": False, "uid": uid}
+        vector_store, index_config = self._load_index_vector_store(cfg, index)
+        sidecar_store = YAMLSidecarStore()
+        service = QueryService(
+            vector_store=vector_store,
+            config=cfg,
+            index_config=index_config,
+            vector_store_loader=_load_vector_store,
+            relation_resolver=SidecarRelationResolver(sidecar_store),
+        )
+        return service.lookup(uid)
 
     def validate_mesh(self, config: str) -> str:
         """Run mesh/sidecar integrity checks in-process.

@@ -66,6 +66,18 @@ class QueryService:
                 return payload
         return None
 
+    def lookup(self, uid: str) -> dict[str, Any]:
+        """Check whether *uid* exists in the vector store."""
+        payload = self.vector_store.get_by_id(uid)
+        if isinstance(payload, dict):
+            return {
+                "found": True,
+                "uid": uid,
+                "content": payload.get("content"),
+                "metadata": payload.get("metadata"),
+            }
+        return {"found": False, "uid": uid}
+
     def search(self, text: str, top_k: int = 5) -> dict[str, list[dict[str, Any]]]:
         query_vector = self.embedder.get_text_embedding(text)
         semantic_hits = self.vector_store.search(query_vector, top_k=max(top_k, 1))
