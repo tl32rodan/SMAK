@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import glob as _glob
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -42,12 +43,44 @@ def _resolve_absolute_path(raw: str, base: Path) -> str:
     return str((base / expanded).resolve())
 
 
+def _has_glob_meta(pattern: str) -> bool:
+    """Return ``True`` if *pattern* contains shell glob metacharacters."""
+    return any(ch in pattern for ch in ("*", "?", "["))
+
+
+def _expand_glob_paths(raw_paths: list[str], base_path: Path) -> list[str]:
+    """Resolve and expand *raw_paths*, supporting shell glob patterns.
+
+    Literal (non-glob) paths are resolved as before.  Glob patterns are
+    expanded via :func:`glob.glob` and only **directories** are kept.
+
+    Raises:
+        ValueError: If a glob pattern matches zero directories.
+    """
+    expanded: list[str] = []
+    for raw in raw_paths:
+        resolved = _resolve_absolute_path(raw, base_path)
+        if _has_glob_meta(resolved):
+            matches = sorted(
+                p for p in _glob.glob(resolved) if Path(p).is_dir()
+            )
+            if not matches:
+                raise ValueError(
+                    f"Glob pattern '{raw}' (resolved to '{resolved}') "
+                    "matched zero directories."
+                )
+            expanded.extend(matches)
+        else:
+            expanded.append(resolved)
+    return expanded
+
+
 def _resolve_config(cfg: SmakConfig, config_path: str | Path) -> SmakConfig:
     config_file = Path(config_path)
     base_path = config_file.resolve().parent if config_file.exists() else Path.cwd().resolve()
     resolved_indices = []
     for index in cfg.indices:
-        resolved_paths = [_resolve_absolute_path(p, base_path) for p in index.paths]
+        resolved_paths = _expand_glob_paths(index.paths, base_path)
         if index.uri:
             resolved_uri = _resolve_absolute_path(index.uri, base_path)
         else:

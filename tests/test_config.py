@@ -127,5 +127,91 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(len(config.indices[0].paths), 1)
 
 
+    def test_glob_pattern_expands_to_matching_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Create directories: modules/auth, modules/billing, modules/README.txt (file)
+            (Path(tmp_dir) / "modules" / "auth").mkdir(parents=True)
+            (Path(tmp_dir) / "modules" / "billing").mkdir(parents=True)
+            (Path(tmp_dir) / "modules" / "README.txt").touch()
+
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code files\n"
+                "    paths:\n"
+                "      - ./modules/*\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+            resolved = config.indices[0].paths
+            # Only directories should be included (not README.txt)
+            self.assertEqual(len(resolved), 2)
+            names = sorted(Path(p).name for p in resolved)
+            self.assertEqual(names, ["auth", "billing"])
+
+    def test_glob_pattern_no_match_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code files\n"
+                "    paths:\n"
+                "      - ./nonexistent_*\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError) as ctx:
+                load_config(path)
+            self.assertIn("matched zero directories", str(ctx.exception))
+
+    def test_glob_mixed_with_literal_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            (Path(tmp_dir) / "src").mkdir()
+            (Path(tmp_dir) / "plugins" / "alpha").mkdir(parents=True)
+            (Path(tmp_dir) / "plugins" / "beta").mkdir(parents=True)
+
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code files\n"
+                "    paths:\n"
+                "      - ./src\n"
+                "      - ./plugins/*\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+            resolved = config.indices[0].paths
+            self.assertEqual(len(resolved), 3)
+            names = sorted(Path(p).name for p in resolved)
+            self.assertEqual(names, ["alpha", "beta", "src"])
+
+    def test_literal_path_unchanged_by_glob_expansion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            (Path(tmp_dir) / "src").mkdir()
+
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code files\n"
+                "    paths:\n"
+                "      - ./src\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+            resolved = config.indices[0].paths
+            self.assertEqual(len(resolved), 1)
+            self.assertTrue(resolved[0].endswith("src"))
+
+
 if __name__ == "__main__":
     unittest.main()
