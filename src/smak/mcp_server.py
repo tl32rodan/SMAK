@@ -8,12 +8,12 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from smak.cli import _load_vector_store
 from smak.config import SmakConfig, load_config
 from smak.services import DoctorService, IngestService, QueryService, SidecarService
 from smak.services.relation_resolver import SidecarRelationResolver
 from smak.sidecar import is_sidecar_file
 from smak.sidecar.store import YAMLSidecarStore
+from smak.storage.faiss_adapter import load_vector_store_for_index as _load_vector_store
 from smak.utils.embedding import (
     InternalNomicEmbedding,
     initialize_embedding_dimensions,

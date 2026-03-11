@@ -12,6 +12,7 @@ from smak.services import DoctorService, IngestService, QueryService, SidecarSer
 from smak.services.relation_resolver import SidecarRelationResolver
 from smak.sidecar import is_sidecar_file
 from smak.sidecar.store import YAMLSidecarStore
+from smak.storage.faiss_adapter import load_vector_store_for_index as _load_vector_store
 from smak.utils.embedding import (
     InternalNomicEmbedding,
     initialize_embedding_dimensions,
@@ -19,16 +20,6 @@ from smak.utils.embedding import (
 )
 
 DEFAULT_MAX_WORKERS = 4
-
-
-def _load_vector_store(index_config: IndexConfig, config: SmakConfig):
-    from smak.storage.faiss_adapter import load_faiss_store
-
-    return load_faiss_store(
-        uri=index_config.uri,  # URI is already absolute here
-        collection_name=index_config.name,
-        dim=config.embedding_dimensions,
-    )
 
 
 def _default_config_template() -> str:
