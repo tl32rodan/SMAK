@@ -9,16 +9,16 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from smak.config import SmakConfig, load_config
-from smak.services import DoctorService, IngestService, QueryService, SidecarService
-from smak.services.relation_resolver import SidecarRelationResolver
-from smak.sidecar import is_sidecar_file
-from smak.sidecar.store import YAMLSidecarStore
-from smak.storage.faiss_adapter import load_vector_store_for_index as _load_vector_store
-from smak.utils.embedding import (
-    InternalNomicEmbedding,
-    initialize_embedding_dimensions,
-    validate_vector_store_dimension,
+from smak.factory import (
+    create_doctor_service,
+    create_query_service,
+    create_sidecar_service,
+    init_config,
+    load_and_validate_vector_store,
+    on_ghost_source,
+    sidecar_skip_file,
 )
+from smak.services import IngestService
 from smak.utils.yaml import safe_load
 
 
@@ -89,8 +89,7 @@ class SmakMcpServer:
             raise FileNotFoundError(f"Config not found at {config_path}")
 
         config = load_config(config_path)
-        config = initialize_embedding_dimensions(config, InternalNomicEmbedding())
-        return config
+        return init_config(config)
 
     @staticmethod
     def _get_index_config(config: SmakConfig, index: str) -> object:
@@ -132,8 +131,7 @@ class SmakMcpServer:
         """
 
         index_config = self._get_index_config(config, index)
-        vector_store = _load_vector_store(index_config, config)
-        validate_vector_store_dimension(vector_store, config.embedding_dimensions)
+        vector_store = load_and_validate_vector_store(index_config, config)
         return vector_store, index_config
 
     @staticmethod
@@ -257,17 +255,11 @@ class SmakMcpServer:
         vector_store, index_config = self._load_index_vector_store(cfg, index)
         target_folders = [Path(p) for p in index_config.paths]
         service = IngestService(vector_store=vector_store)
-
-        def _on_ghost_source(source: str, search_folders: list[Path]) -> None:
-            sidecar_store = YAMLSidecarStore()
-            for folder in search_folders:
-                sidecar_store.delete_sidecar_for_source(folder / source)
-
         stats = service.ingest_paths(
             target_folders,
             follow_symlinks=follow_symlinks,
-            skip_file=is_sidecar_file,
-            on_ghost_source=_on_ghost_source,
+            skip_file=sidecar_skip_file,
+            on_ghost_source=on_ghost_source,
         )
         return (
             "Ingestion Complete! "
@@ -304,14 +296,7 @@ class SmakMcpServer:
 
         cfg = self._load_config(config)
         vector_store, index_config = self._load_index_vector_store(cfg, index)
-        sidecar_store = YAMLSidecarStore()
-        service = QueryService(
-            vector_store=vector_store,
-            config=cfg,
-            index_config=index_config,
-            vector_store_loader=_load_vector_store,
-            relation_resolver=SidecarRelationResolver(sidecar_store),
-        )
+        service = create_query_service(vector_store, cfg, index_config)
         result = service.search(query, top_k=top_k)
         return result if isinstance(result, dict) else {}
 
@@ -361,8 +346,7 @@ class SmakMcpServer:
         cfg = self._load_config(config)
         index_config = self._get_index_config(cfg, index)
         source_path = self._resolve_source_path(config, index, index_config, file_path)
-        service = SidecarService(sidecar_store=YAMLSidecarStore())
-        return service.inspect(source_path)
+        return create_sidecar_service().inspect(source_path)
 
     def update_sidecar(
         self,
@@ -402,8 +386,7 @@ class SmakMcpServer:
         cfg = self._load_config(config)
         index_config = self._get_index_config(cfg, index)
         source_path = self._resolve_source_path(config, index, index_config, file_path)
-        service = SidecarService(sidecar_store=YAMLSidecarStore())
-        return service.update(
+        return create_sidecar_service().update(
             source_path, symbol=symbol, intent=intent, relations=relations
         )
 
@@ -435,8 +418,7 @@ class SmakMcpServer:
         cfg = self._load_config(config)
         index_config = self._get_index_config(cfg, index)
         source_path = self._resolve_source_path(config, index, index_config, file_path)
-        service = SidecarService(sidecar_store=YAMLSidecarStore())
-        return service.clear_symbol(source_path, symbol)
+        return create_sidecar_service().clear_symbol(source_path, symbol)
 
     def lookup_symbol(
         self,
@@ -458,14 +440,7 @@ class SmakMcpServer:
 
         cfg = self._load_config(config)
         vector_store, index_config = self._load_index_vector_store(cfg, index)
-        sidecar_store = YAMLSidecarStore()
-        service = QueryService(
-            vector_store=vector_store,
-            config=cfg,
-            index_config=index_config,
-            vector_store_loader=_load_vector_store,
-            relation_resolver=SidecarRelationResolver(sidecar_store),
-        )
+        service = create_query_service(vector_store, cfg, index_config)
         return service.lookup(uid)
 
     def validate_mesh(self, config: str) -> str:
@@ -487,12 +462,7 @@ class SmakMcpServer:
         """
 
         cfg = self._load_config(config)
-
-        def _load_store(index_name: str) -> object:
-            store, _ = self._load_index_vector_store(cfg, index_name)
-            return store
-
-        service = DoctorService(config=cfg, vector_store_loader=_load_store)
+        service = create_doctor_service(cfg)
         service.validate_all()
         return "Mesh diagnostics passed."
 

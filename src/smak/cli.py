@@ -8,18 +8,30 @@ from pathlib import Path
 import click
 
 from smak.config import IndexConfig, SmakConfig, load_config
-from smak.services import DoctorService, IngestService, QueryService, SidecarService
-from smak.services.relation_resolver import SidecarRelationResolver
-from smak.sidecar import is_sidecar_file
-from smak.sidecar.store import YAMLSidecarStore
-from smak.storage.faiss_adapter import load_vector_store_for_index as _load_vector_store
-from smak.utils.embedding import (
-    InternalNomicEmbedding,
-    initialize_embedding_dimensions,
-    validate_vector_store_dimension,
+from smak.factory import (
+    create_doctor_service,
+    create_query_service,
+    create_sidecar_service,
+    init_config,
+    load_and_validate_vector_store,
+    on_ghost_source,
+    sidecar_skip_file,
 )
+from smak.services import IngestService
 
 DEFAULT_MAX_WORKERS = 4
+
+
+def _load_vector_store_for_cli(
+    index: str,
+    config_path: str,
+) -> tuple[SmakConfig, IndexConfig, object]:
+    cfg = init_config(load_config(config_path))
+    index_config = cfg.get_index(index)
+    if index_config is None:
+        raise click.ClickException(f"Index '{index}' not found in configuration.")
+    vector_store = load_and_validate_vector_store(index_config, cfg)
+    return cfg, index_config, vector_store
 
 
 def _default_config_template() -> str:
@@ -52,21 +64,6 @@ def _default_config_template() -> str:
             "",
         ]
     )
-
-
-def _load_vector_store_for_cli(
-    index: str,
-    config_path: str,
-) -> tuple[SmakConfig, IndexConfig, object]:
-    cfg = load_config(config_path)
-    index_config = cfg.get_index(index)
-    if index_config is None:
-        raise click.ClickException(f"Index '{index}' not found in configuration.")
-    embedder = InternalNomicEmbedding()
-    cfg = initialize_embedding_dimensions(cfg, embedder)
-    vector_store = _load_vector_store(index_config, cfg)
-    validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
-    return cfg, index_config, vector_store
 
 
 @click.group()
@@ -105,20 +102,14 @@ def ingest(
     service = IngestService(vector_store=vector_store)
     paths_display = ", ".join(f"'{f}'" for f in folders)
     click.echo(f"Starting ingestion for {paths_display} -> Index: '{index}'...")
-
-    def _on_ghost_source(source: str, search_folders: list[Path]) -> None:
-        sidecar_store = YAMLSidecarStore()
-        for folder in search_folders:
-            sidecar_store.delete_sidecar_for_source(folder / source)
-
     stats = service.ingest_paths(
         folders,
         max_workers=workers,
         incremental=incremental,
         follow_symlinks=follow_symlinks,
         sync=sync,
-        skip_file=is_sidecar_file,
-        on_ghost_source=_on_ghost_source,
+        skip_file=sidecar_skip_file,
+        on_ghost_source=on_ghost_source,
     )
     click.echo("Ingestion Complete!")
     click.echo(f"   - Processed Files: {stats.files}")
@@ -145,14 +136,7 @@ def init(config_path: str, force: bool) -> None:
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 def query_command(text: str, index: str, top_k: int, config: str) -> None:
     cfg, index_config, vector_store = _load_vector_store_for_cli(index, config)
-    sidecar_store = YAMLSidecarStore()
-    service = QueryService(
-        vector_store=vector_store,
-        config=cfg,
-        vector_store_loader=_load_vector_store,
-        index_config=index_config,
-        relation_resolver=SidecarRelationResolver(sidecar_store),
-    )
+    service = create_query_service(vector_store, cfg, index_config)
     output_str = json.dumps(service.search(text, top_k=top_k), ensure_ascii=False, indent=4)
     click.echo(output_str.encode("utf-8"))
 
@@ -168,8 +152,7 @@ def sidecar() -> None:
 def sidecar_inspect(file_path: Path, json_output: bool) -> None:
     if not file_path.exists() or not file_path.is_file():
         raise click.ClickException(f"Path must be a file: {file_path}")
-    sidecar_store = YAMLSidecarStore()
-    symbols = SidecarService(sidecar_store).inspect(file_path)
+    symbols = create_sidecar_service().inspect(file_path)
     if json_output:
         output_str = json.dumps(symbols, ensure_ascii=False, indent=4)
         click.echo(output_str.encode("utf-8"))
@@ -195,7 +178,7 @@ def sidecar_update(
     if relations is not None:
         parsed_relations = [r.strip() for r in relations.split(",") if r.strip()]
     try:
-        result = SidecarService().update(
+        result = create_sidecar_service().update(
             file_path, symbol=symbol, intent=intent, relations=parsed_relations
         )
     except ValueError as exc:
@@ -211,7 +194,7 @@ def sidecar_clear(file_path: Path, symbol: str) -> None:
     if not file_path.exists() or not file_path.is_file():
         raise click.ClickException(f"Source file not found: {file_path}")
     try:
-        result = SidecarService().clear_symbol(file_path, symbol)
+        result = create_sidecar_service().clear_symbol(file_path, symbol)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
     output_str = json.dumps(result, ensure_ascii=False, indent=4)
@@ -221,19 +204,8 @@ def sidecar_clear(file_path: Path, symbol: str) -> None:
 @main.command("doctor")
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
 def doctor(config: str) -> None:
-    cfg = load_config(config)
-    embedder = InternalNomicEmbedding()
-    cfg = initialize_embedding_dimensions(cfg, embedder)
-
-    def _load_store(index_name: str) -> object:
-        index_config = cfg.get_index(index_name)
-        if index_config is None:
-            raise click.ClickException(f"Index '{index_name}' not found in configuration.")
-        vector_store = _load_vector_store(index_config, cfg)
-        validate_vector_store_dimension(vector_store, cfg.embedding_dimensions)
-        return vector_store
-
-    service = DoctorService(config=cfg, vector_store_loader=_load_store)
+    cfg = init_config(load_config(config))
+    service = create_doctor_service(cfg)
     try:
         service.validate_all()
     except RuntimeError as exc:
