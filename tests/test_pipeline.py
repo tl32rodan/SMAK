@@ -4,7 +4,7 @@ import unittest
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
-from smak.services.ingest.parsers import PythonParser
+from smak.parsers import PythonParser
 from smak.sidecar.manager import IntegrityError, SidecarManager
 
 

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from smak.core.domain import KnowledgeUnit
-from smak.services.ingest.parsers import Parser
+from smak.parsers import Parser
 from smak.sidecar import IntegrityError, SidecarManager
 from smak.utils.embedding import EmbeddingProbe, InternalNomicEmbedding
 

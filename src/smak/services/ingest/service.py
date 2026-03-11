@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
-from smak.services.ingest.parsers import get_parser_for_path
+from smak.parsers import get_parser_for_path
 from smak.services.ingest.pipeline import IngestPipeline
 from smak.sidecar import SIDECAR_SUFFIXES, SidecarManager, YAMLSidecarStore
 from smak.utils.embedding import EmbeddingProbe, InternalNomicEmbedding

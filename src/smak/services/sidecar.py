@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from smak.services.ingest.parsers import get_parser_for_path
+from smak.parsers import get_parser_for_path
 from smak.sidecar.paths import is_sidecar_file
 from smak.sidecar.protocols import SidecarStore
 from smak.sidecar.store import YAMLSidecarStore

@@ -175,7 +175,7 @@ class TestQueryService(unittest.TestCase):
 
 
     def test_query_service_matches_sidecar_symbol_name_from_ingest_metadata(self) -> None:
-        from smak.services.ingest.parsers.python import PythonParser
+        from smak.parsers.python import PythonParser
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace_root = Path(tmp_dir)
