@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from dataclasses import replace
 from typing import Any, Mapping, Protocol, Sequence
 
 import requests
 from llama_index.core.embeddings import BaseEmbedding
 
-from smak.config import SmakConfig
-
-_DEFAULT_NOMIC_API_BASE = "http://f15dtpai1:11436"
-_DEFAULT_NOMIC_MODEL = "nomic_embed_text:latest"
+from smak.config import EmbeddingConfig, SmakConfig
 
 
 class InternalNomicEmbedding(BaseEmbedding):
@@ -32,33 +28,35 @@ class InternalNomicEmbedding(BaseEmbedding):
         *,
         api_base: str | None = None,
         model: str | None = None,
-        timeout: float = 600.0,
+        timeout: float | None = None,
         headers: dict[str, str] | None = None,
         session: Any | None = None,
-        embed_batch_size: int = 64,
+        embed_batch_size: int | None = None,
+        embedding_config: EmbeddingConfig | None = None,
     ) -> None:
-        resolved_base = (
-            api_base or os.environ.get("SMAK_NOMIC_API_BASE", _DEFAULT_NOMIC_API_BASE)
-        ).rstrip("/")
-        resolved_model = model or os.environ.get("SMAK_NOMIC_MODEL", _DEFAULT_NOMIC_MODEL)
+        cfg = embedding_config or EmbeddingConfig()
+        resolved_base = (api_base or cfg.api_base).rstrip("/")
+        resolved_model = model or cfg.model
+        resolved_timeout = timeout if timeout is not None else cfg.timeout
+        resolved_batch_size = embed_batch_size if embed_batch_size is not None else cfg.batch_size
         resolved_headers = dict(headers or {})
         resolved_session = session or requests.Session()
         super().__init__(
             model_name=resolved_model,
-            embed_batch_size=embed_batch_size,
+            embed_batch_size=resolved_batch_size,
             api_base=resolved_base,
             model=resolved_model,
-            timeout=timeout,
+            timeout=resolved_timeout,
             headers=resolved_headers,
             session=resolved_session,
         )
         self.api_base = resolved_base
         self.model = resolved_model
-        self.timeout = timeout
+        self.timeout = resolved_timeout
         self.headers = resolved_headers
         self.session = resolved_session
         self.model_name = resolved_model
-        self.embed_batch_size = embed_batch_size
+        self.embed_batch_size = resolved_batch_size
 
     def _embedding_endpoint(self) -> str:
         return f"{self.api_base}/api/embed"

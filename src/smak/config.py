@@ -10,6 +10,37 @@ from typing import Any, Mapping
 from smak.utils.yaml import safe_load
 
 
+_EMBEDDING_SETUP_YAML = Path(__file__).resolve().parent / "embedding_setup.yaml"
+
+
+@dataclass(frozen=True)
+class EmbeddingConfig:
+    """Embedding service configuration loaded from ``embedding_setup.yaml``."""
+
+    api_base: str = "http://f15dtpai1:11436"
+    model: str = "nomic_embed_text:latest"
+    timeout: float = 600.0
+    batch_size: int = 64
+
+
+def load_embedding_config(path: str | Path | None = None) -> EmbeddingConfig:
+    """Load :class:`EmbeddingConfig` from a YAML file.
+
+    Falls back to the package-level ``embedding_setup.yaml`` when *path* is
+    ``None`` or when the file does not exist.
+    """
+    target = Path(path) if path else _EMBEDDING_SETUP_YAML
+    if not target.exists():
+        return EmbeddingConfig()
+    raw = target.read_text(encoding="utf-8")
+    data: Any = safe_load(raw) or {}
+    if not isinstance(data, Mapping):
+        return EmbeddingConfig()
+    known = {f for f in EmbeddingConfig.__dataclass_fields__}
+    kwargs = {k: v for k, v in data.items() if k in known}
+    return EmbeddingConfig(**kwargs)
+
+
 @dataclass(frozen=True)
 class IndexConfig:
     """Configuration for an index."""
@@ -130,4 +161,11 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
     )
 
 
-__all__ = ["DEFAULT_DATA_DIR", "IndexConfig", "SmakConfig", "load_config"]
+__all__ = [
+    "DEFAULT_DATA_DIR",
+    "EmbeddingConfig",
+    "IndexConfig",
+    "SmakConfig",
+    "load_config",
+    "load_embedding_config",
+]

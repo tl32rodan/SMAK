@@ -8,7 +8,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from smak.config import SmakConfig, load_config
+from smak.config import EmbeddingConfig, SmakConfig, load_config, load_embedding_config
 from smak.factory import (
     create_doctor_service,
     create_query_service,
@@ -19,7 +19,10 @@ from smak.factory import (
     sidecar_skip_file,
 )
 from smak.services import IngestService
+from smak.utils.embedding import InternalNomicEmbedding
 from smak.utils.yaml import safe_load
+
+_DEFAULT_EMBEDDING_SETUP = str(Path(__file__).resolve().parent / "embedding_setup.yaml")
 
 
 @dataclass
@@ -27,6 +30,7 @@ class SmakMcpServer:
     """In-process adapter used by MCP tool handlers."""
 
     registry_path: Path
+    embedding_config: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     configs: dict[str, dict[str, str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -89,7 +93,7 @@ class SmakMcpServer:
             raise FileNotFoundError(f"Config not found at {config_path}")
 
         config = load_config(config_path)
-        return init_config(config)
+        return init_config(config, embedding_config=self.embedding_config)
 
     @staticmethod
     def _get_index_config(config: SmakConfig, index: str) -> object:
@@ -255,11 +259,13 @@ class SmakMcpServer:
         vector_store, index_config = self._load_index_vector_store(cfg, index)
         target_folders = [Path(p) for p in index_config.paths]
         service = IngestService(vector_store=vector_store)
+        emb_cfg = self.embedding_config
         stats = service.ingest_paths(
             target_folders,
             follow_symlinks=follow_symlinks,
             skip_file=sidecar_skip_file,
             on_ghost_source=on_ghost_source,
+            embedder_loader=lambda: InternalNomicEmbedding(embedding_config=emb_cfg),
         )
         return (
             "Ingestion Complete! "
@@ -296,7 +302,9 @@ class SmakMcpServer:
 
         cfg = self._load_config(config)
         vector_store, index_config = self._load_index_vector_store(cfg, index)
-        service = create_query_service(vector_store, cfg, index_config)
+        service = create_query_service(
+            vector_store, cfg, index_config, embedding_config=self.embedding_config,
+        )
         result = service.search(query, top_k=top_k)
         return result if isinstance(result, dict) else {}
 
@@ -440,7 +448,9 @@ class SmakMcpServer:
 
         cfg = self._load_config(config)
         vector_store, index_config = self._load_index_vector_store(cfg, index)
-        service = create_query_service(vector_store, cfg, index_config)
+        service = create_query_service(
+            vector_store, cfg, index_config, embedding_config=self.embedding_config,
+        )
         return service.lookup(uid)
 
     def validate_mesh(self, config: str) -> str:
@@ -467,10 +477,17 @@ class SmakMcpServer:
         return "Mesh diagnostics passed."
 
 
-def build_mcp_server(registry_path: str | Path) -> FastMCP:
+def build_mcp_server(
+    registry_path: str | Path,
+    embedding_setup: str | Path | None = None,
+) -> FastMCP:
     """Build the FastMCP instance and register SMAK tools."""
 
-    smak_server = SmakMcpServer(registry_path=Path(registry_path).resolve())
+    emb_cfg = load_embedding_config(embedding_setup)
+    smak_server = SmakMcpServer(
+        registry_path=Path(registry_path).resolve(),
+        embedding_config=emb_cfg,
+    )
     mcp = FastMCP("SMAK")
 
     @mcp.tool()
@@ -799,9 +816,18 @@ def main() -> None:
         default="registry.yaml",
         help="Path to registry.yaml file (Mandatory)",
     )
+    parser.add_argument(
+        "--embedding-setup",
+        type=str,
+        default=_DEFAULT_EMBEDDING_SETUP,
+        help="Path to embedding_setup.yaml",
+    )
     args = parser.parse_args()
 
-    server = build_mcp_server(registry_path=Path(args.registry).resolve())
+    server = build_mcp_server(
+        registry_path=Path(args.registry).resolve(),
+        embedding_setup=args.embedding_setup,
+    )
     server.run(transport="stdio")
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from smak.config import IndexConfig, SmakConfig
+from smak.config import EmbeddingConfig, IndexConfig, SmakConfig
 from smak.services import DoctorService, QueryService, SidecarService
 from smak.services.relation_resolver import SidecarRelationResolver
 from smak.sidecar import is_sidecar_file
@@ -33,15 +33,22 @@ def load_and_validate_vector_store(
     return vector_store
 
 
-def init_config(config: SmakConfig) -> SmakConfig:
+def init_config(
+    config: SmakConfig,
+    embedding_config: EmbeddingConfig | None = None,
+) -> SmakConfig:
     """Initialise embedding dimensions on a config object."""
-    return initialize_embedding_dimensions(config, InternalNomicEmbedding())
+    return initialize_embedding_dimensions(
+        config,
+        InternalNomicEmbedding(embedding_config=embedding_config),
+    )
 
 
 def create_query_service(
     vector_store: object,
     config: SmakConfig,
     index_config: IndexConfig,
+    embedding_config: EmbeddingConfig | None = None,
 ) -> QueryService:
     """Create a QueryService with standard sidecar relation resolution."""
     sidecar_store = YAMLSidecarStore()
@@ -51,6 +58,7 @@ def create_query_service(
         index_config=index_config,
         vector_store_loader=_load_vector_store_for_index,
         relation_resolver=SidecarRelationResolver(sidecar_store),
+        embedder=InternalNomicEmbedding(embedding_config=embedding_config),
     )
 
 
