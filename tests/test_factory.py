@@ -20,7 +20,7 @@ from smak.services.sidecar import SidecarService
 
 
 class TestFactory(unittest.TestCase):
-    @patch("smak.services.query.InternalNomicEmbedding")
+    @patch("smak.factory.InternalNomicEmbedding")
     def test_create_query_service_returns_query_service(self, _mock_embedder: object) -> None:
         store = SimpleNamespace(
             get_by_id=lambda uid: None,

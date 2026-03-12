@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from smak.config import SmakConfig, load_config
+from smak.config import EmbeddingConfig, SmakConfig, load_config, load_embedding_config
 
 
 class TestConfig(unittest.TestCase):
@@ -211,6 +211,61 @@ class TestConfig(unittest.TestCase):
             resolved = config.indices[0].paths
             self.assertEqual(len(resolved), 1)
             self.assertTrue(resolved[0].endswith("src"))
+
+
+class TestEmbeddingConfig(unittest.TestCase):
+    def test_defaults(self) -> None:
+        cfg = EmbeddingConfig()
+        self.assertEqual(cfg.api_base, "http://f15dtpai1:11436")
+        self.assertEqual(cfg.model, "nomic_embed_text:latest")
+        self.assertEqual(cfg.timeout, 600.0)
+        self.assertEqual(cfg.batch_size, 64)
+
+    def test_load_embedding_config_from_yaml(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "embedding_setup.yaml"
+            path.write_text(
+                "api_base: http://custom:9999\n"
+                "model: custom-model\n"
+                "timeout: 300.0\n"
+                "batch_size: 128\n",
+                encoding="utf-8",
+            )
+            cfg = load_embedding_config(path)
+            self.assertEqual(cfg.api_base, "http://custom:9999")
+            self.assertEqual(cfg.model, "custom-model")
+            self.assertEqual(cfg.timeout, 300.0)
+            self.assertEqual(cfg.batch_size, 128)
+
+    def test_load_embedding_config_partial(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "embedding_setup.yaml"
+            path.write_text("api_base: http://other:5555\n", encoding="utf-8")
+            cfg = load_embedding_config(path)
+            self.assertEqual(cfg.api_base, "http://other:5555")
+            self.assertEqual(cfg.model, "nomic_embed_text:latest")  # default
+            self.assertEqual(cfg.timeout, 600.0)  # default
+
+    def test_load_embedding_config_missing_file_returns_defaults(self) -> None:
+        cfg = load_embedding_config("/nonexistent/path.yaml")
+        self.assertEqual(cfg, EmbeddingConfig())
+
+    def test_load_embedding_config_ignores_unknown_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "embedding_setup.yaml"
+            path.write_text(
+                "api_base: http://x:1\n"
+                "unknown_key: should_be_ignored\n",
+                encoding="utf-8",
+            )
+            cfg = load_embedding_config(path)
+            self.assertEqual(cfg.api_base, "http://x:1")
+            self.assertFalse(hasattr(cfg, "unknown_key"))
+
+    def test_load_embedding_config_default_path(self) -> None:
+        cfg = load_embedding_config()
+        self.assertIsInstance(cfg, EmbeddingConfig)
+        self.assertEqual(cfg.api_base, "http://f15dtpai1:11436")
 
 
 if __name__ == "__main__":

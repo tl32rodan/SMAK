@@ -121,7 +121,7 @@ class TestCli(unittest.TestCase):
 
             with (
                 patch("smak.cli.load_and_validate_vector_store", new=fake_loader),
-                patch("smak.cli.init_config", new=lambda cfg: cfg),
+                patch("smak.cli.init_config", new=lambda cfg, **kw: cfg),
             ):
                 cli._load_vector_store_for_cli("docs", str(config_path))
 
@@ -158,7 +158,7 @@ class TestCli(unittest.TestCase):
             with (
                 patch(
                     "smak.cli._load_vector_store_for_cli",
-                    new=lambda index, config: (
+                    new=lambda index, config, embedding_config=None: (
                         SmakConfig(),
                         IndexConfig(name="source_code", description="source", paths=[str(folder)]),
                         object(),
@@ -290,7 +290,7 @@ class TestCli(unittest.TestCase):
             with (
                 patch(
                     "smak.cli._load_vector_store_for_cli",
-                    new=lambda index, config: (
+                    new=lambda index, config, embedding_config=None: (
                         SmakConfig(
                             indices=[IndexConfig(name="source_code", description="source")]
                         ),
@@ -299,8 +299,8 @@ class TestCli(unittest.TestCase):
                     ),
                 ),
                 patch(
-                    "smak.services.query.InternalNomicEmbedding",
-                    new=lambda: SimpleNamespace(get_text_embedding=lambda text: [0.1]),
+                    "smak.utils.embedding.InternalNomicEmbedding",
+                    new=lambda **kw: SimpleNamespace(get_text_embedding=lambda text: [0.1]),
                 ),
             ):
                 cli = importlib.import_module("smak.cli")

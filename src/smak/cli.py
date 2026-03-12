@@ -7,7 +7,13 @@ from pathlib import Path
 
 import click
 
-from smak.config import IndexConfig, SmakConfig, load_config
+from smak.config import (
+    EmbeddingConfig,
+    IndexConfig,
+    SmakConfig,
+    load_config,
+    load_embedding_config,
+)
 from smak.factory import (
     create_doctor_service,
     create_query_service,
@@ -18,15 +24,18 @@ from smak.factory import (
     sidecar_skip_file,
 )
 from smak.services import IngestService
+from smak.utils.embedding import InternalNomicEmbedding
 
 DEFAULT_MAX_WORKERS = 4
+_DEFAULT_EMBEDDING_SETUP = str(Path(__file__).resolve().parent / "embedding_setup.yaml")
 
 
 def _load_vector_store_for_cli(
     index: str,
     config_path: str,
+    embedding_config: EmbeddingConfig | None = None,
 ) -> tuple[SmakConfig, IndexConfig, object]:
-    cfg = init_config(load_config(config_path))
+    cfg = init_config(load_config(config_path), embedding_config=embedding_config)
     index_config = cfg.get_index(index)
     if index_config is None:
         raise click.ClickException(f"Index '{index}' not found in configuration.")
@@ -86,6 +95,11 @@ def main() -> None:
     is_flag=True,
     help="Prune deleted files and their sidecars from the index",
 )
+@click.option(
+    "--embedding-setup",
+    default=_DEFAULT_EMBEDDING_SETUP,
+    help="Path to embedding_setup.yaml",
+)
 def ingest(
     index: str,
     config: str,
@@ -93,8 +107,10 @@ def ingest(
     incremental: bool,
     follow_symlinks: bool,
     sync: bool,
+    embedding_setup: str,
 ) -> None:
-    _, index_config, vector_store = _load_vector_store_for_cli(index, config)
+    emb_cfg = load_embedding_config(embedding_setup)
+    _, index_config, vector_store = _load_vector_store_for_cli(index, config, emb_cfg)
     folders = [Path(p) for p in index_config.paths]
     for folder in folders:
         if not folder.exists() or not folder.is_dir():
@@ -110,6 +126,7 @@ def ingest(
         sync=sync,
         skip_file=sidecar_skip_file,
         on_ghost_source=on_ghost_source,
+        embedder_loader=lambda: InternalNomicEmbedding(embedding_config=emb_cfg),
     )
     click.echo("Ingestion Complete!")
     click.echo(f"   - Processed Files: {stats.files}")
@@ -134,9 +151,15 @@ def init(config_path: str, force: bool) -> None:
 @click.option("--index", required=True, help="Target index name")
 @click.option("--top-k", default=1, show_default=True, type=int, help="Result count")
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
-def query_command(text: str, index: str, top_k: int, config: str) -> None:
-    cfg, index_config, vector_store = _load_vector_store_for_cli(index, config)
-    service = create_query_service(vector_store, cfg, index_config)
+@click.option(
+    "--embedding-setup",
+    default=_DEFAULT_EMBEDDING_SETUP,
+    help="Path to embedding_setup.yaml",
+)
+def query_command(text: str, index: str, top_k: int, config: str, embedding_setup: str) -> None:
+    emb_cfg = load_embedding_config(embedding_setup)
+    cfg, index_config, vector_store = _load_vector_store_for_cli(index, config, emb_cfg)
+    service = create_query_service(vector_store, cfg, index_config, embedding_config=emb_cfg)
     output_str = json.dumps(service.search(text, top_k=top_k), ensure_ascii=False, indent=4)
     click.echo(output_str.encode("utf-8"))
 
@@ -203,8 +226,14 @@ def sidecar_clear(file_path: Path, symbol: str) -> None:
 
 @main.command("doctor")
 @click.option("--config", default="workspace_config.yaml", help="Path to workspace config")
-def doctor(config: str) -> None:
-    cfg = init_config(load_config(config))
+@click.option(
+    "--embedding-setup",
+    default=_DEFAULT_EMBEDDING_SETUP,
+    help="Path to embedding_setup.yaml",
+)
+def doctor(config: str, embedding_setup: str) -> None:
+    emb_cfg = load_embedding_config(embedding_setup)
+    cfg = init_config(load_config(config), embedding_config=emb_cfg)
     service = create_doctor_service(cfg)
     try:
         service.validate_all()
