@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from smak.services.ingest.parsers import (
+from smak.parsers import (
     NullParser,
     PerlParser,
     PythonParser,

@@ -36,9 +36,16 @@ def _install_yaml() -> None:
         raw = value.strip()
         if raw == "":
             return ""
+        if raw.startswith("[") and raw.endswith("]"):
+            inner = raw[1:-1].strip()
+            if inner == "":
+                return []
+            return [_parse_scalar(item) for item in inner.split(",")]
         if raw.isdigit():
             return int(raw)
-        if raw.startswith('"') and raw.endswith('"'):
+        if (raw.startswith('"') and raw.endswith('"')) or (
+            raw.startswith("'") and raw.endswith("'")
+        ):
             return raw[1:-1]
         return raw
 

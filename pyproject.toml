@@ -24,7 +24,7 @@ dependencies = [
 smak = "smak.cli:main"
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["tests", "src"]
 
 [tool.ruff]
 line-length = 100

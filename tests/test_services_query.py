@@ -175,7 +175,7 @@ class TestQueryService(unittest.TestCase):
 
 
     def test_query_service_matches_sidecar_symbol_name_from_ingest_metadata(self) -> None:
-        from smak.services.ingest.parsers.python import PythonParser
+        from smak.parsers.python import PythonParser
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace_root = Path(tmp_dir)
@@ -360,6 +360,39 @@ class TestQueryService(unittest.TestCase):
         ).search("query", top_k=1)
 
         self.assertIsNone(payload["hits"][0]["exact_relative_path"])
+
+
+    def test_lookup_returns_found_when_uid_exists(self) -> None:
+        store = SimpleNamespace(
+            get_by_id=lambda uid: {"uid": uid, "content": "def foo(): pass", "metadata": {"symbol": "foo"}},
+        )
+        config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
+        service = QueryService(
+            store,
+            config=config,
+            vector_store_loader=lambda ic, c: store,
+            embedder=DummyEmbedder(),
+            index_config=config.indices[0],
+        )
+        result = service.lookup("src/a.py::foo")
+        self.assertTrue(result["found"])
+        self.assertEqual(result["uid"], "src/a.py::foo")
+        self.assertEqual(result["content"], "def foo(): pass")
+        self.assertEqual(result["metadata"], {"symbol": "foo"})
+
+    def test_lookup_returns_not_found_when_uid_missing(self) -> None:
+        store = SimpleNamespace(get_by_id=lambda uid: None)
+        config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
+        service = QueryService(
+            store,
+            config=config,
+            vector_store_loader=lambda ic, c: store,
+            embedder=DummyEmbedder(),
+            index_config=config.indices[0],
+        )
+        result = service.lookup("nonexistent::symbol")
+        self.assertFalse(result["found"])
+        self.assertEqual(result["uid"], "nonexistent::symbol")
 
 
 if __name__ == "__main__":

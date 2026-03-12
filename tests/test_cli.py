@@ -12,7 +12,7 @@ from unittest.mock import patch
 import click
 from click.testing import CliRunner
 
-from smak.config import IndexConfig, SmakConfig
+from smak.config import EmbeddingConfig, IndexConfig, SmakConfig
 
 
 def _install_fake_dependencies() -> None:
@@ -120,9 +120,8 @@ class TestCli(unittest.TestCase):
                 return SimpleNamespace(dimension=1)
 
             with (
-                patch("smak.cli._load_vector_store", new=fake_loader),
-                patch("smak.cli.validate_vector_store_dimension", new=lambda store, dim: None),
-                patch("smak.cli.initialize_embedding_dimensions", new=lambda cfg, emb: cfg),
+                patch("smak.cli.load_and_validate_vector_store", new=fake_loader),
+                patch("smak.cli.init_config", new=lambda cfg, **kw: cfg),
             ):
                 cli._load_vector_store_for_cli("docs", str(config_path))
 
@@ -159,7 +158,7 @@ class TestCli(unittest.TestCase):
             with (
                 patch(
                     "smak.cli._load_vector_store_for_cli",
-                    new=lambda index, config: (
+                    new=lambda index, config, embedding_config=None: (
                         SmakConfig(),
                         IndexConfig(name="source_code", description="source", paths=[str(folder)]),
                         object(),
@@ -185,6 +184,66 @@ class TestCli(unittest.TestCase):
             self.assertEqual(captured.get("follow_symlinks"), False)
             self.assertEqual(captured.get("sync"), True)
             self.assertIn("Ghost Files Pruned: 0", result.output)
+            self.assertIn("embedder_loader", captured)
+            self.assertTrue(callable(captured["embedder_loader"]))
+
+    def test_ingest_command_accepts_embedding_setup_option(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            folder = Path(tmp_dir) / "src"
+            folder.mkdir()
+            emb_yaml = Path(tmp_dir) / "custom_emb.yaml"
+            emb_yaml.write_text(
+                "api_base: http://custom:7777\nmodel: test-model\n",
+                encoding="utf-8",
+            )
+            captured_emb: list[EmbeddingConfig] = []
+
+            class FakeIngestService:
+                def __init__(self, vector_store: object) -> None:
+                    pass
+
+                def ingest_paths(self, *args: object, **kwargs: object) -> object:
+                    loader = kwargs.get("embedder_loader")
+                    if loader:
+                        captured_emb.append(loader)
+                    return SimpleNamespace(files=0, skipped=0, vectors=0, deleted=0)
+
+            with (
+                patch(
+                    "smak.cli._load_vector_store_for_cli",
+                    new=lambda index, config, embedding_config=None: (
+                        SmakConfig(),
+                        IndexConfig(name="src", description="s", paths=[str(folder)]),
+                        object(),
+                    ),
+                ),
+                patch("smak.cli.IngestService", new=FakeIngestService),
+            ):
+                cli = importlib.import_module("smak.cli")
+                result = runner.invoke(
+                    cli.main,
+                    [
+                        "ingest",
+                        "--index", "src",
+                        "--embedding-setup", str(emb_yaml),
+                    ],
+                )
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertEqual(len(captured_emb), 1)
+
+    def test_query_command_accepts_embedding_setup_option(self) -> None:
+        runner = CliRunner()
+        cli = importlib.import_module("smak.cli")
+        result = runner.invoke(cli.main, ["query", "--help"])
+        self.assertIn("--embedding-setup", result.output)
+
+    def test_doctor_command_accepts_embedding_setup_option(self) -> None:
+        runner = CliRunner()
+        cli = importlib.import_module("smak.cli")
+        result = runner.invoke(cli.main, ["doctor", "--help"])
+        self.assertIn("--embedding-setup", result.output)
 
     def test_sidecar_inspect_json_output(self) -> None:
         runner = CliRunner()
@@ -291,7 +350,7 @@ class TestCli(unittest.TestCase):
             with (
                 patch(
                     "smak.cli._load_vector_store_for_cli",
-                    new=lambda index, config: (
+                    new=lambda index, config, embedding_config=None: (
                         SmakConfig(
                             indices=[IndexConfig(name="source_code", description="source")]
                         ),
@@ -300,8 +359,8 @@ class TestCli(unittest.TestCase):
                     ),
                 ),
                 patch(
-                    "smak.services.query.InternalNomicEmbedding",
-                    new=lambda: SimpleNamespace(get_text_embedding=lambda text: [0.1]),
+                    "smak.utils.embedding.InternalNomicEmbedding",
+                    new=lambda **kw: SimpleNamespace(get_text_embedding=lambda text: [0.1]),
                 ),
             ):
                 cli = importlib.import_module("smak.cli")

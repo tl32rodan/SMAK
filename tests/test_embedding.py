@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from smak.config import SmakConfig
+from smak.config import EmbeddingConfig, SmakConfig
 from smak.utils.embedding import (
     InternalNomicEmbedding,
     detect_embedding_dimension,
@@ -117,6 +117,35 @@ class TestEmbeddingHelpers(unittest.TestCase):
         self.assertEqual(vectors, [[0.1, 0.2, 0.3]])
         self.assertIsNotNone(session.last_json)
         self.assertEqual(session.last_json["input"], ["hello"])
+
+
+    def test_embedding_config_overrides_defaults(self) -> None:
+        cfg = EmbeddingConfig(api_base="http://custom:9999", model="custom-model")
+        session = DummySession()
+        embedder = InternalNomicEmbedding(session=session, embedding_config=cfg)
+
+        self.assertEqual(embedder.api_base, "http://custom:9999")
+        self.assertEqual(embedder.model, "custom-model")
+
+    def test_explicit_kwargs_override_embedding_config(self) -> None:
+        cfg = EmbeddingConfig(api_base="http://config:1111", timeout=99.0)
+        session = DummySession()
+        embedder = InternalNomicEmbedding(
+            api_base="http://explicit:2222",
+            timeout=7.0,
+            session=session,
+            embedding_config=cfg,
+        )
+
+        self.assertEqual(embedder.api_base, "http://explicit:2222")
+        self.assertEqual(embedder.timeout, 7.0)
+
+    def test_embedding_config_batch_size(self) -> None:
+        cfg = EmbeddingConfig(batch_size=128)
+        session = DummySession()
+        embedder = InternalNomicEmbedding(session=session, embedding_config=cfg)
+
+        self.assertEqual(embedder.embed_batch_size, 128)
 
 
 if __name__ == "__main__":

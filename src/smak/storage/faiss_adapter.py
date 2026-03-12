@@ -160,4 +160,18 @@ def load_faiss_store(*, uri: str, collection_name: str, dim: int) -> FaissVector
     return FaissVectorStore(uri=uri, collection_name=collection_name, dim=dim)
 
 
-__all__ = ["FaissVectorSearchIndex", "FaissVectorStore", "load_faiss_store"]
+def load_vector_store_for_index(index_config: object, config: object) -> FaissVectorStore:
+    """Create a FaissVectorStore from index and top-level config objects."""
+    return load_faiss_store(
+        uri=index_config.uri,
+        collection_name=index_config.name,
+        dim=config.embedding_dimensions,
+    )
+
+
+__all__ = [
+    "FaissVectorSearchIndex",
+    "FaissVectorStore",
+    "load_faiss_store",
+    "load_vector_store_for_index",
+]

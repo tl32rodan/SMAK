@@ -1,0 +1,7 @@
+# SMAK Embedding Setup
+# Override these values to point at a different embedding server.
+
+api_base: "http://f15dtpai1:11436"
+model: "nomic_embed_text:latest"
+timeout: 600.0
+batch_size: 64

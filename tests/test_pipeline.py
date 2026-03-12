@@ -4,8 +4,7 @@ import unittest
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
-from smak.services.ingest.parsers import PythonParser
-from smak.sidecar.manager import IntegrityError, SidecarManager
+from smak.parsers import PythonParser
 
 
 class DummyEmbedder:
@@ -90,27 +89,20 @@ class TestIngestPipeline(unittest.TestCase):
         pipeline = _load_pipeline().IngestPipeline(
             parser=PythonParser(),
             embedder=DummyEmbedder(),
-            sidecar_manager=SidecarManager(),
         )
 
         content = "def login():\n    return True\n"
-        sidecar = "symbols:\n  - name: login\n    relations:\n      - issue:123\n"
 
-        result = pipeline.run(content, source="doc.txt", sidecar_payload=sidecar)
+        result = pipeline.run(content, source="doc.txt")
 
         self.assertEqual([unit.metadata["symbol"] for unit in result.units], ["login"])
         self.assertEqual(result.embeddings, [])
-        self.assertEqual(
-            result.metadata,
-            {"symbols": [{"name": "login", "relations": ["issue:123"]}]},
-        )
-        self.assertEqual(result.units[0].relations, ("issue:123",))
+        self.assertEqual(result.metadata, {})
 
     def test_ingest_pipeline_embeds_when_requested(self) -> None:
         pipeline = _load_pipeline().IngestPipeline(
             parser=PythonParser(),
             embedder=DummyEmbedder(),
-            sidecar_manager=SidecarManager(),
         )
 
         content = "def login():\n    return True\n"
@@ -130,7 +122,6 @@ class TestIngestPipeline(unittest.TestCase):
         ):
             pipeline = _load_pipeline().IngestPipeline(
                 parser=PythonParser(),
-                sidecar_manager=SidecarManager(),
             )
 
             result = pipeline.run(
@@ -145,35 +136,11 @@ class TestIngestPipeline(unittest.TestCase):
         pipeline = _load_pipeline().IngestPipeline(
             parser=PythonParser(),
             embedder=DummyEmbedderForEmbed(),
-            sidecar_manager=SidecarManager(),
         )
 
         result = pipeline.run("def login():\n    return True\n", compute_embeddings=True)
 
         self.assertEqual(result.embeddings, [[28.0, 1.0, 2.0]])
-
-    def test_ingest_pipeline_skips_embedding_on_sidecar_integrity_error(self) -> None:
-        embedder = SimpleNamespace(embed_documents=unittest.mock.Mock())
-        embedder.embed_documents.side_effect = AssertionError("Embedding should not run")
-
-        pipeline = _load_pipeline().IngestPipeline(
-            parser=PythonParser(),
-            embedder=embedder,
-            sidecar_manager=SidecarManager(),
-        )
-
-        content = "def login():\n    return True\n"
-        sidecar = "symbols:\n  - name: does_not_exist\n"
-
-        with self.assertRaises(IntegrityError):
-            pipeline.run(
-                content,
-                source="doc.txt",
-                sidecar_payload=sidecar,
-                compute_embeddings=True,
-            )
-
-        embedder.embed_documents.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -2,11 +2,43 @@
 
 from __future__ import annotations
 
+import glob as _glob
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
 from smak.utils.yaml import safe_load
+
+
+_EMBEDDING_SETUP_YAML = Path(__file__).resolve().parent / "embedding_setup.yaml"
+
+
+@dataclass(frozen=True)
+class EmbeddingConfig:
+    """Embedding service configuration loaded from ``embedding_setup.yaml``."""
+
+    api_base: str = "http://f15dtpai1:11436"
+    model: str = "nomic_embed_text:latest"
+    timeout: float = 600.0
+    batch_size: int = 64
+
+
+def load_embedding_config(path: str | Path | None = None) -> EmbeddingConfig:
+    """Load :class:`EmbeddingConfig` from a YAML file.
+
+    Falls back to the package-level ``embedding_setup.yaml`` when *path* is
+    ``None`` or when the file does not exist.
+    """
+    target = Path(path) if path else _EMBEDDING_SETUP_YAML
+    if not target.exists():
+        return EmbeddingConfig()
+    raw = target.read_text(encoding="utf-8")
+    data: Any = safe_load(raw) or {}
+    if not isinstance(data, Mapping):
+        return EmbeddingConfig()
+    known = {f for f in EmbeddingConfig.__dataclass_fields__}
+    kwargs = {k: v for k, v in data.items() if k in known}
+    return EmbeddingConfig(**kwargs)
 
 
 @dataclass(frozen=True)
@@ -42,12 +74,44 @@ def _resolve_absolute_path(raw: str, base: Path) -> str:
     return str((base / expanded).resolve())
 
 
+def _has_glob_meta(pattern: str) -> bool:
+    """Return ``True`` if *pattern* contains shell glob metacharacters."""
+    return any(ch in pattern for ch in ("*", "?", "["))
+
+
+def _expand_glob_paths(raw_paths: list[str], base_path: Path) -> list[str]:
+    """Resolve and expand *raw_paths*, supporting shell glob patterns.
+
+    Literal (non-glob) paths are resolved as before.  Glob patterns are
+    expanded via :func:`glob.glob` and only **directories** are kept.
+
+    Raises:
+        ValueError: If a glob pattern matches zero directories.
+    """
+    expanded: list[str] = []
+    for raw in raw_paths:
+        resolved = _resolve_absolute_path(raw, base_path)
+        if _has_glob_meta(resolved):
+            matches = sorted(
+                p for p in _glob.glob(resolved) if Path(p).is_dir()
+            )
+            if not matches:
+                raise ValueError(
+                    f"Glob pattern '{raw}' (resolved to '{resolved}') "
+                    "matched zero directories."
+                )
+            expanded.extend(matches)
+        else:
+            expanded.append(resolved)
+    return expanded
+
+
 def _resolve_config(cfg: SmakConfig, config_path: str | Path) -> SmakConfig:
     config_file = Path(config_path)
     base_path = config_file.resolve().parent if config_file.exists() else Path.cwd().resolve()
     resolved_indices = []
     for index in cfg.indices:
-        resolved_paths = [_resolve_absolute_path(p, base_path) for p in index.paths]
+        resolved_paths = _expand_glob_paths(index.paths, base_path)
         if index.uri:
             resolved_uri = _resolve_absolute_path(index.uri, base_path)
         else:
@@ -97,4 +161,11 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
     )
 
 
-__all__ = ["DEFAULT_DATA_DIR", "IndexConfig", "SmakConfig", "load_config"]
+__all__ = [
+    "DEFAULT_DATA_DIR",
+    "EmbeddingConfig",
+    "IndexConfig",
+    "SmakConfig",
+    "load_config",
+    "load_embedding_config",
+]

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from smak.config import SmakConfig, load_config
+from smak.config import EmbeddingConfig, SmakConfig, load_config, load_embedding_config
 
 
 class TestConfig(unittest.TestCase):
@@ -125,6 +125,147 @@ class TestConfig(unittest.TestCase):
 
             self.assertIsInstance(config.indices[0].paths, list)
             self.assertEqual(len(config.indices[0].paths), 1)
+
+
+    def test_glob_pattern_expands_to_matching_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Create directories: modules/auth, modules/billing, modules/README.txt (file)
+            (Path(tmp_dir) / "modules" / "auth").mkdir(parents=True)
+            (Path(tmp_dir) / "modules" / "billing").mkdir(parents=True)
+            (Path(tmp_dir) / "modules" / "README.txt").touch()
+
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code files\n"
+                "    paths:\n"
+                "      - ./modules/*\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+            resolved = config.indices[0].paths
+            # Only directories should be included (not README.txt)
+            self.assertEqual(len(resolved), 2)
+            names = sorted(Path(p).name for p in resolved)
+            self.assertEqual(names, ["auth", "billing"])
+
+    def test_glob_pattern_no_match_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code files\n"
+                "    paths:\n"
+                "      - ./nonexistent_*\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError) as ctx:
+                load_config(path)
+            self.assertIn("matched zero directories", str(ctx.exception))
+
+    def test_glob_mixed_with_literal_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            (Path(tmp_dir) / "src").mkdir()
+            (Path(tmp_dir) / "plugins" / "alpha").mkdir(parents=True)
+            (Path(tmp_dir) / "plugins" / "beta").mkdir(parents=True)
+
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code files\n"
+                "    paths:\n"
+                "      - ./src\n"
+                "      - ./plugins/*\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+            resolved = config.indices[0].paths
+            self.assertEqual(len(resolved), 3)
+            names = sorted(Path(p).name for p in resolved)
+            self.assertEqual(names, ["alpha", "beta", "src"])
+
+    def test_literal_path_unchanged_by_glob_expansion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            (Path(tmp_dir) / "src").mkdir()
+
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source code files\n"
+                "    paths:\n"
+                "      - ./src\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+            resolved = config.indices[0].paths
+            self.assertEqual(len(resolved), 1)
+            self.assertTrue(resolved[0].endswith("src"))
+
+
+class TestEmbeddingConfig(unittest.TestCase):
+    def test_defaults(self) -> None:
+        cfg = EmbeddingConfig()
+        self.assertEqual(cfg.api_base, "http://f15dtpai1:11436")
+        self.assertEqual(cfg.model, "nomic_embed_text:latest")
+        self.assertEqual(cfg.timeout, 600.0)
+        self.assertEqual(cfg.batch_size, 64)
+
+    def test_load_embedding_config_from_yaml(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "embedding_setup.yaml"
+            path.write_text(
+                "api_base: http://custom:9999\n"
+                "model: custom-model\n"
+                "timeout: 300.0\n"
+                "batch_size: 128\n",
+                encoding="utf-8",
+            )
+            cfg = load_embedding_config(path)
+            self.assertEqual(cfg.api_base, "http://custom:9999")
+            self.assertEqual(cfg.model, "custom-model")
+            self.assertEqual(cfg.timeout, 300.0)
+            self.assertEqual(cfg.batch_size, 128)
+
+    def test_load_embedding_config_partial(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "embedding_setup.yaml"
+            path.write_text("api_base: http://other:5555\n", encoding="utf-8")
+            cfg = load_embedding_config(path)
+            self.assertEqual(cfg.api_base, "http://other:5555")
+            self.assertEqual(cfg.model, "nomic_embed_text:latest")  # default
+            self.assertEqual(cfg.timeout, 600.0)  # default
+
+    def test_load_embedding_config_missing_file_returns_defaults(self) -> None:
+        cfg = load_embedding_config("/nonexistent/path.yaml")
+        self.assertEqual(cfg, EmbeddingConfig())
+
+    def test_load_embedding_config_ignores_unknown_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "embedding_setup.yaml"
+            path.write_text(
+                "api_base: http://x:1\n"
+                "unknown_key: should_be_ignored\n",
+                encoding="utf-8",
+            )
+            cfg = load_embedding_config(path)
+            self.assertEqual(cfg.api_base, "http://x:1")
+            self.assertFalse(hasattr(cfg, "unknown_key"))
+
+    def test_load_embedding_config_default_path(self) -> None:
+        cfg = load_embedding_config()
+        self.assertIsInstance(cfg, EmbeddingConfig)
+        self.assertEqual(cfg.api_base, "http://f15dtpai1:11436")
 
 
 if __name__ == "__main__":

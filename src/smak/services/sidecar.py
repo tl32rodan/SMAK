@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from smak.services.ingest.parsers import get_parser_for_path
+from smak.parsers import get_parser_for_path
+from smak.sidecar.manager import IntegrityError, SidecarManager
 from smak.sidecar.paths import is_sidecar_file
 from smak.sidecar.protocols import SidecarStore
 from smak.sidecar.store import YAMLSidecarStore
@@ -110,6 +111,24 @@ class SidecarService:
             "sidecar_path": str(sidecar_path),
             "total_symbols": total_symbols,
         }
+
+    def validate(self, file_path: Path) -> dict[str, Any]:
+        """Validate that sidecar symbol names match the source file's parsed symbols.
+
+        Raises IntegrityError if the sidecar references symbols not present in the source.
+        """
+        current_symbols = self.inspect(file_path)
+        existing = self.sidecar_store.load_symbols_for_source(file_path)
+        if not existing:
+            return {"file_path": str(file_path), "valid": True, "issues": []}
+
+        metadata = {"symbols": existing}
+        manager = SidecarManager()
+        try:
+            manager.validate(current_symbols, metadata)
+        except IntegrityError as exc:
+            return {"file_path": str(file_path), "valid": False, "issues": [str(exc)]}
+        return {"file_path": str(file_path), "valid": True, "issues": []}
 
     def clear_symbol(self, file_path: Path, symbol_name: str) -> dict[str, Any]:
         existing = self.sidecar_store.load_symbols_for_source(file_path)
