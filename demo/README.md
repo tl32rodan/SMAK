@@ -62,12 +62,7 @@ pip install -e .
 **2. Embedding server**
 
 SMAK uses a Nomic embedding model served via Ollama or a compatible OpenAI-style API.
-Set the endpoint if it differs from the default:
-
-```bash
-export SMAK_NOMIC_API_BASE="http://localhost:11434"   # default: http://f15dtpai1:11434
-export SMAK_NOMIC_MODEL="nomic-embed-text:latest"      # default: nomic_embed_text:latest
-```
+To override the default endpoint or model, edit `src/smak/embedding_setup.yaml`.
 
 Verify the server is reachable before running any `ingest` or `query` command.
 
