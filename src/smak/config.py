@@ -17,7 +17,7 @@ _EMBEDDING_SETUP_YAML = Path(__file__).resolve().parent / "embedding_setup.yaml"
 class EmbeddingConfig:
     """Embedding service configuration loaded from ``embedding_setup.yaml``."""
 
-    api_base: str = "http://f15dtpai1:11436"
+    api_base: str = "http://f15dtpai1:11434"
     model: str = "nomic_embed_text:latest"
     timeout: float = 600.0
     batch_size: int = 64

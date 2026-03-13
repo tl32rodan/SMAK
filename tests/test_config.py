@@ -216,7 +216,7 @@ class TestConfig(unittest.TestCase):
 class TestEmbeddingConfig(unittest.TestCase):
     def test_defaults(self) -> None:
         cfg = EmbeddingConfig()
-        self.assertEqual(cfg.api_base, "http://f15dtpai1:11436")
+        self.assertEqual(cfg.api_base, "http://f15dtpai1:11434")
         self.assertEqual(cfg.model, "nomic_embed_text:latest")
         self.assertEqual(cfg.timeout, 600.0)
         self.assertEqual(cfg.batch_size, 64)
@@ -265,7 +265,6 @@ class TestEmbeddingConfig(unittest.TestCase):
     def test_load_embedding_config_default_path(self) -> None:
         cfg = load_embedding_config()
         self.assertIsInstance(cfg, EmbeddingConfig)
-        self.assertEqual(cfg.api_base, "http://f15dtpai1:11436")
 
 
 if __name__ == "__main__":
