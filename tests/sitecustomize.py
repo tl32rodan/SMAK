@@ -43,6 +43,10 @@ def _install_yaml() -> None:
             return [_parse_scalar(item) for item in inner.split(",")]
         if raw.isdigit():
             return int(raw)
+        try:
+            return float(raw)
+        except ValueError:
+            pass
         if (raw.startswith('"') and raw.endswith('"')) or (
             raw.startswith("'") and raw.endswith("'")
         ):
