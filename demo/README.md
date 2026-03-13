@@ -95,6 +95,7 @@ Ingestion Complete!
    - Processed Files: 2
    - Skipped Files: 0
    - Vectors Added: 5
+   - Ghost Files Pruned: 0
 ```
 
 The Python parser extracts symbols from `csv_editor.py` and `test_csv_editor.py`.
@@ -188,13 +189,9 @@ Then update:
 
 ```bash
 smak sidecar update demo/workspace_a/src/csv_editor.py \
-     --updates '[
-       {
-         "symbol": "CsvEditor.append_row",
-         "intent": "Appends a row. Thread-unsafe on concurrent writes.",
-         "relations": []
-       }
-     ]'
+     --symbol "CsvEditor.append_row" \
+     --intent "Appends a row. Thread-unsafe on concurrent writes." \
+     --relations ""
 ```
 
 Re-ingest to propagate the change into the vector store:
@@ -308,15 +305,14 @@ The following examples show each MCP tool call and its expected response.
 }
 ```
 
-#### manage_sidecar — inspect symbols
+#### inspect_sidecar — list symbols
 
 ```json
 // Tool call
 {
-  "name": "manage_sidecar",
+  "name": "inspect_sidecar",
   "arguments": {
     "config": "demo_flow_a",
-    "action": "inspect",
     "file_path": "csv_editor.py"
   }
 }
@@ -325,22 +321,17 @@ The following examples show each MCP tool call and its expected response.
 ["CsvEditor", "CsvEditor.append_row", "CsvEditor.update_cell", "CsvEditor.read_rows"]
 ```
 
-#### manage_sidecar — update intent and relations
+#### update_sidecar — update intent and relations
 
 ```json
 {
-  "name": "manage_sidecar",
+  "name": "update_sidecar",
   "arguments": {
     "config": "demo_flow_a",
-    "action": "update",
     "file_path": "csv_editor.py",
-    "updates": [
-      {
-        "symbol": "CsvEditor.read_rows",
-        "intent": "Reads all rows. Returns empty list for an empty file.",
-        "relations": []
-      }
-    ]
+    "symbol": "CsvEditor.read_rows",
+    "intent": "Reads all rows. Returns empty list for an empty file.",
+    "relations": []
   }
 }
 ```
@@ -380,6 +371,7 @@ Ingestion Complete!
    - Processed Files: 2
    - Skipped Files: 0
    - Vectors Added: 6
+   - Ghost Files Pruned: 0
 ```
 
 The sidecar `.log_analyzer.py.sidecar.yaml` is picked up automatically, linking
@@ -455,13 +447,9 @@ Example output:
 
 ```bash
 smak sidecar update demo/workspace_b/src/log_analyzer.py \
-     --updates '[
-       {
-         "symbol": "LogAnalyzer.count_by_level",
-         "intent": "Frequency map by level. Note: case-sensitive keys (see ISSUE-102).",
-         "relations": ["log-parse-error"]
-       }
-     ]'
+     --symbol "LogAnalyzer.count_by_level" \
+     --intent "Frequency map by level. Note: case-sensitive keys (see ISSUE-102)." \
+     --relations "log-parse-error"
 ```
 
 Re-ingest after updating:
@@ -543,14 +531,13 @@ With the MCP server still running (`python -m smak.mcp_server --registry ./demo/
 }
 ```
 
-#### manage_sidecar — inspect
+#### inspect_sidecar
 
 ```json
 {
-  "name": "manage_sidecar",
+  "name": "inspect_sidecar",
   "arguments": {
     "config": "demo_flow_b",
-    "action": "inspect",
     "file_path": "log_analyzer.py"
   }
 }
