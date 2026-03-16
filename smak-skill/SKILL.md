@@ -1,6 +1,6 @@
 ---
 name: smak-skill
-description: SMAK (Semantic Mesh Augmented Kernel) - A semantic search and context expansion tool. Use this exclusively to explore code intent, historical context, and 1-hop bi-directional cross-entity relations (e.g., linking code with issues, tests, and docs in both directions).
+description: SMAK (Semantic Mesh Augmented Kernel) - A semantic search and context expansion tool. Use ONLY when you do NOT already know the file path or symbol name. If you know the target, use grep or read the file directly. Use this exclusively to explore code intent, historical context, and 1-hop bi-directional cross-entity relations (e.g., linking code with issues, tests, and docs in both directions).
 ---
 
 # SMAK Skill
@@ -59,15 +59,37 @@ registry.yaml                          ← pass --registry to MCP server
 
 ## 2. WHEN TO USE / NOT USE
 
+### ⚠️ MANDATORY PRE-CHECK — before every `semantic_search` call
+
+**Do you already know the file path or function/class name?**
+- If **YES** → **DO NOT** call `semantic_search`. Use `grep`/`rg` for the symbol name, or read the file directly. Semantic search is **only** for when you do NOT know where something lives.
+- If **NO** → proceed with `semantic_search`.
+
+**Violation examples** (never do these):
+```
+# BAD: You already know the function name is "append_row"
+semantic_search(query="append_row function", ...)
+
+# BAD: You already know the file is src/csv_editor.py
+semantic_search(query="csv editor module", ...)
+
+# BAD: You found the location in a previous step and search again
+# Previous grep found src/csv_editor.py::CsvEditor.update_cell
+semantic_search(query="update cell in csv editor", ...)
+```
+
 ### Use SMAK for
-- **Intent discovery**: understand the "why" behind hacks, tradeoffs, or legacy behavior.
+- **Intent discovery**: understand the "why" behind hacks, tradeoffs, or legacy behavior — when you do NOT already know where the relevant code is.
 - **1-hop context expansion**: from a code hit, auto-fetch linked issues/docs/tests via relations.
 - **Sidecar lifecycle**: inspect, create, or update `intent` + `relations` metadata for source files.
+- **Exploratory search**: finding code related to a concept, behavior, or purpose when you have no specific file/symbol in mind.
 
 ### Do NOT use SMAK for
 - **Exact string matching** → use `rg` / `grep`.
 - **Go-to-definition** → use LSP / IDE navigation.
 - **First step of repo exploration** → read README, directory tree, or entry points first.
+- **When you already know the file path or symbol name** → read the file directly or use `grep`. This is the most common misuse. If you can name the file or function, you do NOT need semantic search.
+- **Re-finding something you already found** → if a previous tool call already returned the file/symbol location, use that result directly. Do not re-search semantically.
 
 ### Anti-hallucination stop rule
 If semantic results are low-relevance for the same task **2 times in a row**, **STOP**. Do not fabricate edits from weak matches. Ask user for a narrower starting point.
@@ -96,6 +118,8 @@ If semantic results are low-relevance for the same task **2 times in a row**, **
 ---
 
 ## 4. QUERY FORMULATION
+
+**Prerequisite**: you have already confirmed that you do NOT know the file path or symbol name (see Section 2 pre-check). If you know either, stop — do not formulate a query. Use `grep` or read the file directly.
 
 SMAK uses **embedding-based semantic search**. Write queries as natural-language descriptions of behavior or purpose — not symbol names or file paths.
 
@@ -283,10 +307,11 @@ lookup_symbol(config="cfg", uid="/home/.../src/new_file.py::NewClass", index="so
 
 ## 7. STRICT RULES
 
-1. **`file_path` must exactly match `exact_relative_path`** from `semantic_search` hits. Never rewrite or guess.
-2. **`symbol` parameter = short name** from `inspect_sidecar` (e.g. `CsvEditor.update_cell`). Never pass full UIDs as `symbol`.
-3. **`relations` list = full UIDs** from `semantic_search` hits (e.g. `/abs/path::Symbol`).
-4. **Always call `inspect_sidecar`** before `update_sidecar` (single-symbol mode) to confirm valid symbol names.
-5. **Always call `lookup_symbol`** to verify a UID exists before adding it to `relations`.
-6. **Sidecar updates ≠ vector store updates.** Changing a sidecar does not require re-ingestion.
-7. **`refresh_knowledge` is resource-intensive.** Only call when source files have changed and you need updated search results.
+1. **Never use `semantic_search` when you already know the target.** If you know the file path, function name, or class name — use `grep`/`rg` or read the file directly. `semantic_search` is exclusively for discovering unknown locations by describing behavior or purpose.
+2. **`file_path` must exactly match `exact_relative_path`** from `semantic_search` hits. Never rewrite or guess.
+3. **`symbol` parameter = short name** from `inspect_sidecar` (e.g. `CsvEditor.update_cell`). Never pass full UIDs as `symbol`.
+4. **`relations` list = full UIDs** from `semantic_search` hits (e.g. `/abs/path::Symbol`).
+5. **Always call `inspect_sidecar`** before `update_sidecar` (single-symbol mode) to confirm valid symbol names.
+6. **Always call `lookup_symbol`** to verify a UID exists before adding it to `relations`.
+7. **Sidecar updates ≠ vector store updates.** Changing a sidecar does not require re-ingestion.
+8. **`refresh_knowledge` is resource-intensive.** Only call when source files have changed and you need updated search results.
