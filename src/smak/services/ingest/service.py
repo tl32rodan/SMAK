@@ -83,7 +83,7 @@ class IngestService:
 
     def ingest_paths(
         self,
-        folders: list[Path],
+        paths: list[Path],
         *,
         max_workers: int = 4,
         incremental: bool = True,
@@ -94,11 +94,14 @@ class IngestService:
         skip_file: Callable[[Path], bool] | None = None,
         on_ghost_source: Callable[[str, list[Path]], None] | None = None,
     ) -> IngestStats:
-        """Ingest content from multiple folders into the vector store.
+        """Ingest content from multiple paths into the vector store.
+
+        Each entry in *paths* may be a directory (walked recursively) or a
+        single file (ingested directly).
 
         Handles sync correctly across all paths: ghost detection is deferred
-        until all folders have been visited, so sources from one folder are
-        not mistakenly pruned while another folder is being processed.
+        until all paths have been visited, so sources from one path are
+        not mistakenly pruned while another path is being processed.
         """
         embedder = (embedder_loader or InternalNomicEmbedding)()
         node_class = (node_class_loader or _load_text_node_class)()
@@ -108,13 +111,17 @@ class IngestService:
         )
         all_visited_sources: set[str] = set()
 
-        # Collect (file_path, root_folder) pairs from all folders
+        # Collect (file_path, root_path) pairs from all paths
         all_files: list[tuple[Path, Path]] = []
-        for folder in folders:
-            for file_path in _iter_source_files(
-                folder, follow_symlinks=follow_symlinks, skip_file=skip_file
-            ):
-                all_files.append((file_path, folder))
+        for source_path in paths:
+            if source_path.is_file():
+                if skip_file is None or not skip_file(source_path):
+                    all_files.append((source_path, source_path.parent))
+            else:
+                for file_path in _iter_source_files(
+                    source_path, follow_symlinks=follow_symlinks, skip_file=skip_file
+                ):
+                    all_files.append((file_path, source_path))
 
         lock = threading.Lock()
         file_count = vector_count = skipped_count = 0
@@ -181,7 +188,7 @@ class IngestService:
             for ghost_source in ghost_sources:
                 vector_store.delete_by_ids(tracked_sources[ghost_source])
                 if on_ghost_source:
-                    on_ghost_source(ghost_source, folders)
+                    on_ghost_source(ghost_source, paths)
                 deleted_count += 1
 
         return IngestStats(

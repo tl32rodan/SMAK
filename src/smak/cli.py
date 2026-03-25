@@ -111,15 +111,17 @@ def ingest(
 ) -> None:
     emb_cfg = load_embedding_config(embedding_setup)
     _, index_config, vector_store = _load_vector_store_for_cli(index, config, emb_cfg)
-    folders = [Path(p) for p in index_config.paths]
-    for folder in folders:
-        if not folder.exists() or not folder.is_dir():
-            raise click.ClickException(f"Folder not found: {folder}")
+    targets = [Path(p) for p in index_config.paths]
+    for p in targets:
+        if not p.exists():
+            raise click.ClickException(f"Path not found: {p}")
+        if not p.is_dir() and not p.is_file():
+            raise click.ClickException(f"Path is neither a file nor a directory: {p}")
     service = IngestService(vector_store=vector_store)
-    paths_display = ", ".join(f"'{f}'" for f in folders)
+    paths_display = ", ".join(f"'{f}'" for f in targets)
     click.echo(f"Starting ingestion for {paths_display} -> Index: '{index}'...")
     stats = service.ingest_paths(
-        folders,
+        targets,
         max_workers=workers,
         incremental=incremental,
         follow_symlinks=follow_symlinks,

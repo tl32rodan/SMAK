@@ -127,9 +127,9 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(len(config.indices[0].paths), 1)
 
 
-    def test_glob_pattern_expands_to_matching_directories(self) -> None:
+    def test_glob_pattern_expands_to_matching_files_and_directories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            # Create directories: modules/auth, modules/billing, modules/README.txt (file)
+            # Create directories and a file under modules/
             (Path(tmp_dir) / "modules" / "auth").mkdir(parents=True)
             (Path(tmp_dir) / "modules" / "billing").mkdir(parents=True)
             (Path(tmp_dir) / "modules" / "README.txt").touch()
@@ -147,10 +147,10 @@ class TestConfig(unittest.TestCase):
             config = load_config(path)
 
             resolved = config.indices[0].paths
-            # Only directories should be included (not README.txt)
-            self.assertEqual(len(resolved), 2)
+            # Both files and directories should be included
+            self.assertEqual(len(resolved), 3)
             names = sorted(Path(p).name for p in resolved)
-            self.assertEqual(names, ["auth", "billing"])
+            self.assertEqual(names, ["README.txt", "auth", "billing"])
 
     def test_glob_pattern_no_match_raises(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -166,7 +166,7 @@ class TestConfig(unittest.TestCase):
 
             with self.assertRaises(ValueError) as ctx:
                 load_config(path)
-            self.assertIn("matched zero directories", str(ctx.exception))
+            self.assertIn("matched zero files or directories", str(ctx.exception))
 
     def test_glob_mixed_with_literal_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -211,6 +211,73 @@ class TestConfig(unittest.TestCase):
             resolved = config.indices[0].paths
             self.assertEqual(len(resolved), 1)
             self.assertTrue(resolved[0].endswith("src"))
+
+    def test_glob_pattern_expands_to_matching_files_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            scripts_dir = Path(tmp_dir) / "scripts"
+            scripts_dir.mkdir()
+            (scripts_dir / "app.py").touch()
+            (scripts_dir / "utils.py").touch()
+            (scripts_dir / "readme.txt").touch()
+
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: scripts\n"
+                "    description: Python scripts\n"
+                "    paths:\n"
+                "      - ./scripts/*.py\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+            resolved = config.indices[0].paths
+            self.assertEqual(len(resolved), 2)
+            names = sorted(Path(p).name for p in resolved)
+            self.assertEqual(names, ["app.py", "utils.py"])
+
+    def test_glob_mixed_files_and_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            (Path(tmp_dir) / "data" / "subdir").mkdir(parents=True)
+            (Path(tmp_dir) / "data" / "file.csv").touch()
+
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: data\n"
+                "    description: Data files\n"
+                "    paths:\n"
+                "      - ./data/*\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+            resolved = config.indices[0].paths
+            self.assertEqual(len(resolved), 2)
+            names = sorted(Path(p).name for p in resolved)
+            self.assertEqual(names, ["file.csv", "subdir"])
+
+    def test_literal_file_path_passes_through(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            (Path(tmp_dir) / "specific.py").touch()
+
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n"
+                "  - name: single\n"
+                "    description: Single file\n"
+                "    paths:\n"
+                "      - ./specific.py\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(path)
+
+            resolved = config.indices[0].paths
+            self.assertEqual(len(resolved), 1)
+            self.assertTrue(resolved[0].endswith("specific.py"))
 
 
 class TestEmbeddingConfig(unittest.TestCase):
