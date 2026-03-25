@@ -83,22 +83,22 @@ def _expand_glob_paths(raw_paths: list[str], base_path: Path) -> list[str]:
     """Resolve and expand *raw_paths*, supporting shell glob patterns.
 
     Literal (non-glob) paths are resolved as before.  Glob patterns are
-    expanded via :func:`glob.glob` and only **directories** are kept.
+    expanded via :func:`glob.glob` and both **files and directories** are kept.
 
     Raises:
-        ValueError: If a glob pattern matches zero directories.
+        ValueError: If a glob pattern matches zero files or directories.
     """
     expanded: list[str] = []
     for raw in raw_paths:
         resolved = _resolve_absolute_path(raw, base_path)
         if _has_glob_meta(resolved):
             matches = sorted(
-                p for p in _glob.glob(resolved) if Path(p).is_dir()
+                p for p in _glob.glob(resolved) if Path(p).is_dir() or Path(p).is_file()
             )
             if not matches:
                 raise ValueError(
                     f"Glob pattern '{raw}' (resolved to '{resolved}') "
-                    "matched zero directories."
+                    "matched zero files or directories."
                 )
             expanded.extend(matches)
         else:

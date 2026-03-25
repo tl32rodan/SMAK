@@ -180,7 +180,8 @@ class SmakMcpServer:
             FileNotFoundError: If no match can be found.
         """
 
-        index_roots = [Path(p).resolve() for p in index_config.paths]
+        index_roots = [Path(p).resolve() for p in index_config.paths if Path(p).is_dir()]
+        index_files = [Path(p).resolve() for p in index_config.paths if Path(p).is_file()]
         raw_source_path = Path(file_path)
 
         # Try absolute path directly, or relative to each index root
@@ -196,6 +197,10 @@ class SmakMcpServer:
         # Fallback: scan all roots for filename match
         file_name = raw_source_path.name
         all_candidates: list[Path] = []
+        # Include individually-listed files whose name matches
+        for idx_file in index_files:
+            if idx_file.name == file_name:
+                all_candidates.append(idx_file)
         for index_root in index_roots:
             all_candidates.extend(index_root.rglob(f"*{file_name}") if file_name else [])
         candidates = sorted(all_candidates)
@@ -257,11 +262,11 @@ class SmakMcpServer:
 
         cfg = self._load_config(config)
         vector_store, index_config = self._load_index_vector_store(cfg, index)
-        target_folders = [Path(p) for p in index_config.paths]
+        target_paths = [Path(p) for p in index_config.paths]
         service = IngestService(vector_store=vector_store)
         emb_cfg = self.embedding_config
         stats = service.ingest_paths(
-            target_folders,
+            target_paths,
             follow_symlinks=follow_symlinks,
             skip_file=sidecar_skip_file,
             on_ghost_source=on_ghost_source,
