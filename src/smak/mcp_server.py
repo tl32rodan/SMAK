@@ -1,7 +1,8 @@
-"""MCP bridge for exposing SMAK services as tool-callable operations."""
+"""MCP bridge — intent-based tools for agent-driven SMAK operations."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,9 @@ from smak.utils.embedding import InternalNomicEmbedding
 
 _DEFAULT_EMBEDDING_SETUP = str(Path(__file__).resolve().parent / "embedding_setup.yaml")
 
+# Regex to extract symbol names from the "Cannot remove symbols" error.
+_STALE_SYMBOL_RE = re.compile(r'--symbol "([^"]+)"')
+
 
 @dataclass
 class SmakMcpServer:
@@ -38,7 +42,6 @@ class SmakMcpServer:
     # ------------------------------------------------------------------
 
     def _load_config(self, config: str) -> SmakConfig:
-        """Load and cache a workspace config by path."""
         resolved = str(Path(config).resolve())
         if resolved in self._config_cache:
             return self._config_cache[resolved]
@@ -81,15 +84,13 @@ class SmakMcpServer:
     def _resolve_source_path(
         self, index: str, index_config: object, file_path: str,
     ) -> Path:
-        """Resolve *file_path* with defensive fallback across all index roots."""
         index_roots = [Path(p).resolve() for p in index_config.paths if Path(p).is_dir()]
         index_files = [Path(p).resolve() for p in index_config.paths if Path(p).is_file()]
         raw = Path(file_path)
 
-        if raw.is_absolute():
-            if raw.exists():
-                return raw
-        else:
+        if raw.is_absolute() and raw.exists():
+            return raw
+        if not raw.is_absolute():
             for root in index_roots:
                 candidate = (root / raw).resolve()
                 if candidate.exists():
@@ -106,7 +107,6 @@ class SmakMcpServer:
 
         if len(candidates) == 1:
             return candidates[0].resolve()
-
         if len(candidates) > 1:
             rel: list[str] = []
             for c in candidates:
@@ -119,7 +119,8 @@ class SmakMcpServer:
                 else:
                     rel.append(str(c.resolve()))
             raise ValueError(
-                f"Ambiguous file path '{file_path}'. Did you mean {self._format_candidates(rel)}?"
+                f"Ambiguous file path '{file_path}'. "
+                f"Did you mean {self._format_candidates(rel)}?"
             )
 
         roots_display = ", ".join(f"'{r}'" for r in index_roots)
@@ -129,18 +130,93 @@ class SmakMcpServer:
             "Try using semantic_search first and pass one of the returned file paths."
         )
 
-    # ------------------------------------------------------------------
-    # Public service methods — every method takes config path
-    # ------------------------------------------------------------------
+    # ==================================================================
+    # Intent-based tools
+    # ==================================================================
 
-    def refresh_knowledge(
+    # ---- describe_workspace -----------------------------------------
+
+    def describe_workspace(self, config: str) -> dict[str, Any]:
+        """Return workspace metadata so the agent knows what's available."""
+        cfg = self._load_config(config)
+        return {
+            "config_path": config,
+            "indices": [
+                {
+                    "name": idx.name,
+                    "description": idx.description,
+                    "paths": idx.paths,
+                    "path_env": idx.path_env,
+                }
+                for idx in cfg.indices
+            ],
+        }
+
+    # ---- search -----------------------------------------------------
+
+    def search(
+        self, config: str, query: str,
+        index: str = "source_code", top_k: int = 5,
+    ) -> dict[str, Any]:
+        """Semantic search within a single index."""
+        cfg = self._load_config(config)
+        vector_store, index_config = self._load_index_vector_store(cfg, index)
+        service = create_query_service(
+            vector_store, cfg, index_config,
+            embedding_config=self.embedding_config,
+        )
+        result = service.search(query, top_k=top_k)
+        return result if isinstance(result, dict) else {}
+
+    # ---- search_all -------------------------------------------------
+
+    def search_all(
+        self, config: str, query: str,
+        indices: list[str] | None = None, top_k: int = 3,
+    ) -> dict[str, Any]:
+        """Search across multiple (or all) indices at once."""
+        cfg = self._load_config(config)
+        target = indices or [idx.name for idx in cfg.indices]
+        results: dict[str, Any] = {}
+        for name in target:
+            ic = cfg.get_index(name)
+            if ic is None:
+                results[name] = {"error": f"Index '{name}' not found"}
+                continue
+            try:
+                vs = load_and_validate_vector_store(ic, cfg)
+                svc = create_query_service(
+                    vs, cfg, ic, embedding_config=self.embedding_config,
+                )
+                results[name] = svc.search(query, top_k=top_k)
+            except Exception as exc:
+                results[name] = {"error": str(exc)}
+        return results
+
+    # ---- lookup -----------------------------------------------------
+
+    def lookup(
+        self, config: str, uid: str, index: str = "source_code",
+    ) -> dict[str, Any]:
+        """Check whether a UID exists in the vector store."""
+        cfg = self._load_config(config)
+        vs, ic = self._load_index_vector_store(cfg, index)
+        svc = create_query_service(
+            vs, cfg, ic, embedding_config=self.embedding_config,
+        )
+        return svc.lookup(uid)
+
+    # ---- ingest -----------------------------------------------------
+
+    def ingest(
         self, config: str, index: str = "source_code",
         follow_symlinks: bool = True,
     ) -> str:
+        """Re-ingest files into a vector store index."""
         cfg = self._load_config(config)
-        vector_store, index_config = self._load_index_vector_store(cfg, index)
-        target_paths = [Path(p) for p in index_config.paths]
-        service = IngestService(vector_store=vector_store)
+        vs, ic = self._load_index_vector_store(cfg, index)
+        target_paths = [Path(p) for p in ic.paths]
+        service = IngestService(vector_store=vs)
         emb_cfg = self.embedding_config
         stats = service.ingest_paths(
             target_paths,
@@ -155,129 +231,115 @@ class SmakMcpServer:
             f"Skipped Files: {stats.skipped}, Vectors Added: {stats.vectors}"
         )
 
-    def semantic_search(
-        self, config: str, query: str,
-        index: str = "source_code", top_k: int = 5,
-    ) -> dict[str, Any]:
-        cfg = self._load_config(config)
-        vector_store, index_config = self._load_index_vector_store(cfg, index)
-        service = create_query_service(
-            vector_store, cfg, index_config, embedding_config=self.embedding_config,
-        )
-        result = service.search(query, top_k=top_k)
-        return result if isinstance(result, dict) else {}
+    # ---- enrich_symbol ----------------------------------------------
 
-    def list_available_indices(self, config: str) -> list[dict[str, str]]:
-        cfg = self._load_config(config)
-        return [
-            {"name": idx.name, "description": idx.description}
-            for idx in cfg.indices
-        ]
-
-    def inspect_sidecar(
-        self, config: str, file_path: str, index: str = "source_code",
-    ) -> list[str]:
-        cfg = self._load_config(config)
-        index_config = self._get_index_config(cfg, index)
-        source_path = self._resolve_source_path(index, index_config, file_path)
-        return create_sidecar_service().inspect(source_path)
-
-    def update_sidecar(
-        self, config: str, file_path: str, index: str = "source_code",
-        symbol: str | None = None, intent: str | None = None,
-        relations: list[str] | None = None,
-    ) -> dict[str, Any]:
-        cfg = self._load_config(config)
-        index_config = self._get_index_config(cfg, index)
-        source_path = self._resolve_source_path(index, index_config, file_path)
-        return create_sidecar_service().update(
-            source_path, symbol=symbol, intent=intent, relations=relations,
-        )
-
-    def clear_sidecar_symbol(
+    def enrich_symbol(
         self, config: str, file_path: str, symbol: str,
+        intent: str | None = None, relations: list[str] | None = None,
         index: str = "source_code",
     ) -> dict[str, Any]:
-        cfg = self._load_config(config)
-        index_config = self._get_index_config(cfg, index)
-        source_path = self._resolve_source_path(index, index_config, file_path)
-        return create_sidecar_service().clear_symbol(source_path, symbol)
+        """Annotate a single symbol with intent and/or relations.
 
-    def lookup_symbol(
-        self, config: str, uid: str, index: str = "source_code",
-    ) -> dict[str, Any]:
+        Automatically:
+        - Validates the symbol exists in the source file
+        - Ensures the sidecar is synced (auto-creates if missing)
+        - Clears stale symbols if they block a full sync
+        """
         cfg = self._load_config(config)
-        vector_store, index_config = self._load_index_vector_store(cfg, index)
-        service = create_query_service(
-            vector_store, cfg, index_config, embedding_config=self.embedding_config,
-        )
-        return service.lookup(uid)
+        ic = self._get_index_config(cfg, index)
+        source_path = self._resolve_source_path(index, ic, file_path)
+        svc = create_sidecar_service()
 
-    def validate_mesh(self, config: str) -> str:
-        cfg = self._load_config(config)
-        service = create_doctor_service(cfg)
-        service.validate_all()
-        return "Mesh diagnostics passed."
-
-    # ------------------------------------------------------------------
-    # Composite tools
-    # ------------------------------------------------------------------
-
-    def multi_index_search(
-        self, config: str, query: str,
-        indices: list[str] | None = None, top_k: int = 3,
-    ) -> dict[str, Any]:
-        cfg = self._load_config(config)
-        target_indices = indices or [idx.name for idx in cfg.indices]
-        results: dict[str, Any] = {}
-        for index_name in target_indices:
-            index_config = cfg.get_index(index_name)
-            if index_config is None:
-                results[index_name] = {"error": f"Index '{index_name}' not found"}
-                continue
-            try:
-                vs = load_and_validate_vector_store(index_config, cfg)
-                svc = create_query_service(
-                    vs, cfg, index_config, embedding_config=self.embedding_config,
-                )
-                results[index_name] = svc.search(query, top_k=top_k)
-            except Exception as exc:
-                results[index_name] = {"error": str(exc)}
-        return results
-
-    def workspace_status(self, config: str) -> dict[str, Any]:
-        cfg = self._load_config(config)
-        stats: list[dict[str, Any]] = []
-        for index_config in cfg.indices:
-            stat: dict[str, Any] = {
-                "name": index_config.name,
-                "description": index_config.description,
-                "paths": index_config.paths,
+        # 1. Validate symbol exists
+        valid_symbols = svc.inspect(source_path)
+        if symbol not in valid_symbols:
+            return {
+                "status": "error",
+                "message": (
+                    f"Symbol '{symbol}' not found in {file_path}. "
+                    f"Valid symbols: {valid_symbols}"
+                ),
+                "valid_symbols": valid_symbols,
             }
-            try:
-                vs = load_and_validate_vector_store(index_config, cfg)
-                stat["vector_count"] = vs.count()
-                stat["last_update"] = vs.last_update()
-            except Exception as exc:
-                stat["error"] = str(exc)
-            stats.append(stat)
-        return {"indices": stats}
 
-    def batch_update_sidecars(
+        # 2. Ensure sidecar is synced (full sync first)
+        try:
+            svc.update(source_path)
+        except ValueError as exc:
+            # Stale symbols blocking removal — auto-clear them
+            stale = _STALE_SYMBOL_RE.findall(str(exc))
+            if not stale:
+                return {"status": "error", "message": str(exc)}
+            for s in stale:
+                try:
+                    svc.clear_symbol(source_path, s)
+                except ValueError:
+                    pass
+            svc.update(source_path)
+
+        # 3. Apply the enrichment
+        if intent is None and relations is None:
+            return {
+                "status": "ok",
+                "message": f"Sidecar synced for {file_path}. "
+                f"No intent/relations provided for '{symbol}'.",
+            }
+        svc.update(
+            source_path, symbol=symbol, intent=intent, relations=relations,
+        )
+        return {
+            "status": "ok",
+            "file_path": str(source_path),
+            "symbol": symbol,
+            "intent": intent,
+            "relations": relations,
+        }
+
+    # ---- enrich_file ------------------------------------------------
+
+    def enrich_file(
+        self, config: str, file_path: str, index: str = "source_code",
+    ) -> dict[str, Any]:
+        """Initialize or sync a file's sidecar (full sync)."""
+        cfg = self._load_config(config)
+        ic = self._get_index_config(cfg, index)
+        source_path = self._resolve_source_path(index, ic, file_path)
+        svc = create_sidecar_service()
+        return svc.update(source_path)
+
+    # ---- enrich_batch -----------------------------------------------
+
+    def enrich_batch(
         self, config: str, file_paths: list[str],
         index: str = "source_code",
     ) -> list[dict[str, Any]]:
+        """Sync sidecars for multiple files at once."""
         cfg = self._load_config(config)
-        index_config = self._get_index_config(cfg, index)
-        sidecar_service = create_sidecar_service()
+        ic = self._get_index_config(cfg, index)
+        svc = create_sidecar_service()
         results: list[dict[str, Any]] = []
         for fp in file_paths:
             try:
-                source_path = self._resolve_source_path(index, index_config, fp)
-                results.append(sidecar_service.update(source_path))
+                source = self._resolve_source_path(index, ic, fp)
+                results.append(svc.update(source))
             except Exception as exc:
                 results.append({"file_path": fp, "error": str(exc)})
         return results
+
+    # ---- check_health -----------------------------------------------
+
+    def check_health(self, config: str) -> dict[str, Any]:
+        """Run diagnostics and return structured health report."""
+        cfg = self._load_config(config)
+        service = create_doctor_service(cfg)
+        try:
+            service.validate_all()
+        except RuntimeError as exc:
+            return {
+                "status": "unhealthy",
+                "issues": str(exc).split("\n"),
+            }
+        return {"status": "healthy", "issues": []}
 
 
 # ------------------------------------------------------------------
@@ -287,161 +349,150 @@ class SmakMcpServer:
 def build_mcp_server(
     embedding_setup: str | Path | None = None,
 ) -> FastMCP:
-    """Build the FastMCP instance and register SMAK tools."""
+    """Build the FastMCP instance with intent-based SMAK tools."""
 
     emb_cfg = load_embedding_config(embedding_setup)
     smak = SmakMcpServer(embedding_config=emb_cfg)
     mcp = FastMCP("SMAK")
 
     @mcp.tool()
-    def refresh_knowledge(
-        config: str,
-        index: str = "source_code",
-        follow_symlinks: bool = True,
-    ) -> str:
-        """Ingest (or re-ingest) a source folder into a SMAK vector-store index.
+    def describe_workspace(config: str) -> dict[str, Any]:
+        """Describe a SMAK workspace: list all indices with their names,
+        descriptions, and paths.  Call this first to understand what's
+        available before searching or enriching.
 
         Args:
             config: Path to ``workspace_config.yaml``.
-            index: Name of the index to refresh.
-            follow_symlinks: Follow symbolic links.  Defaults to ``True``.
         """
-        return smak.refresh_knowledge(config=config, index=index, follow_symlinks=follow_symlinks)
+        return smak.describe_workspace(config=config)
 
     @mcp.tool()
-    def semantic_search(
+    def search(
         config: str, query: str,
         index: str = "source_code", top_k: int = 5,
     ) -> dict[str, Any]:
-        """Search a SMAK index with a natural-language query.
+        """Semantic search within a single index.  Returns hits with
+        1-hop related context from sidecar relations.
 
-        Args:
-            config: Path to ``workspace_config.yaml``.
-            query: Natural-language description of the intent or behavior.
-            index: Name of the index to query.
-            top_k: Maximum results.  Defaults to ``5``.
-        """
-        return smak.semantic_search(config=config, query=query, index=index, top_k=top_k)
-
-    @mcp.tool()
-    def list_available_indices(config: str) -> list[dict[str, str]]:
-        """List searchable indices for a workspace.
-
-        Args:
-            config: Path to ``workspace_config.yaml``.
-        """
-        return smak.list_available_indices(config=config)
-
-    @mcp.tool()
-    def inspect_sidecar(
-        config: str, file_path: str, index: str = "source_code",
-    ) -> list[str]:
-        """List the symbol UIDs parsed from a source file.
-
-        Args:
-            config: Path to ``workspace_config.yaml``.
-            file_path: Path to the source file.
-            index: Index whose root resolves relative paths.
-        """
-        return smak.inspect_sidecar(config=config, file_path=file_path, index=index)
-
-    @mcp.tool()
-    def update_sidecar(
-        config: str, file_path: str, index: str = "source_code",
-        symbol: str | None = None, intent: str | None = None,
-        relations: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Sync or update sidecar metadata for a source file.
-
-        Args:
-            config: Path to ``workspace_config.yaml``.
-            file_path: Path to the source file.
-            index: Index whose root resolves relative paths.
-            symbol: UID of a single symbol to update.
-            intent: New intent description (only with ``symbol``).
-            relations: New relation list (only with ``symbol``).
-        """
-        return smak.update_sidecar(
-            config=config, file_path=file_path, index=index,
-            symbol=symbol, intent=intent, relations=relations,
-        )
-
-    @mcp.tool()
-    def clear_sidecar_symbol(
-        config: str, file_path: str, symbol: str,
-        index: str = "source_code",
-    ) -> dict[str, Any]:
-        """Remove a symbol entry from a sidecar file.
-
-        Args:
-            config: Path to ``workspace_config.yaml``.
-            file_path: Path to the source file.
-            symbol: Exact UID of the symbol to remove.
-            index: Index whose root resolves relative paths.
-        """
-        return smak.clear_sidecar_symbol(
-            config=config, file_path=file_path, symbol=symbol, index=index,
-        )
-
-    @mcp.tool()
-    def lookup_symbol(
-        config: str, uid: str, index: str = "source_code",
-    ) -> dict[str, Any]:
-        """Check whether a specific UID exists in the SMAK vector store.
-
-        Args:
-            config: Path to ``workspace_config.yaml``.
-            uid: Full UID to look up.
-            index: Index to query.
-        """
-        return smak.lookup_symbol(config=config, uid=uid, index=index)
-
-    @mcp.tool()
-    def validate_mesh(config: str) -> str:
-        """Run integrity diagnostics across the SMAK mesh.
-
-        Args:
-            config: Path to ``workspace_config.yaml``.
-        """
-        return smak.validate_mesh(config=config)
-
-    @mcp.tool()
-    def multi_index_search(
-        config: str, query: str,
-        indices: list[str] | None = None, top_k: int = 3,
-    ) -> dict[str, Any]:
-        """Search across multiple (or all) indices at once.
+        Write queries as natural-language descriptions of **intent or
+        behavior** — not symbol names or file paths.
 
         Args:
             config: Path to ``workspace_config.yaml``.
             query: Natural-language query.
-            indices: Index names to search.  ``None`` = all.
+            index: Target index name.
+            top_k: Max results.
+        """
+        return smak.search(config=config, query=query, index=index, top_k=top_k)
+
+    @mcp.tool()
+    def search_all(
+        config: str, query: str,
+        indices: list[str] | None = None, top_k: int = 3,
+    ) -> dict[str, Any]:
+        """Search across multiple (or all) indices at once.  Use when
+        you don't know which index contains the answer.
+
+        Args:
+            config: Path to ``workspace_config.yaml``.
+            query: Natural-language query.
+            indices: Index names to search (``None`` = all).
             top_k: Max results per index.
         """
-        return smak.multi_index_search(config=config, query=query, indices=indices, top_k=top_k)
+        return smak.search_all(config=config, query=query, indices=indices, top_k=top_k)
 
     @mcp.tool()
-    def workspace_status(config: str) -> dict[str, Any]:
-        """Return health dashboard with per-index stats.
+    def lookup(
+        config: str, uid: str, index: str = "source_code",
+    ) -> dict[str, Any]:
+        """Check whether a UID exists in the vector store.  Use this to
+        verify a relation target before adding it.
 
         Args:
             config: Path to ``workspace_config.yaml``.
+            uid: Full UID (``path::symbol``).
+            index: Index to query.
         """
-        return smak.workspace_status(config=config)
+        return smak.lookup(config=config, uid=uid, index=index)
 
     @mcp.tool()
-    def batch_update_sidecars(
-        config: str, file_paths: list[str],
+    def ingest(
+        config: str, index: str = "source_code",
+        follow_symlinks: bool = True,
+    ) -> str:
+        """Re-ingest source files into a vector store index.
+        **Resource-intensive** — only call when source files have changed.
+
+        Args:
+            config: Path to ``workspace_config.yaml``.
+            index: Index to refresh.
+            follow_symlinks: Follow symlinks during walk.
+        """
+        return smak.ingest(config=config, index=index, follow_symlinks=follow_symlinks)
+
+    @mcp.tool()
+    def enrich_symbol(
+        config: str, file_path: str, symbol: str,
+        intent: str | None = None, relations: list[str] | None = None,
         index: str = "source_code",
-    ) -> list[dict[str, Any]]:
-        """Sync sidecars for multiple files at once.
+    ) -> dict[str, Any]:
+        """Annotate a single code symbol with intent and/or relations.
+
+        This is the primary sidecar editing tool.  It automatically:
+        - Validates the symbol exists in the file
+        - Creates/syncs the sidecar if needed
+        - Clears stale symbols that block sync
+        - Writes the intent and relations
 
         Args:
             config: Path to ``workspace_config.yaml``.
-            file_paths: List of file paths to sync.
-            index: Index whose root resolves relative paths.
+            file_path: Source file path (relative OK — resolved automatically).
+            symbol: Short symbol name (e.g. ``CsvEditor.update_cell``).
+            intent: Human description of the symbol's purpose.
+            relations: List of full UIDs to link as relations.
+            index: Index whose paths resolve the file.
         """
-        return smak.batch_update_sidecars(config=config, file_paths=file_paths, index=index)
+        return smak.enrich_symbol(
+            config=config, file_path=file_path, symbol=symbol,
+            intent=intent, relations=relations, index=index,
+        )
+
+    @mcp.tool()
+    def enrich_file(
+        config: str, file_path: str, index: str = "source_code",
+    ) -> dict[str, Any]:
+        """Initialize or sync a file's sidecar.  Creates stub entries for
+        every symbol found in the source.
+
+        Args:
+            config: Path to ``workspace_config.yaml``.
+            file_path: Source file path.
+            index: Index whose paths resolve the file.
+        """
+        return smak.enrich_file(config=config, file_path=file_path, index=index)
+
+    @mcp.tool()
+    def enrich_batch(
+        config: str, file_paths: list[str], index: str = "source_code",
+    ) -> list[dict[str, Any]]:
+        """Sync sidecars for multiple files at once.  Continues on error.
+
+        Args:
+            config: Path to ``workspace_config.yaml``.
+            file_paths: List of source file paths.
+            index: Index whose paths resolve the files.
+        """
+        return smak.enrich_batch(config=config, file_paths=file_paths, index=index)
+
+    @mcp.tool()
+    def check_health(config: str) -> dict[str, Any]:
+        """Run mesh integrity diagnostics.  Returns structured report
+        with status (``"healthy"`` / ``"unhealthy"``) and issues list.
+
+        Args:
+            config: Path to ``workspace_config.yaml``.
+        """
+        return smak.check_health(config=config)
 
     return mcp
 
