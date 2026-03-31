@@ -20,8 +20,8 @@ else:
 
 @unittest.skipIf(_MCP_IMPORT_ERROR is not None, f"Missing dependency: {_MCP_IMPORT_ERROR}")
 class TestMcpServer(unittest.TestCase):
-    def _create_server(self, tmp_dir: str, extra_yaml: str = "") -> SmakMcpServer:
-        """Create a server with direct config path (no registry)."""
+    def _write_config(self, tmp_dir: str, extra_yaml: str = "") -> str:
+        """Write a workspace config and return its path as a string."""
         tmp_path = Path(tmp_dir)
         src_dir = tmp_path / "src"
         src_dir.mkdir(exist_ok=True)
@@ -35,13 +35,28 @@ class TestMcpServer(unittest.TestCase):
             + extra_yaml,
             encoding="utf-8",
         )
-        return SmakMcpServer(config_path=config_path)
+        return str(config_path)
 
-    def test_init_requires_config_file(self) -> None:
+    def _create_server(self) -> SmakMcpServer:
+        """Create a stateless server (no config at init)."""
+        return SmakMcpServer()
+
+    def test_init_no_args(self) -> None:
+        server = SmakMcpServer()
+        self.assertIsNotNone(server)
+
+    def test_load_config_raises_on_missing_file(self) -> None:
+        server = self._create_server()
+        with self.assertRaises(FileNotFoundError):
+            server._load_config("/nonexistent/path.yaml")
+
+    def test_load_config_caches_by_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            missing = Path(tmp_dir) / "missing.yaml"
-            with self.assertRaises(FileNotFoundError):
-                SmakMcpServer(config_path=missing)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
+            cfg1 = server._load_config(config)
+            cfg2 = server._load_config(config)
+            self.assertIs(cfg1, cfg2)
 
     @patch("smak.mcp_server.init_config", side_effect=lambda cfg, **kw: cfg)
     @patch("smak.mcp_server.load_and_validate_vector_store")
@@ -53,12 +68,13 @@ class TestMcpServer(unittest.TestCase):
         _: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
             load_store.return_value = object()
             ingest_instance = ingest_cls.return_value
             ingest_instance.ingest_paths.return_value = MagicMock(files=1, skipped=0, vectors=2)
 
-            output = server.refresh_knowledge(index="source_code")
+            output = server.refresh_knowledge(config=config, index="source_code")
 
             self.assertIn("Ingestion Complete", output)
             ingest_cls.assert_called_once()
@@ -70,9 +86,10 @@ class TestMcpServer(unittest.TestCase):
         _: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
 
-            indices = server.list_available_indices()
+            indices = server.list_available_indices(config=config)
 
             self.assertEqual(
                 indices,
@@ -89,10 +106,11 @@ class TestMcpServer(unittest.TestCase):
         __: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
             query_factory.return_value.search.return_value = {"hits": [], "related_context": []}
 
-            result = server.semantic_search(query="auth")
+            result = server.semantic_search(config=config, query="auth")
 
             self.assertEqual(result, {"hits": [], "related_context": []})
             query_factory.return_value.search.assert_called_once_with("auth", top_k=5)
@@ -105,13 +123,14 @@ class TestMcpServer(unittest.TestCase):
         _: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
             sidecar_factory.return_value.inspect.return_value = ["a.py::A"]
             source_file = Path(tmp_dir) / "src" / "a.py"
             source_file.parent.mkdir(parents=True, exist_ok=True)
             source_file.write_text("print('ok')\n", encoding="utf-8")
 
-            symbols = server.inspect_sidecar(file_path="a.py")
+            symbols = server.inspect_sidecar(config=config, file_path="a.py")
 
             self.assertEqual(symbols, ["a.py::A"])
             sidecar_factory.return_value.inspect.assert_called_once_with(source_file)
@@ -124,13 +143,15 @@ class TestMcpServer(unittest.TestCase):
         _: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
             sidecar_factory.return_value.update.return_value = {"total_symbols": 1}
             source_file = Path(tmp_dir) / "src" / "a.py"
             source_file.parent.mkdir(parents=True, exist_ok=True)
             source_file.write_text("print('ok')\n", encoding="utf-8")
 
             result = server.update_sidecar(
+                config=config,
                 file_path="a.py",
                 symbol="x",
                 intent="test intent",
@@ -152,7 +173,8 @@ class TestMcpServer(unittest.TestCase):
         _: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
             sidecar_factory.return_value.clear_symbol.return_value = {
                 "cleared_symbol": "x",
                 "remaining_symbols": 0,
@@ -162,6 +184,7 @@ class TestMcpServer(unittest.TestCase):
             source_file.write_text("print('ok')\n", encoding="utf-8")
 
             result = server.clear_sidecar_symbol(
+                config=config,
                 file_path="a.py",
                 symbol="x",
             )
@@ -178,7 +201,7 @@ class TestMcpServer(unittest.TestCase):
             candidate.parent.mkdir(parents=True)
             candidate.write_text("# mock\n", encoding="utf-8")
             index_config = SimpleNamespace(paths=[str(root)])
-            server = self._create_server(tmp_dir)
+            server = self._create_server()
 
             resolved = server._resolve_source_path(
                 index="source_code",
@@ -198,7 +221,7 @@ class TestMcpServer(unittest.TestCase):
             first.write_text("# first\n", encoding="utf-8")
             second.write_text("# second\n", encoding="utf-8")
             index_config = SimpleNamespace(paths=[str(root)])
-            server = self._create_server(tmp_dir)
+            server = self._create_server()
 
             with self.assertRaises(ValueError) as cm:
                 server._resolve_source_path(
@@ -214,7 +237,7 @@ class TestMcpServer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             index_config = SimpleNamespace(paths=[str(root)])
-            server = self._create_server(tmp_dir)
+            server = self._create_server()
 
             with self.assertRaises(FileNotFoundError) as cm:
                 server._resolve_source_path(
@@ -236,39 +259,23 @@ class TestMcpServer(unittest.TestCase):
         _: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
             doctor_instance = doctor_factory.return_value
 
-            output = server.validate_mesh()
+            output = server.validate_mesh(config=config)
 
             self.assertEqual(output, "Mesh diagnostics passed.")
             doctor_instance.validate_all.assert_called_once()
 
     def test_build_mcp_server_returns_sdk_server(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-            mcp = build_mcp_server(config_path=server.config_path)
-            self.assertEqual(mcp.name, "SMAK")
+        mcp = build_mcp_server()
+        self.assertEqual(mcp.name, "SMAK")
 
     def test_server_stores_custom_embedding_config(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            (tmp_path / "src").mkdir()
-            config_path = tmp_path / "workspace_config.yaml"
-            config_path.write_text(
-                "indices:\n"
-                "  - name: source_code\n"
-                "    description: src\n"
-                "    paths:\n"
-                "      - ./src\n",
-                encoding="utf-8",
-            )
-            emb_cfg = EmbeddingConfig(api_base="http://custom:8888")
-            server = SmakMcpServer(
-                config_path=config_path,
-                embedding_config=emb_cfg,
-            )
-            self.assertEqual(server.embedding_config.api_base, "http://custom:8888")
+        emb_cfg = EmbeddingConfig(api_base="http://custom:8888")
+        server = SmakMcpServer(embedding_config=emb_cfg)
+        self.assertEqual(server.embedding_config.api_base, "http://custom:8888")
 
     @patch("smak.mcp_server.init_config", side_effect=lambda cfg, **kw: cfg)
     @patch("smak.mcp_server.load_and_validate_vector_store")
@@ -280,14 +287,15 @@ class TestMcpServer(unittest.TestCase):
         _: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
             load_store.return_value = object()
             ingest_instance = ingest_cls.return_value
             ingest_instance.ingest_paths.return_value = MagicMock(
                 files=0, skipped=0, vectors=0,
             )
 
-            server.refresh_knowledge()
+            server.refresh_knowledge(config=config)
 
             call_kwargs = ingest_instance.ingest_paths.call_args[1]
             self.assertIn("embedder_loader", call_kwargs)
@@ -303,10 +311,11 @@ class TestMcpServer(unittest.TestCase):
         __: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
             query_factory.return_value.search.return_value = {}
 
-            server.semantic_search(query="test")
+            server.semantic_search(config=config, query="test")
 
             call_kwargs = query_factory.call_args[1]
             self.assertIn("embedding_config", call_kwargs)
@@ -318,8 +327,7 @@ class TestMcpServer(unittest.TestCase):
                 "api_base: http://custom:7777\n",
                 encoding="utf-8",
             )
-            server = self._create_server(tmp_dir)
-            mcp = build_mcp_server(server.config_path, embedding_setup=emb_yaml)
+            mcp = build_mcp_server(embedding_setup=emb_yaml)
             self.assertEqual(mcp.name, "SMAK")
 
     # --- Composite tool tests ---
@@ -334,16 +342,17 @@ class TestMcpServer(unittest.TestCase):
         __: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(
+            config = self._write_config(
                 tmp_dir,
                 "  - name: issues\n    description: bugs\n    paths:\n      - ./src\n",
             )
+            server = self._create_server()
             query_factory.return_value.search.return_value = {
                 "hits": [],
                 "related_context": [],
             }
 
-            result = server.multi_index_search(query="auth logic")
+            result = server.multi_index_search(config=config, query="auth logic")
 
             self.assertIn("source_code", result)
             self.assertIn("issues", result)
@@ -359,16 +368,17 @@ class TestMcpServer(unittest.TestCase):
         __: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(
+            config = self._write_config(
                 tmp_dir,
                 "  - name: issues\n    description: bugs\n    paths:\n      - ./src\n",
             )
+            server = self._create_server()
             query_factory.return_value.search.return_value = {
                 "hits": [],
                 "related_context": [],
             }
 
-            result = server.multi_index_search(query="auth", indices=["source_code"])
+            result = server.multi_index_search(config=config, query="auth", indices=["source_code"])
 
             self.assertIn("source_code", result)
             self.assertNotIn("issues", result)
@@ -379,9 +389,10 @@ class TestMcpServer(unittest.TestCase):
         _: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
 
-            result = server.workspace_status()
+            result = server.workspace_status(config=config)
 
             self.assertIn("indices", result)
             self.assertEqual(len(result["indices"]), 1)
@@ -395,7 +406,8 @@ class TestMcpServer(unittest.TestCase):
         _: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
             sidecar_factory.return_value.update.return_value = {"total_symbols": 1}
 
             for name in ("a.py", "b.py"):
@@ -404,6 +416,7 @@ class TestMcpServer(unittest.TestCase):
                 f.write_text("x = 1\n", encoding="utf-8")
 
             result = server.batch_update_sidecars(
+                config=config,
                 file_paths=["a.py", "b.py"],
                 index="source_code",
             )
@@ -419,7 +432,8 @@ class TestMcpServer(unittest.TestCase):
         _: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+            config = self._write_config(tmp_dir)
+            server = self._create_server()
             sidecar_factory.return_value.update.side_effect = [
                 ValueError("parse error"),
                 {"total_symbols": 1},
@@ -431,6 +445,7 @@ class TestMcpServer(unittest.TestCase):
                 f.write_text("x = 1\n", encoding="utf-8")
 
             result = server.batch_update_sidecars(
+                config=config,
                 file_paths=["a.py", "b.py"],
                 index="source_code",
             )

@@ -42,7 +42,7 @@ SMAK (**Semantic Mesh Augmented Kernel**) is a **passive MCP knowledge kernel** 
 ### Config structure
 
 ```
-workspace_config.yaml              ← pass --config to MCP server
+workspace_config.yaml              ← agent passes path dynamically per tool call
   └── indices:
         - name: source_code   paths: [./src]   path_env: DDI_ROOT_PATH
         - name: issues         paths: [./issues]
@@ -50,7 +50,8 @@ workspace_config.yaml              ← pass --config to MCP server
         - name: documentation  paths: [./documentation]
 ```
 
-- `list_available_indices()` → valid `index` values.
+- Every SMAK tool takes `config` as its first parameter — the path to `workspace_config.yaml`.
+- `list_available_indices(config)` → valid `index` values.
 - Indices are **not limited to the 4 defaults** — you can define any number with any names.
 
 ---
@@ -93,24 +94,26 @@ If semantic results are low-relevance for the same task **2 times in a row**, **
 
 ## 3. MCP TOOL REFERENCE
 
+All tools take `config` (path to `workspace_config.yaml`) as their first parameter.
+
 ### Discovery
-- `list_available_indices()` — list indices for this workspace
+- `list_available_indices(config)` — list indices for a workspace
 
 ### Search & lookup
-- `semantic_search(query, index, top_k=5)` — embedding-based search
-- `multi_index_search(query, indices=None, top_k=3)` — search across ALL (or specified) indices at once
-- `lookup_symbol(uid, index)` — check if a UID exists in the vector store
+- `semantic_search(config, query, index, top_k=5)` — embedding-based search
+- `multi_index_search(config, query, indices=None, top_k=3)` — search across ALL (or specified) indices at once
+- `lookup_symbol(config, uid, index)` — check if a UID exists in the vector store
 
 ### Sidecar tools
-- `inspect_sidecar(file_path, index)` — list short symbol names parsed from source
-- `update_sidecar(file_path, index, symbol?, intent?, relations?)` — sync or update sidecar
-- `clear_sidecar_symbol(file_path, symbol, index)` — remove a symbol from sidecar
-- `batch_update_sidecars(file_paths, index)` — sync sidecars for multiple files at once
+- `inspect_sidecar(config, file_path, index)` — list short symbol names parsed from source
+- `update_sidecar(config, file_path, index, symbol?, intent?, relations?)` — sync or update sidecar
+- `clear_sidecar_symbol(config, file_path, symbol, index)` — remove a symbol from sidecar
+- `batch_update_sidecars(config, file_paths, index)` — sync sidecars for multiple files at once
 
 ### Ingestion & validation
-- `refresh_knowledge(index, follow_symlinks=True)` — re-ingest files into vector store (**resource-intensive**)
-- `validate_mesh()` — run integrity diagnostics
-- `workspace_status()` — per-index stats dashboard (vector count, last update, etc.)
+- `refresh_knowledge(config, index, follow_symlinks=True)` — re-ingest files into vector store (**resource-intensive**)
+- `validate_mesh(config)` — run integrity diagnostics
+- `workspace_status(config)` — per-index stats dashboard (vector count, last update, etc.)
 
 ---
 
@@ -191,18 +194,19 @@ symbols:
 
 ```
 # 1. Find the file via semantic search
-semantic_search(query="CSV cell update logic", index="source_code")
+semantic_search(config="./workspace_config.yaml", query="CSV cell update logic", index="source_code")
 # → hit: {"uid": "...", "exact_relative_path": "src/csv_editor.py", ...}
 
 # 2. List short symbol names for the file
-inspect_sidecar(file_path="src/csv_editor.py", index="source_code")
+inspect_sidecar(config="./workspace_config.yaml", file_path="src/csv_editor.py", index="source_code")
 # → ["CsvEditor", "CsvEditor.append_row", "CsvEditor.update_cell", "CsvEditor.read_rows"]
 
 # 3. Full sync (creates sidecar if missing, preserves existing metadata)
-update_sidecar(file_path="src/csv_editor.py", index="source_code")
+update_sidecar(config="./workspace_config.yaml", file_path="src/csv_editor.py", index="source_code")
 
 # 4. Update a specific symbol (use SHORT name from inspect_sidecar)
 update_sidecar(
+  config="./workspace_config.yaml",
   file_path="src/csv_editor.py",
   index="source_code",
   symbol="CsvEditor.update_cell",
@@ -215,7 +219,7 @@ update_sidecar(
 
 ```
 # Initialize sidecars for all files at once
-batch_update_sidecars(file_paths=["src/a.py", "src/b.py", "src/c.py"], index="source_code")
+batch_update_sidecars(config="./workspace_config.yaml", file_paths=["src/a.py", "src/b.py", "src/c.py"], index="source_code")
 ```
 
 ### Workflow: clear a stale symbol
@@ -223,6 +227,7 @@ batch_update_sidecars(file_paths=["src/a.py", "src/b.py", "src/c.py"], index="so
 If full sync fails because a deleted symbol still has relations:
 ```
 clear_sidecar_symbol(
+  config="./workspace_config.yaml",
   file_path="src/csv_editor.py",
   symbol="CsvEditor.old_method",
   index="source_code"
@@ -246,28 +251,30 @@ clear_sidecar_symbol(
 **Goal**: link code symbols in `src/` with issue entries in `issues/`.
 
 ```
+cfg = "./workspace_config.yaml"
+
 # Step 1 — Find the code symbol
-semantic_search(query="CSV update logic", index="source_code")
+semantic_search(config=cfg, query="CSV update logic", index="source_code")
 
 # Step 2 — Find the related issue
-semantic_search(query="cell update out of range bug", index="issues")
+semantic_search(config=cfg, query="cell update out of range bug", index="issues")
 
 # Step 3 — Verify both exist in their vector stores
-lookup_symbol(uid="...", index="source_code")
-lookup_symbol(uid="...", index="issues")
+lookup_symbol(config=cfg, uid="...", index="source_code")
+lookup_symbol(config=cfg, uid="...", index="issues")
 
 # Step 4 — Add relation: code → issue
-update_sidecar(file_path="src/csv_editor.py", index="source_code",
+update_sidecar(config=cfg, file_path="src/csv_editor.py", index="source_code",
   symbol="CsvEditor.update_cell",
   relations=["...issues/csv-bugs.md::*"])
 
 # Step 5 — Add reverse relation: issue → code
-update_sidecar(file_path="issues/csv-bugs.md", index="issues",
+update_sidecar(config=cfg, file_path="issues/csv-bugs.md", index="issues",
   symbol="*",
   relations=["...src/csv_editor.py::CsvEditor.update_cell"])
 
 # Step 6 — Validate mesh integrity
-validate_mesh()
+validate_mesh(config=cfg)
 ```
 
 ### Pipeline B: Multi-index exploration
@@ -276,19 +283,21 @@ Use `multi_index_search` for broad discovery across all knowledge:
 
 ```
 # Search all indices at once
-multi_index_search(query="authentication timeout handling", top_k=3)
+multi_index_search(config="./workspace_config.yaml", query="authentication timeout handling", top_k=3)
 # → returns results grouped by index: {"source_code": {...}, "issues": {...}, ...}
 ```
 
 ### Pipeline C: Workspace health check
 
 ```
+cfg = "./workspace_config.yaml"
+
 # Quick overview of all indices
-workspace_status()
+workspace_status(config=cfg)
 # → {"indices": [{"name": "source_code", "vector_count": 42, "last_update": "..."}]}
 
 # Detailed integrity check
-validate_mesh()
+validate_mesh(config=cfg)
 ```
 
 ---
