@@ -47,6 +47,14 @@ def _default_config_template() -> str:
     return "\n".join(
         [
             "# SMAK Workspace Configuration",
+            "#",
+            "# Indices are not limited to these 4 defaults — you can define any",
+            "# number with any names. Write precise descriptions so agents can",
+            "# select the right index.",
+            "#",
+            "# Optional: set path_env to use $ENV_VAR in UIDs instead of absolute",
+            "# paths (useful for CliosoftSOS or multi-root setups).",
+            "# Example: path_env: DDI_ROOT_PATH",
             "",
             "indices:",
             "  - name: source_code",
@@ -56,6 +64,7 @@ def _default_config_template() -> str:
             "      - ./src",
             "    # Customize uri if you want this index stored elsewhere.",
             "    uri: ./smak_data/source_code",
+            "    # path_env: DDI_ROOT_PATH  # Uncomment to use $DDI_ROOT_PATH in UIDs",
             "  - name: issues",
             "    description: Contains historical bug reports, GitHub issues, "
             "and Jira tickets describing known problems.",

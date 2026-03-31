@@ -5,6 +5,7 @@ from typing import Any
 
 from smak.sidecar.protocols import SidecarLoader
 from smak.sidecar.store import YAMLSidecarStore
+from smak.utils.path_env import contains_env_var, expand_env_path
 
 
 def build_symbol_name_candidates(uid: str, metadata: dict[str, Any]) -> set[str]:
@@ -26,7 +27,14 @@ class SidecarRelationResolver:
         if not isinstance(source, str) or not source:
             return []
 
-        symbols = self.sidecar_store.load_symbols_for_source(Path(source))
+        source_path = source
+        if contains_env_var(source_path):
+            try:
+                source_path = expand_env_path(source_path)
+            except ValueError:
+                pass
+
+        symbols = self.sidecar_store.load_symbols_for_source(Path(source_path))
         if not isinstance(symbols, list):
             return []
 

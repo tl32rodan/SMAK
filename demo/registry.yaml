@@ -1,7 +1,0 @@
-configs:
-  demo_flow_a:
-    config_path: "./workspace_a/workspace_config.yaml"
-    description: "Demo workspace A for primary flow."
-  demo_flow_b:
-    config_path: "./workspace_b/workspace_config.yaml"
-    description: "Demo workspace B for secondary flow."

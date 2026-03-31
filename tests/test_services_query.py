@@ -395,5 +395,79 @@ class TestQueryService(unittest.TestCase):
         self.assertEqual(result["uid"], "nonexistent::symbol")
 
 
+    def test_lookup_expands_env_var_uid(self) -> None:
+        import os
+        from unittest.mock import patch as mock_patch
+
+        store = SimpleNamespace(
+            get_by_id=lambda uid: (
+                {"uid": uid, "content": "def foo(): pass", "metadata": {"symbol": "foo"}}
+                if uid == "/opt/ddi/online/src/a.py::foo"
+                else None
+            ),
+        )
+        config = SmakConfig(indices=[IndexConfig(name="source_code", description="source")])
+        service = QueryService(
+            store,
+            config=config,
+            vector_store_loader=lambda ic, c: store,
+            embedder=DummyEmbedder(),
+            index_config=config.indices[0],
+        )
+
+        with mock_patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"}):
+            result = service.lookup("$DDI_ROOT_PATH/src/a.py::foo")
+
+        self.assertTrue(result["found"])
+        self.assertEqual(result["uid"], "$DDI_ROOT_PATH/src/a.py::foo")
+
+    def test_relation_resolver_expands_env_in_relation_targets(self) -> None:
+        import os
+        from unittest.mock import patch as mock_patch
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def a():\n    pass\n", encoding="utf-8")
+            source.with_name(".main.py.sidecar.yaml").write_text(
+                "symbols:\n"
+                "  - name: func_A\n"
+                "    relations:\n"
+                "      - $DDI_ROOT_PATH/issues/bug.md::*\n",
+                encoding="utf-8",
+            )
+
+            store = SimpleNamespace(
+                search=lambda vector, top_k=5: [
+                    {
+                        "uid": "func_A",
+                        "score": 0.9,
+                        "content": "A",
+                        "metadata": {"source": str(source)},
+                    }
+                ],
+                get_by_id=lambda uid: (
+                    {"uid": uid, "content": "Bug report"}
+                    if uid == "/opt/ddi/online/issues/bug.md::*"
+                    else None
+                ),
+            )
+            config = SmakConfig(
+                indices=[IndexConfig(name="source_code", description="source")]
+            )
+
+            with mock_patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"}):
+                payload = QueryService(
+                    store,
+                    config=config,
+                    vector_store_loader=lambda index_config, cfg: store,
+                    embedder=DummyEmbedder(),
+                    index_config=config.indices[0],
+                    relation_resolver=SidecarRelationResolver(YAMLSidecarStore()),
+                ).search("query", top_k=1)
+
+            self.assertEqual(len(payload["related_context"]), 1)
+            self.assertEqual(payload["related_context"][0]["content"], "Bug report")
+
+
 if __name__ == "__main__":
     unittest.main()

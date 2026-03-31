@@ -7,6 +7,7 @@ from typing import Any
 from smak.config import IndexConfig, SmakConfig
 from smak.services.relation_resolver import SidecarRelationResolver
 from smak.utils.embedding import InternalNomicEmbedding
+from smak.utils.path_env import contains_env_var, expand_env_path, expand_uid
 
 
 class QueryService:
@@ -32,10 +33,18 @@ class QueryService:
 
         The stored source path is relative to one of the index roots. The relation resolver
         needs an absolute path to locate the .sidecar.yaml file on disk.
+        Environment variables (``$VAR``) are expanded before resolution.
         """
         resolver_metadata = dict(metadata)
         if "source" in resolver_metadata:
             source = resolver_metadata["source"]
+            # Expand env vars first
+            if contains_env_var(source):
+                try:
+                    source = expand_env_path(source)
+                    resolver_metadata["source"] = source
+                except ValueError:
+                    pass
             source_path = Path(source)
             if not source_path.is_absolute():
                 # Try each directory index root to find the one containing this source
@@ -53,9 +62,22 @@ class QueryService:
         return resolver_metadata
 
     def _get_payload_globally(self, uid: str) -> dict[str, Any] | None:
+        # Try direct lookup first
         payload = self.vector_store.get_by_id(uid)
         if isinstance(payload, dict):
             return payload
+
+        # Try env-expanded UID
+        resolved_uid = uid
+        if contains_env_var(uid):
+            try:
+                resolved_uid = expand_uid(uid)
+            except ValueError:
+                resolved_uid = uid
+            if resolved_uid != uid:
+                payload = self.vector_store.get_by_id(resolved_uid)
+                if isinstance(payload, dict):
+                    return payload
 
         for index in self.config.indices:
             if index.name in self._vector_store_cache:
@@ -66,6 +88,10 @@ class QueryService:
             payload = store.get_by_id(uid)
             if isinstance(payload, dict):
                 return payload
+            if resolved_uid != uid:
+                payload = store.get_by_id(resolved_uid)
+                if isinstance(payload, dict):
+                    return payload
         return None
 
     def lookup(self, uid: str) -> dict[str, Any]:
@@ -78,6 +104,21 @@ class QueryService:
                 "content": payload.get("content"),
                 "metadata": payload.get("metadata"),
             }
+        # Try expanding env vars if the UID contains them
+        if contains_env_var(uid):
+            try:
+                expanded = expand_uid(uid)
+            except ValueError:
+                expanded = uid
+            if expanded != uid:
+                payload = self.vector_store.get_by_id(expanded)
+                if isinstance(payload, dict):
+                    return {
+                        "found": True,
+                        "uid": uid,
+                        "content": payload.get("content"),
+                        "metadata": payload.get("metadata"),
+                    }
         return {"found": False, "uid": uid}
 
     def search(self, text: str, top_k: int = 5) -> dict[str, list[dict[str, Any]]]:

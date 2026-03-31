@@ -1,0 +1,175 @@
+"""Tests for environment variable expansion in UIDs and paths."""
+
+from __future__ import annotations
+
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from smak.utils.path_env import (
+    collapse_to_env,
+    contains_env_var,
+    expand_env_path,
+    expand_uid,
+    warn_path_mismatch,
+)
+
+
+class TestExpandEnvPath(unittest.TestCase):
+    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
+    def test_replaces_single_var(self) -> None:
+        self.assertEqual(
+            expand_env_path("$DDI_ROOT_PATH/src/a.py"),
+            "/opt/ddi/online/src/a.py",
+        )
+
+    @patch.dict(os.environ, {"HOME": "/home/user", "PROJECT": "myproj"})
+    def test_replaces_multiple_vars(self) -> None:
+        self.assertEqual(
+            expand_env_path("$HOME/$PROJECT/src"),
+            "/home/user/myproj/src",
+        )
+
+    def test_passthrough_no_vars(self) -> None:
+        self.assertEqual(expand_env_path("/abs/path/file.py"), "/abs/path/file.py")
+
+    def test_raises_on_undefined_var(self) -> None:
+        key = "_SMAK_TEST_UNDEF_VAR_"
+        os.environ.pop(key, None)
+        with self.assertRaises(ValueError) as ctx:
+            expand_env_path(f"${key}/src")
+        self.assertIn(key, str(ctx.exception))
+
+    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
+    def test_preserves_trailing_content(self) -> None:
+        self.assertEqual(
+            expand_env_path("$DDI_ROOT_PATH/deep/nested/path.py"),
+            "/opt/ddi/online/deep/nested/path.py",
+        )
+
+    def test_empty_string(self) -> None:
+        self.assertEqual(expand_env_path(""), "")
+
+
+class TestContainsEnvVar(unittest.TestCase):
+    def test_true_for_valid_var(self) -> None:
+        self.assertTrue(contains_env_var("$DDI_ROOT_PATH/src"))
+
+    def test_false_for_plain_path(self) -> None:
+        self.assertFalse(contains_env_var("/abs/path"))
+
+    def test_false_for_dollar_digit(self) -> None:
+        self.assertFalse(contains_env_var("price is $5"))
+
+    def test_true_for_var_with_digits(self) -> None:
+        self.assertTrue(contains_env_var("$VAR5/path"))
+
+    def test_false_for_empty_string(self) -> None:
+        self.assertFalse(contains_env_var(""))
+
+    def test_true_for_var_at_end(self) -> None:
+        self.assertTrue(contains_env_var("/path/$SUFFIX"))
+
+
+class TestCollapseToEnv(unittest.TestCase):
+    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
+    def test_matches_prefix(self) -> None:
+        self.assertEqual(
+            collapse_to_env("/opt/ddi/online/src/a.py", "DDI_ROOT_PATH"),
+            "$DDI_ROOT_PATH/src/a.py",
+        )
+
+    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
+    def test_returns_none_when_no_match(self) -> None:
+        self.assertIsNone(collapse_to_env("/other/path/a.py", "DDI_ROOT_PATH"))
+
+    def test_undefined_var_returns_none(self) -> None:
+        key = "_SMAK_TEST_UNDEF_COLLAPSE_"
+        os.environ.pop(key, None)
+        self.assertIsNone(collapse_to_env("/any/path", key))
+
+    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
+    def test_exact_match_returns_var_only(self) -> None:
+        self.assertEqual(
+            collapse_to_env("/opt/ddi/online", "DDI_ROOT_PATH"),
+            "$DDI_ROOT_PATH",
+        )
+
+    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online/"})
+    def test_trailing_slash_in_env_handled(self) -> None:
+        result = collapse_to_env("/opt/ddi/online/src/a.py", "DDI_ROOT_PATH")
+        self.assertIsNotNone(result)
+        self.assertTrue(result.startswith("$DDI_ROOT_PATH"))
+
+
+class TestExpandUid(unittest.TestCase):
+    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
+    def test_expands_path_portion(self) -> None:
+        self.assertEqual(
+            expand_uid("$DDI_ROOT_PATH/src/a.py::ClassName.method"),
+            "/opt/ddi/online/src/a.py::ClassName.method",
+        )
+
+    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
+    def test_wildcard_symbol(self) -> None:
+        self.assertEqual(
+            expand_uid("$DDI_ROOT_PATH/issues/bug.md::*"),
+            "/opt/ddi/online/issues/bug.md::*",
+        )
+
+    def test_no_env_var_passthrough(self) -> None:
+        self.assertEqual(
+            expand_uid("/abs/path/a.py::func"),
+            "/abs/path/a.py::func",
+        )
+
+    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
+    def test_no_separator_expands_whole(self) -> None:
+        self.assertEqual(
+            expand_uid("$DDI_ROOT_PATH/issues/bug.md"),
+            "/opt/ddi/online/issues/bug.md",
+        )
+
+    def test_raises_on_undefined_var(self) -> None:
+        key = "_SMAK_TEST_UNDEF_UID_"
+        os.environ.pop(key, None)
+        with self.assertRaises(ValueError):
+            expand_uid(f"${key}/src/a.py::func")
+
+
+class TestWarnPathMismatch(unittest.TestCase):
+    def test_returns_warning_when_different(self) -> None:
+        actual = Path("/workspace/user1/src/a.py")
+        uid_path = "/opt/ddi/online/src/a.py"
+        result = warn_path_mismatch(actual, uid_path)
+        self.assertIsNotNone(result)
+        self.assertIn("mismatch", result.lower())
+
+    def test_returns_none_when_same(self) -> None:
+        actual = Path("/opt/ddi/online/src/a.py")
+        uid_path = "/opt/ddi/online/src/a.py"
+        self.assertIsNone(warn_path_mismatch(actual, uid_path))
+
+    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
+    def test_expands_env_before_compare(self) -> None:
+        actual = Path("/opt/ddi/online/src/a.py")
+        uid_path = "$DDI_ROOT_PATH/src/a.py"
+        self.assertIsNone(warn_path_mismatch(actual, uid_path))
+
+    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
+    def test_warns_when_workspace_differs_from_env(self) -> None:
+        actual = Path("/workspace/user1/src/a.py")
+        uid_path = "$DDI_ROOT_PATH/src/a.py"
+        result = warn_path_mismatch(actual, uid_path)
+        self.assertIsNotNone(result)
+
+    def test_no_env_var_no_expansion(self) -> None:
+        actual = Path("/abs/path/a.py")
+        uid_path = "/abs/path/a.py"
+        self.assertIsNone(warn_path_mismatch(actual, uid_path))
+
+
+if __name__ == "__main__":
+    unittest.main()

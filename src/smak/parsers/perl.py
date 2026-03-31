@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from smak.core.domain import KnowledgeUnit
+from smak.utils.path_env import collapse_to_env
 
 _SUB_START_REGEX = re.compile(
     r"(?m)^[ \t]*sub[ \t]+([A-Za-z_][A-Za-z0-9_]*)[^{;\n]*\{"
@@ -19,10 +20,19 @@ _DOUBLE_QUOTE_REGEX = re.compile(r'"(?:\\.|[^"\\\n])*"')
 @dataclass
 class PerlParser:
 
-    def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:
+    def parse(
+        self,
+        content: str,
+        source: str | None = None,
+        path_env: str | None = None,
+    ) -> list[KnowledgeUnit]:
         original = content or ""
         cleaned = _clean_for_structure_scan(original)
         abs_source = str(Path(source).absolute()) if source else None
+        if abs_source and path_env:
+            collapsed = collapse_to_env(abs_source, path_env)
+            if collapsed is not None:
+                abs_source = collapsed
 
         units: list[KnowledgeUnit] = []
         cursor = 0

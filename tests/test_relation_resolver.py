@@ -44,5 +44,55 @@ class TestRelationResolver(unittest.TestCase):
             self.assertEqual(relations, ["issue:1"])
 
 
+    def test_resolve_expands_env_source_for_sidecar_lookup(self) -> None:
+        import os
+        from unittest.mock import patch as mock_patch
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "src" / "a.py"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("x=1\n", encoding="utf-8")
+            source.with_name(".a.py.sidecar.yaml").write_text(
+                "symbols:\n"
+                "  - name: login\n"
+                "    relations:\n"
+                "      - issue:env-test\n",
+                encoding="utf-8",
+            )
+
+            resolver = SidecarRelationResolver(YAMLSidecarStore())
+            env_source = f"$TEST_DDI_ROOT/src/a.py"
+            with mock_patch.dict(os.environ, {"TEST_DDI_ROOT": tmp_dir}):
+                relations = resolver.resolve(
+                    f"$TEST_DDI_ROOT/src/a.py::login",
+                    {"source": env_source, "symbol": "login"},
+                )
+            self.assertEqual(relations, ["issue:env-test"])
+
+    def test_resolve_matches_uid_with_env_var(self) -> None:
+        import os
+        from unittest.mock import patch as mock_patch
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "src" / "a.py"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("x=1\n", encoding="utf-8")
+            source.with_name(".a.py.sidecar.yaml").write_text(
+                "symbols:\n"
+                "  - name: login\n"
+                "    relations:\n"
+                "      - issue:uid-match\n",
+                encoding="utf-8",
+            )
+
+            resolver = SidecarRelationResolver(YAMLSidecarStore())
+            with mock_patch.dict(os.environ, {"TEST_DDI_ROOT": tmp_dir}):
+                relations = resolver.resolve(
+                    f"$TEST_DDI_ROOT/src/a.py::login",
+                    {"source": str(source), "symbol": "login"},
+                )
+            self.assertEqual(relations, ["issue:uid-match"])
+
+
 if __name__ == "__main__":
     unittest.main()
