@@ -16,10 +16,11 @@ SMAK (**Semantic Mesh Augmented Kernel**) is a **passive MCP knowledge kernel** 
 
 | Concept | Description |
 |---|---|
-| **Vector store** | Stores embeddings of every ingested code unit. Updated by `refresh_knowledge` (ingestion). Queried by `semantic_search`. |
-| **Sidecar file** | Hidden YAML (e.g. `src/.foo.py.sidecar.yaml`) storing `intent` and `relations` per symbol. Updated by `update_sidecar`. Read at query time for 1-hop expansion. |
-| **UID** | Globally unique identifier for a vector-store entry: `{absolute_path}::{symbol}` (e.g. `/home/user/project/src/foo.py::ClassName.method`). |
-| **Symbol name** | Short name without path prefix (e.g. `ClassName.method`). Used in sidecar `name` fields and as the `symbol` parameter in sidecar tools. |
+| **Vector store** | Embeddings of every ingested code unit. Updated by `ingest`. Queried by `search`. |
+| **Sidecar file** | Hidden YAML (e.g. `src/.foo.py.sidecar.yaml`) storing `intent` and `relations` per symbol. Updated by `enrich_symbol` / `enrich_file`. Read at query time for 1-hop expansion. |
+| **UID** | Globally unique identifier: `{path}::{symbol}` (e.g. `/home/user/project/src/foo.py::ClassName.method` or `$DDI_ROOT_PATH/src/foo.py::ClassName.method`). |
+| **Symbol name** | Short name without path prefix (e.g. `ClassName.method`). Used in `enrich_symbol`. |
+| **path_env** | Optional config field mapping UIDs to environment variables instead of absolute paths. |
 
 ### Two independent data stores — know the difference
 
@@ -27,110 +28,84 @@ SMAK (**Semantic Mesh Augmented Kernel**) is a **passive MCP knowledge kernel** 
 ┌─────────────────────────────────────────────────────────────┐
 │ Vector store (embeddings)        Sidecar files (YAML)       │
 │ ─────────────────────────        ────────────────────────   │
-│ Written by: refresh_knowledge    Written by: update_sidecar │
-│ Read by:    semantic_search      Read by:    semantic_search │
-│             lookup_symbol                    (at query time) │
+│ Written by: ingest               Written by: enrich_*       │
+│ Read by:    search, lookup       Read by:    search          │
+│                                              (at query time) │
 │                                                             │
-│ Updating a sidecar does NOT update the vector store.        │
-│ You must call refresh_knowledge to re-ingest.               │
+│ Enriching a sidecar does NOT update the vector store.       │
+│ You must call ingest to re-embed.                           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Critical rule**: `update_sidecar` only writes `.sidecar.yaml` files on disk. It does **not** update vectors. If you need the vector store to reflect new or changed source files, you must call `refresh_knowledge` — but be aware this is **resource-intensive** (re-embeds all files in the index). Do not call it casually.
+### Config structure
 
-### Config hierarchy
-
-```
-registry.yaml                          ← pass --registry to MCP server
-  └── configs:
-        <config_name>:
-          config_path: ./workspace/workspace_config.yaml
-            └── indices:
-                  - name: source_code   path: ./src
-                  - name: issues        path: ./issues
-                  - name: tests         path: ./src/tests
-                  - name: documentation path: ./documentation
+```yaml
+# workspace_config.yaml — agent passes path dynamically per tool call
+indices:
+  - name: source_code
+    description: "RTL Verilog modules for DDR5 PHY datapath"
+    paths: [$DDI_ROOT_PATH/src]
+    path_env: DDI_ROOT_PATH
+  - name: issues
+    description: "Jira tickets and postmortems for timing closure failures"
+    paths: [./issues]
 ```
 
-- `list_available_configs()` → valid `config` values.
-- `list_available_indices(config)` → valid `index` values for a config.
+Every SMAK tool takes `config` as its first parameter — the path to `workspace_config.yaml`.
+Indices are **not limited to any default set** — define any number with any names.
 
 ---
 
 ## 2. WHEN TO USE / NOT USE
 
-### ⚠️ MANDATORY PRE-CHECK — before every `semantic_search` call
+### MANDATORY PRE-CHECK — before every `search` call
 
 **Do you already know the file path or function/class name?**
-- If **YES** → **DO NOT** call `semantic_search`. Use `grep`/`rg` for the symbol name, or read the file directly. Semantic search is **only** for when you do NOT know where something lives.
-- If **NO** → proceed with `semantic_search`.
-
-**Violation examples** (never do these):
-```
-# BAD: You already know the function name is "append_row"
-semantic_search(query="append_row function", ...)
-
-# BAD: You already know the file is src/csv_editor.py
-semantic_search(query="csv editor module", ...)
-
-# BAD: You found the location in a previous step and search again
-# Previous grep found src/csv_editor.py::CsvEditor.update_cell
-semantic_search(query="update cell in csv editor", ...)
-```
+- If **YES** → **DO NOT** call `search`. Use `grep`/`rg` or read the file directly.
+- If **NO** → proceed with `search`.
 
 ### Use SMAK for
-- **Intent discovery**: understand the "why" behind hacks, tradeoffs, or legacy behavior — when you do NOT already know where the relevant code is.
-- **1-hop context expansion**: from a code hit, auto-fetch linked issues/docs/tests via relations.
-- **Sidecar lifecycle**: inspect, create, or update `intent` + `relations` metadata for source files.
-- **Exploratory search**: finding code related to a concept, behavior, or purpose when you have no specific file/symbol in mind.
+- **Intent discovery**: understand the "why" behind code — when you don't know where it lives.
+- **1-hop context expansion**: from a code hit, auto-fetch linked issues/docs/tests.
+- **Sidecar enrichment**: annotate symbols with intent and relations via `enrich_symbol`.
+- **Cross-index exploration**: use `search_all` to find related entities across all indices.
 
 ### Do NOT use SMAK for
 - **Exact string matching** → use `rg` / `grep`.
 - **Go-to-definition** → use LSP / IDE navigation.
-- **First step of repo exploration** → read README, directory tree, or entry points first.
-- **When you already know the file path or symbol name** → read the file directly or use `grep`. This is the most common misuse. If you can name the file or function, you do NOT need semantic search.
-- **Re-finding something you already found** → if a previous tool call already returned the file/symbol location, use that result directly. Do not re-search semantically.
+- **When you already know the file path or symbol name** → read the file directly.
 
 ### Anti-hallucination stop rule
-If semantic results are low-relevance for the same task **2 times in a row**, **STOP**. Do not fabricate edits from weak matches. Ask user for a narrower starting point.
+If results are low-relevance **2 times in a row**, **STOP**. Ask user for a narrower starting point.
 
 ---
 
-## 3. MCP TOOL REFERENCE
+## 3. MCP TOOL REFERENCE (9 tools)
+
+Every tool takes `config` (path to `workspace_config.yaml`) as first parameter.
 
 ### Discovery
-- `list_available_configs()` — list valid config names
-- `list_available_indices(config)` — list indices for a config
+- **`describe_workspace(config)`** — list all indices with names, descriptions, paths. Call this first.
 
-### Search & lookup
-- `semantic_search(config, query, index, top_k=5)` — embedding-based search
-- `lookup_symbol(config, uid, index)` — check if a UID exists in the vector store
+### Search
+- **`search(config, query, index, top_k=5)`** — semantic search within one index
+- **`search_all(config, query, indices=None, top_k=3)`** — search across all (or specified) indices at once
+- **`lookup(config, uid, index)`** — verify a UID exists in the vector store
 
-### Sidecar tools
-- `inspect_sidecar(config, file_path, index)` — list short symbol names parsed from source
-- `update_sidecar(config, file_path, index, symbol?, intent?, relations?)` — sync or update sidecar
-- `clear_sidecar_symbol(config, file_path, symbol, index)` — remove a symbol from sidecar
+### Sidecar enrichment
+- **`enrich_symbol(config, file_path, symbol, intent?, relations?, index)`** — annotate one symbol (auto-syncs sidecar, auto-clears stale symbols, validates symbol exists)
+- **`enrich_file(config, file_path, index)`** — create/sync a file's sidecar (stub entries for all symbols)
+- **`enrich_batch(config, file_paths, index)`** — sync sidecars for multiple files at once
 
-### Ingestion & validation
-- `refresh_knowledge(config, index, follow_symlinks=True)` — re-ingest files into vector store (**resource-intensive**)
-- `validate_mesh(config)` — run integrity diagnostics
+### Maintenance
+- **`ingest(config, index, follow_symlinks=True)`** — re-embed files into vector store (**resource-intensive**)
+- **`check_health(config)`** — run integrity diagnostics, returns `{status, issues}`
 
 ---
 
 ## 4. QUERY FORMULATION
 
-**Prerequisite**: you have already confirmed that you do NOT know the file path or symbol name (see Section 2 pre-check). If you know either, stop — do not formulate a query. Use `grep` or read the file directly.
-
-SMAK uses **embedding-based semantic search**. Write queries as natural-language descriptions of behavior or purpose — not symbol names or file paths.
-
-### Index selection guide
-
-| What you need | Index |
-|---|---|
-| Code logic, design, implementation intent | `source_code` |
-| Historical bug reports, known issues | `issues` |
-| Test coverage, test cases | `tests` |
-| Architecture docs, API docs | `documentation` |
+Write queries as **natural-language descriptions of behavior or purpose** — not symbol names or file paths.
 
 ### Good vs bad queries
 ```
@@ -140,178 +115,187 @@ Bad:  "append_row"         ← grep instead
 Bad:  "csv_editor.py"      ← file tools instead
 ```
 
+When unsure which index, use `search_all` to search everything at once.
+
 ### Search result format
 ```json
 {
   "hits": [{
-    "uid": "/home/user/project/src/csv_editor.py::CsvEditor.update_cell",
+    "uid": "...",
     "exact_relative_path": "src/csv_editor.py",
     "match_type": "semantic",
     "score": 0.89,
     "content": "..."
   }],
   "related_context": [{
-    "uid": "/home/user/project/issues/known-issues.md::*",
+    "uid": "...",
     "match_type": "relation",
-    "source_hit": "/home/user/project/src/csv_editor.py::CsvEditor.update_cell",
+    "source_hit": "...",
     "content": "..."
   }]
 }
 ```
 
 **Field rules:**
-- `uid` — full UID (`{absolute_path}::{symbol}`). Use in sidecar `relations` lists and with `lookup_symbol`.
-- `exact_relative_path` — copy EXACTLY as `file_path` for sidecar tools. Never rewrite or guess.
+- `exact_relative_path` — copy EXACTLY as `file_path` for `enrich_*` tools. Never rewrite.
+- `uid` — use in `relations` lists and with `lookup`.
 
 ---
 
-## 5. SIDECAR OPERATIONS
+## 5. SIDECAR ENRICHMENT
 
-### Sidecar YAML format
+### Annotate a symbol (the primary workflow)
+
+```python
+# One call does everything: validate symbol, sync sidecar, write enrichment
+enrich_symbol(
+  config="./workspace_config.yaml",
+  file_path="src/csv_editor.py",       # from search hit's exact_relative_path
+  symbol="CsvEditor.update_cell",       # short name
+  intent="Rewrites entire file to update one cell. Known IndexError issue.",
+  relations=["$DDI_ROOT_PATH/issues/csv-bugs.md::*"],
+  index="source_code"
+)
+```
+
+What `enrich_symbol` does internally:
+1. Validates `symbol` exists in the file (returns error + valid list if not)
+2. Syncs the sidecar (creates if missing, auto-clears stale symbols)
+3. Writes intent and relations
+
+### Initialize sidecars for a directory
+
+```python
+# Create stub sidecars for all files
+enrich_batch(
+  config="./workspace_config.yaml",
+  file_paths=["src/a.py", "src/b.py", "src/c.py"],
+  index="source_code"
+)
+```
+
+### Sidecar YAML format (for reference)
 ```yaml
 # src/.csv_editor.py.sidecar.yaml
 symbols:
-  - name: CsvEditor                    # short symbol name (NOT full UID)
+  - name: CsvEditor                    # short symbol name
     intent: "Manages CSV read/write"
     relations:
-      - "/home/user/project/issues/known-issues.md::*"    # full UID
-      - "/home/user/project/src/other.py::OtherClass"     # full UID
+      - "$DDI_ROOT_PATH/issues/known-issues.md::*"    # full UID
   - name: CsvEditor.update_cell
     intent: ""
     relations: []
 ```
 
-**Key distinction:**
-- `name` field = **short symbol name** (e.g. `CsvEditor.update_cell`). Matches `inspect_sidecar` output.
-- `relations` list = **full UIDs** (e.g. `/abs/path/file.py::Symbol`). Matches `semantic_search` hit UIDs.
-
-### Workflow: inspect and update sidecar
-
-```
-# 1. Find the file via semantic search
-semantic_search(config="my_config", query="CSV cell update logic", index="source_code")
-# → hit: {"uid": "/home/.../src/csv_editor.py::CsvEditor.update_cell",
-#          "exact_relative_path": "src/csv_editor.py", ...}
-
-# 2. List short symbol names for the file
-inspect_sidecar(config="my_config", file_path="src/csv_editor.py", index="source_code")
-# → ["CsvEditor", "CsvEditor.append_row", "CsvEditor.update_cell", "CsvEditor.read_rows"]
-
-# 3. Full sync (creates sidecar if missing, preserves existing metadata)
-update_sidecar(config="my_config", file_path="src/csv_editor.py", index="source_code")
-# → {"total_symbols": 4, "added": 4, "removed": 0, ...}
-
-# 4. Update a specific symbol (use SHORT name from inspect_sidecar)
-update_sidecar(
-  config="my_config",
-  file_path="src/csv_editor.py",
-  index="source_code",
-  symbol="CsvEditor.update_cell",           # ← short name
-  intent="Rewrites entire file to update one cell.",
-  relations=["/home/.../issues/known.md::*"] # ← full UIDs
-)
-```
-
-### Workflow: clear a stale symbol
-
-If full sync fails because a deleted symbol still has relations:
-```
-clear_sidecar_symbol(
-  config="my_config",
-  file_path="src/csv_editor.py",
-  symbol="CsvEditor.old_method",     # ← short name
-  index="source_code"
-)
-# Then re-run update_sidecar (full sync)
-```
-
-### `update_sidecar` modes
-
-| Mode | When | What happens |
-|---|---|---|
-| Full sync (no `symbol`) | Create/sync sidecar | Creates if missing; preserves existing metadata; blocks removal of symbols with relations |
-| Single-symbol (`symbol` given) | Update one symbol | Updates `intent` and/or `relations` for that symbol; at least one required |
-
 ---
 
 ## 6. COMMON PIPELINES
 
-### Pipeline A: Add bi-directional sidecar relations between two folders
+### Pipeline A: Link code to related issues
 
-**Goal**: link code symbols in `src/` with issue entries in `issues/`.
+```python
+cfg = "./workspace_config.yaml"
 
-**Pre-requisites**: both `source_code` and `issues` indices must be ingested (vectors exist in the store).
+# 1. Find the code
+hit = search(config=cfg, query="CSV cell update logic", index="source_code")
 
-```
-# Step 1 — Find the code symbol
-semantic_search(config="cfg", query="CSV update logic", index="source_code")
-# → code hit uid: "/home/.../src/csv_editor.py::CsvEditor.update_cell"
+# 2. Find the related issue
+issue = search(config=cfg, query="cell update out of range bug", index="issues")
 
-# Step 2 — Find the related issue
-semantic_search(config="cfg", query="cell update out of range bug", index="issues")
-# → issue hit uid: "/home/.../issues/csv-bugs.md::*"
+# 3. Verify the issue UID exists
+lookup(config=cfg, uid=issue_uid, index="issues")
 
-# Step 3 — Verify both exist in their vector stores
-lookup_symbol(config="cfg", uid="/home/.../src/csv_editor.py::CsvEditor.update_cell", index="source_code")
-# → {"found": true, ...}
-lookup_symbol(config="cfg", uid="/home/.../issues/csv-bugs.md::*", index="issues")
-# → {"found": true, ...}
-
-# Step 4 — Add relation: code → issue
-inspect_sidecar(config="cfg", file_path="src/csv_editor.py", index="source_code")
-update_sidecar(
-  config="cfg", file_path="src/csv_editor.py", index="source_code",
+# 4. Annotate the code symbol with the relation
+enrich_symbol(
+  config=cfg,
+  file_path=hit["exact_relative_path"],
   symbol="CsvEditor.update_cell",
-  relations=["/home/.../issues/csv-bugs.md::*"]
+  relations=[issue_uid],
+  index="source_code"
 )
 
-# Step 5 — Add reverse relation: issue → code
-inspect_sidecar(config="cfg", file_path="issues/csv-bugs.md", index="issues")
-update_sidecar(
-  config="cfg", file_path="issues/csv-bugs.md", index="issues",
+# 5. (Optional) Add reverse relation
+enrich_symbol(
+  config=cfg,
+  file_path=issue_path,
   symbol="*",
-  relations=["/home/.../src/csv_editor.py::CsvEditor.update_cell"]
+  relations=[code_uid],
+  index="issues"
 )
-
-# Step 6 — Validate mesh integrity
-validate_mesh(config="cfg")
 ```
 
-**Post-check**: run `semantic_search` on either index; `related_context` should now include the linked entity.
+### Pipeline B: Broad exploration
 
-### Pipeline B: When and how to update the vector store
-
-The vector store is **not** updated by sidecar operations. It must be explicitly refreshed.
-
-**When to call `refresh_knowledge`:**
-- After adding, modifying, or deleting source files
-- After renaming or moving files
-- When `semantic_search` returns stale/missing results
-- When `lookup_symbol` returns `{"found": false}` for a file you know exists
-
-**When NOT to call `refresh_knowledge`:**
-- After updating sidecar metadata (intent/relations) — sidecars are read live at query time
-- Routinely or "just in case" — it is resource-intensive
-
+```python
+# Don't know which index? Search everything.
+search_all(config=cfg, query="authentication timeout handling", top_k=3)
 ```
-# Re-ingest a specific index
-refresh_knowledge(config="cfg", index="source_code")
-# → "Ingestion Complete! Processed Files: 42, Skipped Files: 3, Vectors Added: 210"
 
-# Verify a specific symbol is now in the store
-lookup_symbol(config="cfg", uid="/home/.../src/new_file.py::NewClass", index="source_code")
-# → {"found": true, ...}
+### Pipeline C: Health check
+
+```python
+check_health(config=cfg)
+# → {"status": "healthy", "issues": []}
+# → {"status": "unhealthy", "issues": ["Orphaned sidecar: ..."]}
 ```
 
 ---
 
-## 7. STRICT RULES
+## 7. INDEX DESIGN PATTERNS
 
-1. **Never use `semantic_search` when you already know the target.** If you know the file path, function name, or class name — use `grep`/`rg` or read the file directly. `semantic_search` is exclusively for discovering unknown locations by describing behavior or purpose.
-2. **`file_path` must exactly match `exact_relative_path`** from `semantic_search` hits. Never rewrite or guess.
-3. **`symbol` parameter = short name** from `inspect_sidecar` (e.g. `CsvEditor.update_cell`). Never pass full UIDs as `symbol`.
-4. **`relations` list = full UIDs** from `semantic_search` hits (e.g. `/abs/path::Symbol`).
-5. **Always call `inspect_sidecar`** before `update_sidecar` (single-symbol mode) to confirm valid symbol names.
-6. **Always call `lookup_symbol`** to verify a UID exists before adding it to `relations`.
-7. **Sidecar updates ≠ vector store updates.** Changing a sidecar does not require re-ingestion.
-8. **`refresh_knowledge` is resource-intensive.** Only call when source files have changed and you need updated search results.
+Indices are **arbitrary** — not limited to any default set.
+
+```yaml
+# EDA project example
+indices:
+  - name: rtl_code
+    description: "Verilog/SystemVerilog RTL modules for DDR5 PHY datapath"
+    paths: [$DDI_ROOT_PATH/rtl/phy]
+    path_env: DDI_ROOT_PATH
+  - name: verification
+    description: "UVM testbenches and coverage models"
+    paths: [$DDI_ROOT_PATH/verif]
+    path_env: DDI_ROOT_PATH
+  - name: release_notes
+    description: "Release notes, known issues, and ECO history"
+    paths: [./release_notes]
+```
+
+### Writing effective descriptions
+
+The `description` field is the **agent's ONLY hint** for index selection.
+
+- Include **file types** (Verilog, Python, Markdown)
+- Include **domain terms** (DDR5, PHY, authentication)
+- Describe **what questions** this index answers
+- Be specific: `"RTL Verilog modules for DDR5 PHY datapath"` > `"source code"`
+
+---
+
+## 8. ENVIRONMENT VARIABLE UIDs
+
+Use `path_env` when your codebase lives at different absolute paths:
+
+```yaml
+indices:
+  - name: source_code
+    paths: [$DDI_ROOT_PATH/src]
+    path_env: DDI_ROOT_PATH
+```
+
+UIDs become `$DDI_ROOT_PATH/src/a.py::ClassName` instead of absolute paths.
+At query time, `$DDI_ROOT_PATH` is expanded to the current environment value.
+
+Path mismatch warnings are emitted when editing sidecars in SOS workspaces — this is expected.
+
+---
+
+## 9. STRICT RULES
+
+1. **Never use `search` when you already know the target.**
+2. **`file_path` must exactly match `exact_relative_path`** from search hits.
+3. **`symbol` = short name** (e.g. `CsvEditor.update_cell`), not full UID.
+4. **`relations` = full UIDs** (e.g. `/abs/path::Symbol` or `$ENV_VAR/path::Symbol`).
+5. **Always `lookup`** to verify a UID exists before adding it to relations.
+6. **Sidecar updates ≠ vector store updates.** Call `ingest` only when source files change.
+7. **`ingest` is resource-intensive.** Don't call casually.

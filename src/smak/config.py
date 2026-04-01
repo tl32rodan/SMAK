@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from smak.utils.path_env import contains_env_var, expand_env_path
 from smak.utils.yaml import safe_load
 
 
@@ -49,6 +50,7 @@ class IndexConfig:
     description: str
     paths: list[str] = field(default_factory=lambda: ["."])
     uri: str | None = None
+    path_env: str | None = None
 
 
 @dataclass(frozen=True)
@@ -67,7 +69,13 @@ DEFAULT_DATA_DIR = "smak_data"
 
 
 def _resolve_absolute_path(raw: str, base: Path) -> str:
-    """Resolve *raw* relative to *base*, or expand it if already absolute."""
+    """Resolve *raw* relative to *base*, or expand it if already absolute.
+
+    Supports ``$VAR`` environment variable references which are expanded
+    before path resolution.
+    """
+    if contains_env_var(raw):
+        raw = expand_env_path(raw)
     expanded = Path(raw).expanduser()
     if expanded.is_absolute():
         return str(expanded.resolve())
@@ -122,6 +130,7 @@ def _resolve_config(cfg: SmakConfig, config_path: str | Path) -> SmakConfig:
                 description=index.description,
                 paths=resolved_paths,
                 uri=resolved_uri,
+                path_env=index.path_env,
             )
         )
     return SmakConfig(indices=resolved_indices, embedding_dimensions=cfg.embedding_dimensions)
@@ -144,6 +153,7 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
             if isinstance(entry, Mapping):
                 raw_paths = entry.get("paths", ["."])
                 paths = [str(p) for p in raw_paths] if isinstance(raw_paths, list) else [str(raw_paths)]
+                raw_path_env = entry.get("path_env")
                 indices.append(
                     IndexConfig(
                         name=str(entry.get("name", "")),
@@ -153,6 +163,9 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
                             str(entry["uri"])
                             if entry.get("uri") is not None
                             else None
+                        ),
+                        path_env=(
+                            str(raw_path_env) if raw_path_env is not None else None
                         ),
                     )
                 )

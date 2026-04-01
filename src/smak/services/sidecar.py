@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from smak.parsers import get_parser_for_path
+from smak.utils.path_env import contains_env_var, expand_env_path
+
+logger = logging.getLogger(__name__)
 from smak.sidecar.manager import IntegrityError, SidecarManager
 from smak.sidecar.paths import is_sidecar_file
 from smak.sidecar.protocols import SidecarStore
@@ -97,6 +101,8 @@ class SidecarService:
             raise ValueError(
                 "At least one of --intent or --relations is required with --symbol."
             )
+        if relations:
+            self._check_path_mismatch(file_path, relations)
         update_entry: dict[str, Any] = {"name": symbol}
         if intent is not None:
             update_entry["intent"] = intent
@@ -129,6 +135,45 @@ class SidecarService:
         except IntegrityError as exc:
             return {"file_path": str(file_path), "valid": False, "issues": [str(exc)]}
         return {"file_path": str(file_path), "valid": True, "issues": []}
+
+    @staticmethod
+    def _extract_env_root(rel: str) -> str | None:
+        """Extract the env var value from a relation like ``$VAR/path``."""
+        import os
+        import re
+
+        match = re.match(r"\$([A-Za-z_][A-Za-z0-9_]*)", rel)
+        if match is None:
+            return None
+        return os.environ.get(match.group(1))
+
+    def _check_path_mismatch(
+        self, file_path: Path, relations: list[str]
+    ) -> None:
+        """Warn if any relation UID contains env vars whose expanded root
+        doesn't match the sidecar file's location."""
+        resolved_file = file_path.resolve()
+        for rel in relations:
+            if not contains_env_var(rel):
+                continue
+            env_root = self._extract_env_root(rel.split("::")[0] if "::" in rel else rel)
+            if env_root is None:
+                continue
+            env_root_path = Path(env_root).resolve()
+            # Check if the sidecar file lives under the env var's root directory
+            try:
+                resolved_file.relative_to(env_root_path)
+            except ValueError:
+                logger.warning(
+                    "Path mismatch: sidecar at '%s' has relation targeting '%s' "
+                    "(env root: '%s'). The sidecar file location does not match "
+                    "the relation target's root directory. This is expected when "
+                    "editing in an SOS workspace.",
+                    file_path,
+                    rel,
+                    env_root_path,
+                )
+                return
 
     def clear_symbol(self, file_path: Path, symbol_name: str) -> dict[str, Any]:
         existing = self.sidecar_store.load_symbols_for_source(file_path)

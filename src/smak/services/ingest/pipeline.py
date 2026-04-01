@@ -34,8 +34,9 @@ class IngestPipeline:
         *,
         source: str | None = None,
         compute_embeddings: bool = False,
+        path_env: str | None = None,
     ) -> IngestResult:
-        units = self.parser.parse(content, source=source)
+        units = self.parser.parse(content, source=source, path_env=path_env)
         embeddings = self._embed_units(units) if compute_embeddings else []
         return IngestResult(units=units, embeddings=embeddings, metadata={})
 

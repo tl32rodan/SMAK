@@ -7,14 +7,24 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from smak.core.domain import KnowledgeUnit
+from smak.utils.path_env import collapse_to_env
 
 
 @dataclass
 class PythonParser:
 
-    def parse(self, content: str, source: str | None = None) -> list[KnowledgeUnit]:
+    def parse(
+        self,
+        content: str,
+        source: str | None = None,
+        path_env: str | None = None,
+    ) -> list[KnowledgeUnit]:
         tree = ast.parse(content or "")
         abs_source = str(Path(source).absolute()) if source else None
+        if abs_source and path_env:
+            collapsed = collapse_to_env(abs_source, path_env)
+            if collapsed is not None:
+                abs_source = collapsed
         units: list[KnowledgeUnit] = []
 
         class Visitor(ast.NodeVisitor):

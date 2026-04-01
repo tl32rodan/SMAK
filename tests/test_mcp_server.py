@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,361 +19,375 @@ else:
     _MCP_IMPORT_ERROR = None
 
 
+# ------------------------------------------------------------------
+# Shared patch stacks — eliminates repeated @patch decorators
+# ------------------------------------------------------------------
+
+def _patch_init_config():
+    return patch("smak.mcp_server.init_config", side_effect=lambda cfg, **kw: cfg)
+
+
+def _patch_query_stack():
+    """Patch stack for search / lookup / search_all tests."""
+    return contextlib.ExitStack()
+
+
+def _query_patches():
+    """Return three patch context managers for query-related tests."""
+    return (
+        _patch_init_config(),
+        patch("smak.mcp_server.load_and_validate_vector_store", return_value=object()),
+        patch("smak.mcp_server.create_query_service"),
+    )
+
+
+def _sidecar_patches():
+    """Return two patch context managers for sidecar-related tests."""
+    return (
+        _patch_init_config(),
+        patch("smak.mcp_server.create_sidecar_service"),
+    )
+
+
+def _ingest_patches():
+    """Return three patch context managers for ingest-related tests."""
+    return (
+        _patch_init_config(),
+        patch("smak.mcp_server.load_and_validate_vector_store"),
+        patch("smak.mcp_server.IngestService"),
+    )
+
+
 @unittest.skipIf(_MCP_IMPORT_ERROR is not None, f"Missing dependency: {_MCP_IMPORT_ERROR}")
 class TestMcpServer(unittest.TestCase):
-    def _create_server(self, tmp_dir: str) -> SmakMcpServer:
+    """Tests for the intent-based MCP tool set."""
+
+    def _write_config(self, tmp_dir: str, extra_yaml: str = "") -> str:
         tmp_path = Path(tmp_dir)
-        workspace = tmp_path / "workspace"
-        workspace.mkdir()
-        (workspace / "workspace_config.yaml").write_text(
+        (tmp_path / "src").mkdir(exist_ok=True)
+        config_path = tmp_path / "workspace_config.yaml"
+        config_path.write_text(
             "indices:\n"
             "  - name: source_code\n"
-            "    description: src\n",
+            "    description: src\n"
+            "    paths:\n"
+            "      - ./src\n"
+            + extra_yaml,
             encoding="utf-8",
         )
-        registry_path = tmp_path / "registry.yaml"
-        registry_path.write_text(
-            "\n".join(
-                [
-                    "configs:",
-                    "  mock_config:",
-                    '    config_path: "./workspace/workspace_config.yaml"',
-                    '    description: "Mock config"',
-                    "",
-                ]
-            ),
-            encoding="utf-8",
-        )
-        return SmakMcpServer(registry_path=registry_path)
+        return str(config_path)
 
-    def test_init_requires_registry_file(self) -> None:
+    def _server_and_config(self, tmp_dir: str, extra_yaml: str = "") -> tuple:
+        """Create server + config in one call."""
+        return SmakMcpServer(), self._write_config(tmp_dir, extra_yaml)
+
+    def _write_source(self, tmp_dir: str, name: str = "a.py", content: str = "def hello():\n    pass\n") -> Path:
+        """Write a source file under src/ and return its path."""
+        source = Path(tmp_dir) / "src" / name
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(content, encoding="utf-8")
+        return source
+
+    # ------------------------------------------------------------------
+    # Core: init, config caching
+    # ------------------------------------------------------------------
+
+    def test_init_no_args(self) -> None:
+        self.assertIsNotNone(SmakMcpServer())
+
+    def test_load_config_raises_on_missing_file(self) -> None:
+        with self.assertRaises(FileNotFoundError):
+            SmakMcpServer()._load_config("/nonexistent/path.yaml")
+
+    def test_load_config_caches_by_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            missing = Path(tmp_dir) / "missing.yaml"
-            with self.assertRaises(FileNotFoundError):
-                SmakMcpServer(registry_path=missing)
+            config = self._write_config(tmp_dir)
+            server = SmakMcpServer()
+            self.assertIs(server._load_config(config), server._load_config(config))
 
-    def test_init_requires_non_empty_configs(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            registry_path = Path(tmp_dir) / "registry.yaml"
-            registry_path.write_text("configs:\n", encoding="utf-8")
-            with self.assertRaises(ValueError):
-                SmakMcpServer(registry_path=registry_path)
+    def test_server_stores_custom_embedding_config(self) -> None:
+        emb = EmbeddingConfig(api_base="http://custom:8888")
+        self.assertEqual(SmakMcpServer(embedding_config=emb).embedding_config.api_base, "http://custom:8888")
 
-    def test_resolve_config_path_returns_absolute(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-            config_path = server._resolve_config_path("mock_config")
-            self.assertTrue(config_path.is_absolute())
-            self.assertEqual(
-                config_path,
-                Path(tmp_dir).resolve() / "workspace" / "workspace_config.yaml",
-            )
+    # ------------------------------------------------------------------
+    # describe_workspace
+    # ------------------------------------------------------------------
 
-    def test_resolve_config_path_rejects_unknown(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-            with self.assertRaises(ValueError):
-                server._resolve_config_path("unknown")
+    def test_describe_workspace_returns_indices(self) -> None:
+        with _patch_init_config(), tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
+            result = server.describe_workspace(config=config)
 
-    @patch("smak.mcp_server.init_config", side_effect=lambda cfg, **kw: cfg)
-    @patch("smak.mcp_server.load_and_validate_vector_store")
-    @patch("smak.mcp_server.IngestService")
-    def test_refresh_knowledge_uses_ingest_service(
-        self,
-        ingest_cls: MagicMock,
-        load_store: MagicMock,
-        _: MagicMock,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-            load_store.return_value = object()
-            ingest_instance = ingest_cls.return_value
-            ingest_instance.ingest_paths.return_value = MagicMock(files=1, skipped=0, vectors=2)
+            self.assertIn("indices", result)
+            self.assertEqual(result["indices"][0]["name"], "source_code")
+            self.assertIn("config_path", result)
 
-            output = server.refresh_knowledge(
-                config="mock_config",
-                index="source_code",
-            )
+    # ------------------------------------------------------------------
+    # search / search_all / lookup
+    # ------------------------------------------------------------------
 
-            self.assertIn("Ingestion Complete", output)
-            ingest_cls.assert_called_once()
-            ingest_instance.ingest_paths.assert_called_once()
-
-    @patch("smak.mcp_server.init_config", side_effect=lambda cfg, **kw: cfg)
-    def test_list_available_indices_returns_name_and_description(
-        self,
-        _: MagicMock,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-
-            indices = server.list_available_indices(config="mock_config")
-
-            self.assertEqual(
-                indices,
-                [{"name": "source_code", "description": "src"}],
-            )
-
-    @patch("smak.mcp_server.init_config", side_effect=lambda cfg, **kw: cfg)
-    @patch("smak.mcp_server.load_and_validate_vector_store", return_value=object())
-    @patch("smak.mcp_server.create_query_service")
-    def test_semantic_search_calls_query_service(
-        self,
-        query_factory: MagicMock,
-        _: MagicMock,
-        __: MagicMock,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+    def test_search_calls_query_service(self) -> None:
+        p1, p2, p3 = _query_patches()
+        with p1, p2, p3 as query_factory, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
             query_factory.return_value.search.return_value = {"hits": [], "related_context": []}
 
-            result = server.semantic_search(config="mock_config", query="auth")
+            result = server.search(config=config, query="auth", index="source_code")
 
             self.assertEqual(result, {"hits": [], "related_context": []})
             query_factory.return_value.search.assert_called_once_with("auth", top_k=5)
 
-    @patch("smak.mcp_server.init_config", side_effect=lambda cfg, **kw: cfg)
-    @patch("smak.mcp_server.create_sidecar_service")
-    def test_inspect_sidecar_uses_resolver(
-        self,
-        sidecar_factory: MagicMock,
-        _: MagicMock,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-            sidecar_factory.return_value.inspect.return_value = ["a.py::A"]
-            source_file = Path(tmp_dir) / "workspace" / "src" / "a.py"
-            source_file.parent.mkdir(parents=True)
-            source_file.write_text("print('ok')\n", encoding="utf-8")
+    def test_search_forwards_embedding_config(self) -> None:
+        p1, p2, p3 = _query_patches()
+        with p1, p2, p3 as query_factory, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
+            query_factory.return_value.search.return_value = {}
 
-            symbols = server.inspect_sidecar(
-                config="mock_config",
-                file_path="a.py",
+            server.search(config=config, query="test", index="source_code")
+
+            self.assertIn("embedding_config", query_factory.call_args[1])
+
+    def test_search_all_queries_all_indices(self) -> None:
+        p1, p2, p3 = _query_patches()
+        with p1, p2, p3 as query_factory, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(
+                tmp_dir, "  - name: issues\n    description: bugs\n    paths:\n      - ./src\n",
             )
+            query_factory.return_value.search.return_value = {"hits": [], "related_context": []}
 
-            self.assertEqual(symbols, ["a.py::A"])
-            sidecar_factory.return_value.inspect.assert_called_once_with(source_file)
+            result = server.search_all(config=config, query="auth logic")
 
-    @patch("smak.mcp_server.init_config", side_effect=lambda cfg, **kw: cfg)
-    @patch("smak.mcp_server.create_sidecar_service")
-    def test_update_sidecar_uses_resolver(
-        self,
-        sidecar_factory: MagicMock,
-        _: MagicMock,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-            sidecar_factory.return_value.update.return_value = {"total_symbols": 1}
-            source_file = Path(tmp_dir) / "workspace" / "src" / "a.py"
-            source_file.parent.mkdir(parents=True)
-            source_file.write_text("print('ok')\n", encoding="utf-8")
+            self.assertIn("source_code", result)
+            self.assertIn("issues", result)
 
-            result = server.update_sidecar(
-                config="mock_config",
-                file_path="a.py",
-                symbol="x",
-                intent="test intent",
+    def test_search_all_filters_by_indices(self) -> None:
+        p1, p2, p3 = _query_patches()
+        with p1, p2, p3 as query_factory, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(
+                tmp_dir, "  - name: issues\n    description: bugs\n    paths:\n      - ./src\n",
             )
+            query_factory.return_value.search.return_value = {"hits": [], "related_context": []}
 
-            self.assertEqual(result["total_symbols"], 1)
-            sidecar_factory.return_value.update.assert_called_once_with(
-                source_file,
-                symbol="x",
-                intent="test intent",
-                relations=None,
-            )
+            result = server.search_all(config=config, query="auth", indices=["source_code"])
 
-    @patch("smak.mcp_server.init_config", side_effect=lambda cfg, **kw: cfg)
-    @patch("smak.mcp_server.create_sidecar_service")
-    def test_clear_sidecar_symbol_uses_resolver(
-        self,
-        sidecar_factory: MagicMock,
-        _: MagicMock,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-            sidecar_factory.return_value.clear_symbol.return_value = {
-                "cleared_symbol": "x",
-                "remaining_symbols": 0,
-            }
-            source_file = Path(tmp_dir) / "workspace" / "src" / "a.py"
-            source_file.parent.mkdir(parents=True)
-            source_file.write_text("print('ok')\n", encoding="utf-8")
+            self.assertIn("source_code", result)
+            self.assertNotIn("issues", result)
 
-            result = server.clear_sidecar_symbol(
-                config="mock_config",
-                file_path="a.py",
-                symbol="x",
-            )
+    def test_lookup_delegates_to_query_service(self) -> None:
+        p1, p2, p3 = _query_patches()
+        with p1, p2, p3 as query_factory, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
+            query_factory.return_value.lookup.return_value = {"found": True, "uid": "a::b"}
 
-            self.assertEqual(result["cleared_symbol"], "x")
-            sidecar_factory.return_value.clear_symbol.assert_called_once_with(
-                source_file, "x"
-            )
+            result = server.lookup(config=config, uid="a::b", index="source_code")
 
-    def test_resolve_source_path_falls_back_to_unique_candidate(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            candidate = root / "src" / "csv_editor.py"
-            candidate.parent.mkdir(parents=True)
-            candidate.write_text("# mock\n", encoding="utf-8")
-            index_config = SimpleNamespace(paths=[str(root)])
-            server = self._create_server(tmp_dir)
+            self.assertTrue(result["found"])
+            query_factory.return_value.lookup.assert_called_once_with("a::b")
 
-            resolved = server._resolve_source_path(
-                config_name="mock_config",
-                index="source_code",
-                index_config=index_config,
-                file_path="csv_editor.py",
-            )
+    # ------------------------------------------------------------------
+    # ingest
+    # ------------------------------------------------------------------
 
-            self.assertEqual(resolved, candidate)
-
-    def test_resolve_source_path_raises_ambiguous_candidates(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            first = root / "src" / "csv_editor.py"
-            second = root / "tests" / "test_csv_editor.py"
-            first.parent.mkdir(parents=True)
-            second.parent.mkdir(parents=True)
-            first.write_text("# first\n", encoding="utf-8")
-            second.write_text("# second\n", encoding="utf-8")
-            index_config = SimpleNamespace(paths=[str(root)])
-            server = self._create_server(tmp_dir)
-
-            with self.assertRaises(ValueError) as cm:
-                server._resolve_source_path(
-                    config_name="mock_config",
-                    index="source_code",
-                    index_config=index_config,
-                    file_path="csv_editor.py",
-                )
-
-            msg = str(cm.exception)
-            self.assertIn("Ambiguous file path 'csv_editor.py'", msg)
-            self.assertIn("src/csv_editor.py", msg)
-            self.assertIn("tests/test_csv_editor.py", msg)
-
-    def test_resolve_source_path_raises_actionable_not_found(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            index_config = SimpleNamespace(paths=[str(root)])
-            server = self._create_server(tmp_dir)
-
-            with self.assertRaises(FileNotFoundError) as cm:
-                server._resolve_source_path(
-                    config_name="mock_config",
-                    index="source_code",
-                    index_config=index_config,
-                    file_path="missing.py",
-                )
-
-            msg = str(cm.exception)
-            self.assertIn("config='mock_config'", msg)
-            self.assertIn("index='source_code'", msg)
-            self.assertIn("file_path='missing.py'", msg)
-            self.assertIn(str(root), msg)
-            self.assertIn("semantic_search", msg)
-
-    @patch("smak.mcp_server.init_config", side_effect=lambda cfg, **kw: cfg)
-    @patch("smak.mcp_server.create_doctor_service")
-    def test_validate_mesh_uses_doctor_service(
-        self,
-        doctor_factory: MagicMock,
-        _: MagicMock,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-            doctor_instance = doctor_factory.return_value
-
-            output = server.validate_mesh(config="mock_config")
-
-            self.assertEqual(output, "Mesh diagnostics passed.")
-            doctor_instance.validate_all.assert_called_once()
-
-    def test_build_mcp_server_returns_sdk_server(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-            mcp = build_mcp_server(server.registry_path)
-            self.assertEqual(mcp.name, "SMAK")
-
-    def test_server_stores_custom_embedding_config(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            workspace = tmp_path / "workspace"
-            workspace.mkdir()
-            (workspace / "workspace_config.yaml").write_text(
-                "indices:\n"
-                "  - name: source_code\n"
-                "    description: src\n",
-                encoding="utf-8",
-            )
-            registry_path = tmp_path / "registry.yaml"
-            registry_path.write_text(
-                "configs:\n"
-                "  test:\n"
-                '    config_path: "./workspace/workspace_config.yaml"\n'
-                '    description: "test"\n',
-                encoding="utf-8",
-            )
-            emb_cfg = EmbeddingConfig(api_base="http://custom:8888")
-            server = SmakMcpServer(
-                registry_path=registry_path,
-                embedding_config=emb_cfg,
-            )
-            self.assertEqual(server.embedding_config.api_base, "http://custom:8888")
-
-    @patch("smak.mcp_server.init_config", side_effect=lambda cfg, **kw: cfg)
-    @patch("smak.mcp_server.load_and_validate_vector_store")
-    @patch("smak.mcp_server.IngestService")
-    def test_refresh_knowledge_passes_embedder_loader(
-        self,
-        ingest_cls: MagicMock,
-        load_store: MagicMock,
-        _: MagicMock,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
+    def test_ingest_uses_ingest_service(self) -> None:
+        p1, p2, p3 = _ingest_patches()
+        with p1, p2 as load_store, p3 as ingest_cls, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
             load_store.return_value = object()
-            ingest_instance = ingest_cls.return_value
-            ingest_instance.ingest_paths.return_value = MagicMock(
-                files=0, skipped=0, vectors=0,
-            )
+            ingest_cls.return_value.ingest_paths.return_value = MagicMock(files=1, skipped=0, vectors=2)
 
-            server.refresh_knowledge(config="mock_config")
+            output = server.ingest(config=config, index="source_code")
 
-            call_kwargs = ingest_instance.ingest_paths.call_args[1]
+            self.assertIn("Ingestion Complete", output)
+
+    def test_ingest_passes_embedder_loader(self) -> None:
+        p1, p2, p3 = _ingest_patches()
+        with p1, p2 as load_store, p3 as ingest_cls, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
+            load_store.return_value = object()
+            ingest_cls.return_value.ingest_paths.return_value = MagicMock(files=0, skipped=0, vectors=0)
+
+            server.ingest(config=config)
+
+            call_kwargs = ingest_cls.return_value.ingest_paths.call_args[1]
             self.assertIn("embedder_loader", call_kwargs)
             self.assertTrue(callable(call_kwargs["embedder_loader"]))
 
-    @patch("smak.mcp_server.init_config", side_effect=lambda cfg, **kw: cfg)
-    @patch("smak.mcp_server.load_and_validate_vector_store", return_value=object())
-    @patch("smak.mcp_server.create_query_service")
-    def test_semantic_search_forwards_embedding_config(
-        self,
-        query_factory: MagicMock,
-        _: MagicMock,
-        __: MagicMock,
-    ) -> None:
+    # ------------------------------------------------------------------
+    # enrich_symbol
+    # ------------------------------------------------------------------
+
+    def test_enrich_symbol_updates_intent_and_relations(self) -> None:
+        p1, p2 = _sidecar_patches()
+        with p1, p2 as sidecar_factory, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
+            source = self._write_source(tmp_dir)
+            svc = sidecar_factory.return_value
+            svc.inspect.return_value = ["hello"]
+            svc.update.return_value = {"total_symbols": 1}
+
+            result = server.enrich_symbol(
+                config=config, file_path="a.py", symbol="hello",
+                intent="greets user", relations=["issue:1"], index="source_code",
+            )
+
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(svc.update.call_count, 2)
+            svc.update.assert_any_call(source)
+            svc.update.assert_any_call(source, symbol="hello", intent="greets user", relations=["issue:1"])
+
+    def test_enrich_symbol_rejects_unknown_symbol(self) -> None:
+        p1, p2 = _sidecar_patches()
+        with p1, p2 as sidecar_factory, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
+            self._write_source(tmp_dir)
+            sidecar_factory.return_value.inspect.return_value = ["hello"]
+
+            result = server.enrich_symbol(
+                config=config, file_path="a.py", symbol="nonexistent",
+                intent="oops", index="source_code",
+            )
+
+            self.assertEqual(result["status"], "error")
+            self.assertIn("nonexistent", result["message"])
+            self.assertIn("valid_symbols", result)
+
+    def test_enrich_symbol_auto_clears_stale_on_retry(self) -> None:
+        p1, p2 = _sidecar_patches()
+        with p1, p2 as sidecar_factory, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
+            self._write_source(tmp_dir)
+            svc = sidecar_factory.return_value
+            svc.inspect.return_value = ["hello"]
+            svc.update.side_effect = [
+                ValueError('Cannot remove symbols with existing relations. Clear them first:\n  smak sidecar clear a.py --symbol "old_func"'),
+                {"total_symbols": 1},
+                {"total_symbols": 1},
+            ]
+            svc.clear_symbol.return_value = {"cleared_symbol": "old_func"}
+
+            result = server.enrich_symbol(
+                config=config, file_path="a.py", symbol="hello",
+                intent="greets", index="source_code",
+            )
+
+            self.assertEqual(result["status"], "ok")
+            svc.clear_symbol.assert_called()
+
+    # ------------------------------------------------------------------
+    # enrich_file / enrich_batch
+    # ------------------------------------------------------------------
+
+    def test_enrich_file_does_full_sync(self) -> None:
+        p1, p2 = _sidecar_patches()
+        with p1, p2 as sidecar_factory, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
+            source = self._write_source(tmp_dir)
+            sidecar_factory.return_value.update.return_value = {"total_symbols": 1, "added": 1, "removed": 0}
+
+            result = server.enrich_file(config=config, file_path="a.py", index="source_code")
+
+            self.assertEqual(result["total_symbols"], 1)
+            sidecar_factory.return_value.update.assert_called_once_with(source)
+
+    def test_enrich_batch_processes_multiple_files(self) -> None:
+        p1, p2 = _sidecar_patches()
+        with p1, p2 as sidecar_factory, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
+            sidecar_factory.return_value.update.return_value = {"total_symbols": 1}
+            for name in ("a.py", "b.py"):
+                self._write_source(tmp_dir, name=name, content="x = 1\n")
+
+            result = server.enrich_batch(config=config, file_paths=["a.py", "b.py"], index="source_code")
+
+            self.assertEqual(len(result), 2)
+
+    def test_enrich_batch_continues_on_error(self) -> None:
+        p1, p2 = _sidecar_patches()
+        with p1, p2 as sidecar_factory, tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
+            sidecar_factory.return_value.update.side_effect = [ValueError("fail"), {"total_symbols": 1}]
+            for name in ("a.py", "b.py"):
+                self._write_source(tmp_dir, name=name, content="x = 1\n")
+
+            result = server.enrich_batch(config=config, file_paths=["a.py", "b.py"], index="source_code")
+
+            self.assertEqual(len(result), 2)
+            self.assertIn("error", result[0])
+            self.assertIn("total_symbols", result[1])
+
+    # ------------------------------------------------------------------
+    # check_health
+    # ------------------------------------------------------------------
+
+    def test_check_health_passes(self) -> None:
+        with _patch_init_config(), patch("smak.mcp_server.create_doctor_service") as doctor_factory, \
+                tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
+            doctor_factory.return_value.validate_all.return_value = None
+
+            result = server.check_health(config=config)
+
+            self.assertEqual(result["status"], "healthy")
+
+    def test_check_health_reports_issues(self) -> None:
+        with _patch_init_config(), patch("smak.mcp_server.create_doctor_service") as doctor_factory, \
+                tempfile.TemporaryDirectory() as tmp_dir:
+            server, config = self._server_and_config(tmp_dir)
+            doctor_factory.return_value.validate_all.side_effect = RuntimeError("Orphaned sidecar: x.yaml")
+
+            result = server.check_health(config=config)
+
+            self.assertEqual(result["status"], "unhealthy")
+            self.assertIn("Orphaned sidecar", result["issues"][0])
+
+    # ------------------------------------------------------------------
+    # Path resolution
+    # ------------------------------------------------------------------
+
+    def test_resolve_source_path_falls_back_to_unique_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            server = self._create_server(tmp_dir)
-            query_factory.return_value.search.return_value = {}
+            candidate = Path(tmp_dir) / "src" / "csv_editor.py"
+            candidate.parent.mkdir(parents=True)
+            candidate.write_text("# mock\n", encoding="utf-8")
 
-            server.semantic_search(config="mock_config", query="test")
+            resolved = SmakMcpServer()._resolve_source_path(
+                "source_code", SimpleNamespace(paths=[str(Path(tmp_dir))]), "csv_editor.py",
+            )
+            self.assertEqual(resolved, candidate)
 
-            call_kwargs = query_factory.call_args[1]
-            self.assertIn("embedding_config", call_kwargs)
+    def test_resolve_source_path_raises_ambiguous(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            for sub in ("src", "tests"):
+                d = Path(tmp_dir) / sub
+                d.mkdir(parents=True)
+                (d / "csv_editor.py").write_text("# x\n", encoding="utf-8")
+
+            with self.assertRaises(ValueError) as cm:
+                SmakMcpServer()._resolve_source_path(
+                    "source_code", SimpleNamespace(paths=[str(Path(tmp_dir))]), "csv_editor.py",
+                )
+            self.assertIn("Ambiguous", str(cm.exception))
+
+    def test_resolve_source_path_raises_not_found(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with self.assertRaises(FileNotFoundError) as cm:
+                SmakMcpServer()._resolve_source_path(
+                    "source_code", SimpleNamespace(paths=[str(Path(tmp_dir))]), "missing.py",
+                )
+            self.assertIn("semantic_search", str(cm.exception))
+
+    # ------------------------------------------------------------------
+    # build_mcp_server
+    # ------------------------------------------------------------------
+
+    def test_build_mcp_server_returns_sdk_server(self) -> None:
+        self.assertEqual(build_mcp_server().name, "SMAK")
 
     def test_build_mcp_server_accepts_embedding_setup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             emb_yaml = Path(tmp_dir) / "custom_emb.yaml"
-            emb_yaml.write_text(
-                "api_base: http://custom:7777\n",
-                encoding="utf-8",
-            )
-            server = self._create_server(tmp_dir)
-            mcp = build_mcp_server(server.registry_path, embedding_setup=emb_yaml)
-            self.assertEqual(mcp.name, "SMAK")
+            emb_yaml.write_text("api_base: http://custom:7777\n", encoding="utf-8")
+            self.assertEqual(build_mcp_server(embedding_setup=emb_yaml).name, "SMAK")
 
 
 if __name__ == "__main__":
