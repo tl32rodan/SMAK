@@ -288,6 +288,8 @@ At query time, `$DDI_ROOT_PATH` is expanded to the current environment value.
 
 Path mismatch warnings are emitted when editing sidecars in SOS workspaces — this is expected.
 
+For CliosoftSOS / EDA environments, see **[`sos-smak-skill/SKILL.md`](../sos-smak-skill/SKILL.md)** for the full three-layer path model (online → version control → workspace) and operational workflows.
+
 ---
 
 ## 9. STRICT RULES
