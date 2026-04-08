@@ -80,7 +80,7 @@ If results are low-relevance **2 times in a row**, **STOP**. Ask user for a narr
 
 ---
 
-## 3. MCP TOOL REFERENCE (9 tools)
+## 3. MCP TOOL REFERENCE (10 tools)
 
 Every tool takes `config` (path to `workspace_config.yaml`) as first parameter.
 
@@ -93,13 +93,14 @@ Every tool takes `config` (path to `workspace_config.yaml`) as first parameter.
 - **`lookup(config, uid, index)`** — verify a UID exists in the vector store
 
 ### Sidecar enrichment
-- **`enrich_symbol(config, file_path, symbol, intent?, relations?, index)`** — annotate one symbol (auto-syncs sidecar, auto-clears stale symbols, validates symbol exists)
+- **`enrich_symbol(config, file_path, symbol, intent?, relations?, index, bidirectional=False)`** — annotate one symbol (auto-syncs sidecar, auto-clears stale symbols, validates symbol exists). When `bidirectional=True`, also adds reverse relations from targets back to this symbol.
 - **`enrich_file(config, file_path, index)`** — create/sync a file's sidecar (stub entries for all symbols)
 - **`enrich_batch(config, file_paths, index)`** — sync sidecars for multiple files at once
 
 ### Maintenance
 - **`ingest(config, index, follow_symlinks=True)`** — re-embed files into vector store (**resource-intensive**)
 - **`check_health(config)`** — run integrity diagnostics, returns `{status, issues}`
+- **`graph_stats(config)`** — knowledge graph coverage statistics: total/enriched symbols, relations, coverage %, per-index breakdown, asymmetric relation warnings
 
 ---
 
