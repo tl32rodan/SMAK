@@ -27,7 +27,7 @@ class TestFactory(unittest.TestCase):
             get_by_id=lambda uid: None,
             search=lambda v, top_k=5: [],
         )
-        config = SmakConfig(indices=[IndexConfig(name="src", description="d")])
+        config = SmakConfig(indices=[IndexConfig(name="src", description="d", uri="/tmp/test")])
         service = create_query_service(store, config, config.indices[0])
         self.assertIsInstance(service, QueryService)
 
@@ -70,7 +70,7 @@ class TestFactory(unittest.TestCase):
             search=lambda v, top_k=5: [],
         )
         emb_cfg = EmbeddingConfig(model="custom-model")
-        config = SmakConfig(indices=[IndexConfig(name="src", description="d")])
+        config = SmakConfig(indices=[IndexConfig(name="src", description="d", uri="/tmp/test")])
 
         create_query_service(store, config, config.indices[0], embedding_config=emb_cfg)
 

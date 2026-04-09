@@ -57,6 +57,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
+                "    uri: ./data\n"
                 "llm:\n"
                 "  provider: legacy\n",
                 encoding="utf-8",
@@ -78,7 +79,7 @@ class TestConfig(unittest.TestCase):
 
         self.assertTrue(config.indices[0].uri.endswith("smak_data/source_code"))
 
-    def test_load_config_defaults_index_uri_to_none(self) -> None:
+    def test_load_config_raises_when_uri_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "workspace.yaml"
             path.write_text(
@@ -86,10 +87,9 @@ class TestConfig(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            config = load_config(path)
-
-            self.assertIsNotNone(config.indices[0].uri)
-            self.assertTrue(config.indices[0].uri.endswith("smak_data/docs"))
+            with self.assertRaises(ValueError) as ctx:
+                load_config(path)
+            self.assertIn("uri", str(ctx.exception))
 
 
     def test_load_config_supports_paths_list(self) -> None:
@@ -99,6 +99,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
+                "    uri: ./data\n"
                 "    paths:\n"
                 "      - ./src\n"
                 "      - ./lib\n",
@@ -117,7 +118,8 @@ class TestConfig(unittest.TestCase):
             path.write_text(
                 "indices:\n"
                 "  - name: docs\n"
-                "    description: docs index\n",
+                "    description: docs index\n"
+                "    uri: ./data\n",
                 encoding="utf-8",
             )
 
@@ -139,6 +141,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
+                "    uri: ./data\n"
                 "    paths:\n"
                 "      - ./modules/*\n",
                 encoding="utf-8",
@@ -159,6 +162,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
+                "    uri: ./data\n"
                 "    paths:\n"
                 "      - ./nonexistent_*\n",
                 encoding="utf-8",
@@ -179,6 +183,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
+                "    uri: ./data\n"
                 "    paths:\n"
                 "      - ./src\n"
                 "      - ./plugins/*\n",
@@ -201,6 +206,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
+                "    uri: ./data\n"
                 "    paths:\n"
                 "      - ./src\n",
                 encoding="utf-8",
@@ -225,6 +231,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: scripts\n"
                 "    description: Python scripts\n"
+                "    uri: ./data\n"
                 "    paths:\n"
                 "      - ./scripts/*.py\n",
                 encoding="utf-8",
@@ -247,6 +254,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: data\n"
                 "    description: Data files\n"
+                "    uri: ./store\n"
                 "    paths:\n"
                 "      - ./data/*\n",
                 encoding="utf-8",
@@ -268,6 +276,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: single\n"
                 "    description: Single file\n"
+                "    uri: ./data\n"
                 "    paths:\n"
                 "      - ./specific.py\n",
                 encoding="utf-8",
@@ -288,6 +297,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
+                "    uri: ./data\n"
                 "    paths:\n"
                 "      - ./src\n"
                 "    path_env: DDI_ROOT_PATH\n",
@@ -302,7 +312,7 @@ class TestConfig(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "workspace.yaml"
             path.write_text(
-                "indices:\n  - name: docs\n    description: docs index\n",
+                "indices:\n  - name: docs\n    description: docs index\n    uri: ./data\n",
                 encoding="utf-8",
             )
 
@@ -322,6 +332,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source\n"
+                "    uri: ./data\n"
                 "    paths:\n"
                 f'      - "$TEST_SMAK_ROOT/src"\n',
                 encoding="utf-8",
@@ -344,6 +355,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source\n"
+                "    uri: ./data\n"
                 "    paths:\n"
                 f'      - "${key}/src"\n',
                 encoding="utf-8",

@@ -18,6 +18,9 @@ class TestCli(unittest.TestCase):
         cli = importlib.import_module("smak.cli")
         template = cli._default_config_template()
         self.assertIn("uri: ./smak_data/source_code", template)
+        self.assertIn("uri: ./smak_data/issues", template)
+        self.assertIn("uri: ./smak_data/tests", template)
+        self.assertIn("uri: ./smak_data/documentation", template)
         self.assertIn("paths:", template)
         self.assertIn("path_env", template)
 

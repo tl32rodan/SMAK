@@ -102,15 +102,18 @@ def _default_config_template() -> str:
             "and Jira tickets describing known problems.",
             "    paths:",
             "      - ./issues",
+            "    uri: ./smak_data/issues",
             "  - name: tests",
             "    description: Contains unit tests, integration tests, and test cases.",
             "    paths:",
             "      - ./tests",
+            "    uri: ./smak_data/tests",
             "  - name: documentation",
             "    description: Contains architecture diagrams, API docs, and "
             "general knowledge base.",
             "    paths:",
             "      - ./documentation",
+            "    uri: ./smak_data/documentation",
             "",
         ]
     )
