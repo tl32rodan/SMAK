@@ -45,8 +45,8 @@ class TestDoctorService(unittest.TestCase):
 
             config = SmakConfig(
                 indices=[
-                    IndexConfig(name="source_code", description="src"),
-                    IndexConfig(name="issues", description="issues"),
+                    IndexConfig(name="source_code", description="src", uri="/tmp/test/src"),
+                    IndexConfig(name="issues", description="issues", uri="/tmp/test/issues"),
                 ]
             )
             stores = {

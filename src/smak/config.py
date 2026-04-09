@@ -48,8 +48,8 @@ class IndexConfig:
 
     name: str
     description: str
+    uri: str
     paths: list[str] = field(default_factory=lambda: ["."])
-    uri: str | None = None
     path_env: str | None = None
 
 
@@ -64,8 +64,6 @@ class SmakConfig:
         """Return the IndexConfig with the given name, or None if not found."""
         return next((entry for entry in self.indices if entry.name == name), None)
 
-
-DEFAULT_DATA_DIR = "smak_data"
 
 
 def _resolve_absolute_path(raw: str, base: Path) -> str:
@@ -120,10 +118,7 @@ def _resolve_config(cfg: SmakConfig, config_path: str | Path) -> SmakConfig:
     resolved_indices = []
     for index in cfg.indices:
         resolved_paths = _expand_glob_paths(index.paths, base_path)
-        if index.uri:
-            resolved_uri = _resolve_absolute_path(index.uri, base_path)
-        else:
-            resolved_uri = str((base_path / DEFAULT_DATA_DIR / index.name).resolve())
+        resolved_uri = _resolve_absolute_path(index.uri, base_path)
         resolved_indices.append(
             IndexConfig(
                 name=index.name,
@@ -154,16 +149,18 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
                 raw_paths = entry.get("paths", ["."])
                 paths = [str(p) for p in raw_paths] if isinstance(raw_paths, list) else [str(raw_paths)]
                 raw_path_env = entry.get("path_env")
+                index_name = str(entry.get("name", ""))
+                if entry.get("uri") is None:
+                    raise ValueError(
+                        f"Index '{index_name}' is missing the required 'uri' field. "
+                        "Every index must specify a uri for its vector store."
+                    )
                 indices.append(
                     IndexConfig(
-                        name=str(entry.get("name", "")),
+                        name=index_name,
                         description=str(entry.get("description", "")),
+                        uri=str(entry["uri"]),
                         paths=paths,
-                        uri=(
-                            str(entry["uri"])
-                            if entry.get("uri") is not None
-                            else None
-                        ),
                         path_env=(
                             str(raw_path_env) if raw_path_env is not None else None
                         ),
@@ -175,7 +172,6 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
 
 
 __all__ = [
-    "DEFAULT_DATA_DIR",
     "EmbeddingConfig",
     "IndexConfig",
     "SmakConfig",

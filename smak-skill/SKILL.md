@@ -45,10 +45,12 @@ indices:
   - name: source_code
     description: "RTL Verilog modules for DDR5 PHY datapath"
     paths: [$DDI_ROOT_PATH/src]
+    uri: ./smak_data/source_code
     path_env: DDI_ROOT_PATH
   - name: issues
     description: "Jira tickets and postmortems for timing closure failures"
     paths: [./issues]
+    uri: ./smak_data/issues
 ```
 
 Every SMAK tool takes `config` as its first parameter — the path to `workspace_config.yaml`.
@@ -252,14 +254,17 @@ indices:
   - name: rtl_code
     description: "Verilog/SystemVerilog RTL modules for DDR5 PHY datapath"
     paths: [$DDI_ROOT_PATH/rtl/phy]
+    uri: ./smak_data/rtl_code
     path_env: DDI_ROOT_PATH
   - name: verification
     description: "UVM testbenches and coverage models"
     paths: [$DDI_ROOT_PATH/verif]
+    uri: ./smak_data/verification
     path_env: DDI_ROOT_PATH
   - name: release_notes
     description: "Release notes, known issues, and ECO history"
     paths: [./release_notes]
+    uri: ./smak_data/release_notes
 ```
 
 ### Writing effective descriptions
@@ -281,6 +286,7 @@ Use `path_env` when your codebase lives at different absolute paths:
 indices:
   - name: source_code
     paths: [$DDI_ROOT_PATH/src]
+    uri: ./smak_data/source_code
     path_env: DDI_ROOT_PATH
 ```
 

@@ -4,14 +4,13 @@ This demo shows SMAK's core value proposition: **one query surfaces not just the
 relevant code, but every linked artifact — bugs, tests, and docs — through the semantic
 mesh of sidecar relations.**
 
-Two fully self-contained workspaces are included:
+A fully self-contained workspace is included:
 
 | Workspace | Project |
 |-----------|---------|
 | `workspace_a` | CSV Editor utility |
-| `workspace_b` | Log Analyzer utility |
 
-Both workspaces come with **pre-populated sidecar files** that wire code symbols to their
+The workspace comes with **pre-populated sidecar files** that wire code symbols to their
 related issues, so the mesh traversal works immediately after ingestion.
 
 ---
@@ -20,33 +19,25 @@ related issues, so the mesh traversal works immediately after ingestion.
 
 ```
 demo/
-├── workspace_a/
-│   ├── workspace_config.yaml   # indices: source_code, issues, tests, documentation
-│   ├── src/
-│   │   ├── csv_editor.py
-│   │   ├── .csv_editor.py.sidecar.yaml   # pre-populated intent + relations
-│   │   └── tests/
-│   │       └── test_csv_editor.py
-│   ├── documentation/
-│   │   └── csv-editor-usage.md
-│   └── issues/
-│       └── csv-editor-known-issues.md
-└── workspace_b/
+└── workspace_a/
     ├── workspace_config.yaml   # indices: source_code, issues, tests, documentation
     ├── src/
-    │   ├── log_analyzer.py
-    │   ├── .log_analyzer.py.sidecar.yaml  # pre-populated intent + relations
+    │   ├── csv_editor.py
+    │   ├── .csv_editor.py.sidecar.yaml   # pre-populated intent + relations
     │   └── tests/
-    │       └── test_log_analyzer.py
+    │       └── test_csv_editor.py
     ├── documentation/
-    │   └── log-analyzer-design.md
+    │   └── csv-editor-usage.md
     └── issues/
-        └── log-analyzer-known-issues.md
+        └── csv-editor-known-issues.md
 ```
 
 The `path:` field on each index entry in `workspace_config.yaml` controls which directory
 `smak ingest` reads. For example, `source_code` has `path: ./src`, so `smak ingest
 --index source_code` ingests from `<workspace>/src/` automatically.
+
+Every index **must** specify a `uri` field — the path where the vector store for that
+index is persisted. If you relocate the workspace, update the `uri` values accordingly.
 
 ---
 
@@ -67,13 +58,11 @@ Verify the server is reachable before running any `ingest` or `query` command.
 
 ---
 
-## Part 1 — workspace_a: CSV Editor
-
-### 1.1 CLI walkthrough
+## CLI walkthrough
 
 All commands below are run from the **repository root**.
 
-#### Step 1: Ingest source code
+### Step 1: Ingest source code
 
 ```bash
 smak ingest --index source_code \
@@ -96,7 +85,7 @@ The Python parser extracts symbols from `csv_editor.py` and `test_csv_editor.py`
 The sidecar file `.csv_editor.py.sidecar.yaml` is picked up automatically — it enriches
 each symbol with `intent` text and `relations` pointers.
 
-#### Step 2: Ingest issues
+### Step 2: Ingest issues
 
 ```bash
 smak ingest --index issues \
@@ -107,7 +96,7 @@ smak ingest --index issues \
 This loads `csv-editor-known-issues.md` into the `issues` index.
 Its UID becomes `csv-editor-known-issues` (taken from the frontmatter `symbol:` field).
 
-#### Step 3: Ingest documentation
+### Step 3: Ingest documentation
 
 ```bash
 smak ingest --index documentation \
@@ -115,7 +104,7 @@ smak ingest --index documentation \
             --workers 1
 ```
 
-#### Step 4: Inspect symbols
+### Step 4: Inspect symbols
 
 See which UIDs were extracted from the source file:
 
@@ -134,7 +123,7 @@ CsvEditor.read_rows
 
 These names match the `name:` entries in `.csv_editor.py.sidecar.yaml` exactly.
 
-#### Step 5: The semantic mesh query
+### Step 5: The semantic mesh query
 
 ```bash
 smak query "why does update_cell raise an error" \
@@ -170,7 +159,7 @@ Example output (abbreviated):
 relation (`csv-editor-known-issues`) and fetched the full issue content from the `issues`
 index — all in one query, without you knowing the issue file existed.
 
-#### Step 6: Validate mesh integrity
+### Step 6: Validate mesh integrity
 
 ```bash
 smak doctor --config demo/workspace_a/workspace_config.yaml
@@ -184,7 +173,7 @@ Mesh diagnostics passed.
 
 ---
 
-### 1.2 MCP server walkthrough
+## MCP server walkthrough
 
 Start the server (from repository root, keep it running in a separate terminal):
 
@@ -195,7 +184,7 @@ python -m smak.mcp_server
 The server starts stateless. Every tool call includes a `config` parameter pointing to
 a `workspace_config.yaml` file.
 
-#### list_available_indices
+### list_available_indices
 
 ```json
 // Tool call
@@ -209,7 +198,7 @@ a `workspace_config.yaml` file.
 ]
 ```
 
-#### refresh_knowledge — ingest source_code
+### refresh_knowledge — ingest source_code
 
 ```json
 {
@@ -224,7 +213,7 @@ a `workspace_config.yaml` file.
 "Ingestion Complete! Processed Files: 2, Skipped Files: 0, Vectors Added: 5"
 ```
 
-#### semantic_search — the mesh traversal
+### semantic_search — the mesh traversal
 
 ```json
 {
@@ -238,7 +227,7 @@ a `workspace_config.yaml` file.
 }
 ```
 
-#### multi_index_search — search all indices at once
+### multi_index_search — search all indices at once
 
 ```json
 {
@@ -251,51 +240,16 @@ a `workspace_config.yaml` file.
 }
 ```
 
-#### workspace_status — health dashboard
+### workspace_status — health dashboard
 
 ```json
 { "name": "workspace_status", "arguments": { "config": "demo/workspace_a/workspace_config.yaml" } }
 ```
 
-#### validate_mesh
+### validate_mesh
 
 ```json
 { "name": "validate_mesh", "arguments": { "config": "demo/workspace_a/workspace_config.yaml" } }
-```
-
----
-
-## Part 2 — workspace_b: Log Analyzer
-
-`workspace_b` is a completely separate project (log file analysis). Queries against
-workspace_b never surface CSV editor content and vice versa.
-
-### CLI walkthrough
-
-```bash
-smak ingest --index source_code --config demo/workspace_b/workspace_config.yaml --workers 1
-smak ingest --index issues      --config demo/workspace_b/workspace_config.yaml --workers 1
-
-smak query "how are log entries parsed" \
-      --index source_code --top-k 3 \
-      --config demo/workspace_b/workspace_config.yaml
-
-smak doctor --config demo/workspace_b/workspace_config.yaml
-```
-
-### MCP walkthrough
-
-Same server, different `config` path:
-
-```json
-{
-  "name": "semantic_search",
-  "arguments": {
-    "config": "demo/workspace_b/workspace_config.yaml",
-    "query": "how are log entries parsed",
-    "index": "source_code"
-  }
-}
 ```
 
 ---

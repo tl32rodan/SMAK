@@ -56,7 +56,7 @@ def _make_config(tmp_dir: str) -> SmakConfig:
     src = Path(tmp_dir) / "src"
     src.mkdir(exist_ok=True)
     return SmakConfig(indices=[
-        IndexConfig(name="source_code", description="src", paths=[str(src)]),
+        IndexConfig(name="source_code", description="src", uri=str(src / "data"), paths=[str(src)]),
     ])
 
 
@@ -73,7 +73,7 @@ class TestSetupConfig(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "workspace_config.yaml"
             config_path.write_text(
-                "indices:\n  - name: src\n    description: d\n    paths:\n      - .\n",
+                "indices:\n  - name: src\n    description: d\n    uri: ./data\n    paths:\n      - .\n",
                 encoding="utf-8",
             )
             with _patch_init_config():
@@ -123,8 +123,8 @@ class TestResolveSourcePath(unittest.TestCase):
 class TestDoDescribe(unittest.TestCase):
     def test_lists_indices(self) -> None:
         cfg = SmakConfig(indices=[
-            IndexConfig(name="src", description="code", paths=["./src"]),
-            IndexConfig(name="docs", description="docs", paths=["./docs"]),
+            IndexConfig(name="src", description="code", uri="./data/src", paths=["./src"]),
+            IndexConfig(name="docs", description="docs", uri="./data/docs", paths=["./docs"]),
         ])
         result = do_describe(cfg)
         self.assertEqual(len(result["indices"]), 2)
@@ -147,8 +147,8 @@ class TestDoSearch(unittest.TestCase):
             src = Path(tmp_dir) / "src"
             src.mkdir()
             cfg = SmakConfig(indices=[
-                IndexConfig(name="source_code", description="src", paths=[str(src)]),
-                IndexConfig(name="tests", description="tests", paths=[str(src)]),
+                IndexConfig(name="source_code", description="src", uri=str(src / "data/src"), paths=[str(src)]),
+                IndexConfig(name="tests", description="tests", uri=str(src / "data/tests"), paths=[str(src)]),
             ])
             p1, p2 = _patch_query()
             with p1, p2 as qs_factory:
