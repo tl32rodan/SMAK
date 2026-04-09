@@ -36,8 +36,8 @@ def _query_patches():
     """Return three patch context managers for query-related tests."""
     return (
         _patch_init_config(),
-        patch("smak.mcp_server.load_and_validate_vector_store", return_value=object()),
-        patch("smak.mcp_server.create_query_service"),
+        patch("smak.core_ops.load_and_validate_vector_store", return_value=object()),
+        patch("smak.core_ops.create_query_service"),
     )
 
 
@@ -45,7 +45,7 @@ def _sidecar_patches():
     """Return two patch context managers for sidecar-related tests."""
     return (
         _patch_init_config(),
-        patch("smak.mcp_server.create_sidecar_service"),
+        patch("smak.core_ops.create_sidecar_service"),
     )
 
 
@@ -53,8 +53,8 @@ def _ingest_patches():
     """Return three patch context managers for ingest-related tests."""
     return (
         _patch_init_config(),
-        patch("smak.mcp_server.load_and_validate_vector_store"),
-        patch("smak.mcp_server.IngestService"),
+        patch("smak.core_ops.load_and_validate_vector_store"),
+        patch("smak.core_ops.IngestService"),
     )
 
 
@@ -320,7 +320,7 @@ class TestMcpServer(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_check_health_passes(self) -> None:
-        with _patch_init_config(), patch("smak.mcp_server.create_doctor_service") as doctor_factory, \
+        with _patch_init_config(), patch("smak.core_ops.create_doctor_service") as doctor_factory, \
                 tempfile.TemporaryDirectory() as tmp_dir:
             server, config = self._server_and_config(tmp_dir)
             doctor_factory.return_value.validate_all.return_value = None
@@ -330,7 +330,7 @@ class TestMcpServer(unittest.TestCase):
             self.assertEqual(result["status"], "healthy")
 
     def test_check_health_reports_issues(self) -> None:
-        with _patch_init_config(), patch("smak.mcp_server.create_doctor_service") as doctor_factory, \
+        with _patch_init_config(), patch("smak.core_ops.create_doctor_service") as doctor_factory, \
                 tempfile.TemporaryDirectory() as tmp_dir:
             server, config = self._server_and_config(tmp_dir)
             doctor_factory.return_value.validate_all.side_effect = RuntimeError("Orphaned sidecar: x.yaml")
