@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -10,21 +9,22 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from smak.config import EmbeddingConfig, SmakConfig, load_config, load_embedding_config
-from smak.factory import (
-    create_doctor_service,
-    create_query_service,
-    create_sidecar_service,
-    init_config,
-    load_and_validate_vector_store,
-    on_ghost_source,
-    sidecar_skip_file,
+from smak.core_ops import (
+    do_describe,
+    do_enrich_batch,
+    do_enrich_file,
+    do_enrich_symbol,
+    do_graph_stats,
+    do_health,
+    do_ingest,
+    do_lookup,
+    do_search,
+    do_search_all,
+    resolve_source_path,
 )
-from smak.services import IngestService
-from smak.utils.embedding import InternalNomicEmbedding
+from smak.factory import init_config
 
 _DEFAULT_EMBEDDING_SETUP = str(Path(__file__).resolve().parent / "embedding_setup.yaml")
-
-_STALE_SYMBOL_RE = re.compile(r'--symbol "([^"]+)"')
 
 
 @dataclass
@@ -37,7 +37,7 @@ class SmakMcpServer:
     )
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Internal helpers (caching layer only — logic lives in core_ops)
     # ------------------------------------------------------------------
 
     def _load_config(self, config: str) -> SmakConfig:
@@ -53,96 +53,15 @@ class SmakMcpServer:
         self._config_cache[resolved] = cfg
         return cfg
 
+    # Kept for backward-compat with tests that call it directly
     @staticmethod
-    def _get_index_config(config: SmakConfig, index: str) -> object:
-        index_config = config.get_index(index)
-        if index_config is None:
-            raise ValueError(f"Index '{index}' not found in configuration.")
-        return index_config
-
-    def _load_index_vector_store(
-        self, config: SmakConfig, index: str,
-    ) -> tuple[object, object]:
-        index_config = self._get_index_config(config, index)
-        vector_store = load_and_validate_vector_store(index_config, config)
-        return vector_store, index_config
-
-    def _query_service(self, config: str, index: str) -> object:
-        """Load config → vector store → return ready QueryService."""
-        cfg = self._load_config(config)
-        vs, ic = self._load_index_vector_store(cfg, index)
-        return create_query_service(
-            vs, cfg, ic, embedding_config=self.embedding_config,
-        )
-
-    def _resolve_file(
-        self, config: str, index: str, file_path: str,
-    ) -> tuple[object, Path]:
-        """Load config → resolve path → return ``(SidecarService, source_path)``."""
-        cfg = self._load_config(config)
-        ic = self._get_index_config(cfg, index)
-        return create_sidecar_service(), self._resolve_source_path(index, ic, file_path)
-
-    @staticmethod
-    def _format_candidates(candidates: list[str]) -> str:
-        if len(candidates) == 1:
-            return f"'{candidates[0]}'"
-        if len(candidates) == 2:
-            return f"'{candidates[0]}' or '{candidates[1]}'"
-        quoted = [f"'{c}'" for c in candidates]
-        return ", ".join(quoted[:-1]) + f", or {quoted[-1]}"
-
     def _resolve_source_path(
-        self, index: str, index_config: object, file_path: str,
+        index: str, index_config: object, file_path: str,
     ) -> Path:
-        index_roots = [Path(p).resolve() for p in index_config.paths if Path(p).is_dir()]
-        index_files = [Path(p).resolve() for p in index_config.paths if Path(p).is_file()]
-        raw = Path(file_path)
-
-        if raw.is_absolute() and raw.exists():
-            return raw
-        if not raw.is_absolute():
-            for root in index_roots:
-                candidate = (root / raw).resolve()
-                if candidate.exists():
-                    return candidate
-
-        name = raw.name
-        all_candidates: list[Path] = []
-        for f in index_files:
-            if f.name == name:
-                all_candidates.append(f)
-        for root in index_roots:
-            all_candidates.extend(root.rglob(f"*{name}") if name else [])
-        candidates = sorted(all_candidates)
-
-        if len(candidates) == 1:
-            return candidates[0].resolve()
-        if len(candidates) > 1:
-            rel: list[str] = []
-            for c in candidates:
-                for root in index_roots:
-                    try:
-                        rel.append(str(c.resolve().relative_to(root)))
-                        break
-                    except ValueError:
-                        continue
-                else:
-                    rel.append(str(c.resolve()))
-            raise ValueError(
-                f"Ambiguous file path '{file_path}'. "
-                f"Did you mean {self._format_candidates(rel)}?"
-            )
-
-        roots_display = ", ".join(f"'{r}'" for r in index_roots)
-        raise FileNotFoundError(
-            f"File path resolution failed under index roots [{roots_display}] "
-            f"(index='{index}', file_path='{file_path}'). "
-            "Try using semantic_search first and pass one of the returned file paths."
-        )
+        return resolve_source_path(index, index_config, file_path)
 
     # ==================================================================
-    # Intent-based tools
+    # Intent-based tools — all delegate to core_ops
     # ==================================================================
 
     def describe_workspace(self, config: str) -> dict[str, Any]:
@@ -154,18 +73,9 @@ class SmakMcpServer:
             config: Path to ``workspace_config.yaml``.
         """
         cfg = self._load_config(config)
-        return {
-            "config_path": config,
-            "indices": [
-                {
-                    "name": idx.name,
-                    "description": idx.description,
-                    "paths": idx.paths,
-                    "path_env": idx.path_env,
-                }
-                for idx in cfg.indices
-            ],
-        }
+        result = do_describe(cfg)
+        result["config_path"] = config
+        return result
 
     def search(
         self, config: str, query: str,
@@ -183,8 +93,9 @@ class SmakMcpServer:
             index: Target index name.
             top_k: Max results.
         """
-        result = self._query_service(config, index).search(query, top_k=top_k)
-        return result if isinstance(result, dict) else {}
+        cfg = self._load_config(config)
+        return do_search(cfg, query, index=index, top_k=top_k,
+                         embedding_config=self.embedding_config)
 
     def search_all(
         self, config: str, query: str,
@@ -200,17 +111,8 @@ class SmakMcpServer:
             top_k: Max results per index.
         """
         cfg = self._load_config(config)
-        target = indices or [idx.name for idx in cfg.indices]
-        results: dict[str, Any] = {}
-        for name in target:
-            try:
-                svc = self._query_service(config, name)
-                results[name] = svc.search(query, top_k=top_k)
-            except ValueError:
-                results[name] = {"error": f"Index '{name}' not found"}
-            except Exception as exc:
-                results[name] = {"error": str(exc)}
-        return results
+        return do_search_all(cfg, query, indices=indices, top_k=top_k,
+                             embedding_config=self.embedding_config)
 
     def lookup(
         self, config: str, uid: str, index: str = "source_code",
@@ -223,7 +125,9 @@ class SmakMcpServer:
             uid: Full UID (``path::symbol``).
             index: Index to query.
         """
-        return self._query_service(config, index).lookup(uid)
+        cfg = self._load_config(config)
+        return do_lookup(cfg, uid, index=index,
+                         embedding_config=self.embedding_config)
 
     def ingest(
         self, config: str, index: str = "source_code",
@@ -238,19 +142,12 @@ class SmakMcpServer:
             follow_symlinks: Follow symlinks during walk.
         """
         cfg = self._load_config(config)
-        vs, ic = self._load_index_vector_store(cfg, index)
-        emb_cfg = self.embedding_config
-        stats = IngestService(vector_store=vs).ingest_paths(
-            [Path(p) for p in ic.paths],
-            follow_symlinks=follow_symlinks,
-            skip_file=sidecar_skip_file,
-            on_ghost_source=on_ghost_source,
-            embedder_loader=lambda: InternalNomicEmbedding(embedding_config=emb_cfg),
-        )
+        result = do_ingest(cfg, index=index, follow_symlinks=follow_symlinks,
+                           embedding_config=self.embedding_config)
         return (
             "Ingestion Complete! "
-            f"Processed Files: {stats.files}, "
-            f"Skipped Files: {stats.skipped}, Vectors Added: {stats.vectors}"
+            f"Processed Files: {result['files']}, "
+            f"Skipped Files: {result['skipped']}, Vectors Added: {result['vectors']}"
         )
 
     def enrich_symbol(
@@ -280,111 +177,12 @@ class SmakMcpServer:
             index: Index whose paths resolve the file.
             bidirectional: If True, add reverse relations from targets back to this symbol.
         """
-        svc, source_path = self._resolve_file(config, index, file_path)
-
-        valid_symbols = svc.inspect(source_path)
-        if symbol not in valid_symbols:
-            return {
-                "status": "error",
-                "message": (
-                    f"Symbol '{symbol}' not found in {file_path}. "
-                    f"Valid symbols: {valid_symbols}"
-                ),
-                "valid_symbols": valid_symbols,
-            }
-
-        try:
-            svc.update(source_path)
-        except ValueError as exc:
-            stale = _STALE_SYMBOL_RE.findall(str(exc))
-            if not stale:
-                return {"status": "error", "message": str(exc)}
-            for s in stale:
-                try:
-                    svc.clear_symbol(source_path, s)
-                except ValueError:
-                    pass
-            svc.update(source_path)
-
-        if intent is None and relations is None:
-            return {
-                "status": "ok",
-                "message": f"Sidecar synced for {file_path}. "
-                f"No intent/relations provided for '{symbol}'.",
-            }
-        svc.update(source_path, symbol=symbol, intent=intent, relations=relations)
-
-        # Handle bidirectional relations
-        reverse_results: list[dict[str, Any]] = []
-        if bidirectional and relations:
-            source_uid = f"{source_path}::{symbol}"
-            cfg = self._load_config(config)
-            for rel_uid in relations:
-                try:
-                    result = self._add_reverse_relation(cfg, svc, rel_uid, source_uid)
-                    reverse_results.append(result)
-                except Exception as exc:
-                    reverse_results.append({
-                        "target": rel_uid, "status": "error", "message": str(exc),
-                    })
-
-        result: dict[str, Any] = {
-            "status": "ok",
-            "file_path": str(source_path),
-            "symbol": symbol,
-            "intent": intent,
-            "relations": relations,
-        }
-        if reverse_results:
-            result["reverse_relations"] = reverse_results
-        return result
-
-    def _add_reverse_relation(
-        self, cfg: SmakConfig, svc: object, target_uid: str, source_uid: str,
-    ) -> dict[str, Any]:
-        """Add a reverse relation from target back to source.
-
-        Parses the target UID to find the file and symbol, then adds
-        source_uid to its relations list.
-        """
-        if "::" not in target_uid:
-            return {"target": target_uid, "status": "skip", "message": "No :: separator in UID"}
-
-        path_part, symbol_part = target_uid.rsplit("::", 1)
-
-        # Find which index this target belongs to
-        target_index = None
-        for idx_cfg in cfg.indices:
-            for idx_path in idx_cfg.paths:
-                resolved = Path(idx_path).resolve()
-                target_resolved = Path(path_part).resolve()
-                try:
-                    target_resolved.relative_to(resolved)
-                    target_index = idx_cfg.name
-                    break
-                except ValueError:
-                    continue
-            if target_index:
-                break
-
-        if not target_index:
-            return {"target": target_uid, "status": "skip", "message": "Target index not found"}
-
-        try:
-            target_path = self._resolve_source_path(
-                target_index,
-                self._get_index_config(cfg, target_index),
-                path_part,
-            )
-        except (FileNotFoundError, ValueError):
-            return {"target": target_uid, "status": "skip", "message": "Target file not found"}
-
-        # Add reverse relation to the target's sidecar
-        try:
-            svc.update(target_path, symbol=symbol_part, relations=[source_uid])
-            return {"target": target_uid, "status": "ok"}
-        except Exception as exc:
-            return {"target": target_uid, "status": "error", "message": str(exc)}
+        cfg = self._load_config(config)
+        return do_enrich_symbol(
+            cfg, file_path, symbol,
+            intent=intent, relations=relations,
+            index=index, bidirectional=bidirectional,
+        )
 
     def enrich_file(
         self, config: str, file_path: str, index: str = "source_code",
@@ -397,8 +195,8 @@ class SmakMcpServer:
             file_path: Source file path.
             index: Index whose paths resolve the file.
         """
-        svc, source = self._resolve_file(config, index, file_path)
-        return svc.update(source)
+        cfg = self._load_config(config)
+        return do_enrich_file(cfg, file_path, index=index)
 
     def enrich_batch(
         self, config: str, file_paths: list[str],
@@ -412,16 +210,7 @@ class SmakMcpServer:
             index: Index whose paths resolve the files.
         """
         cfg = self._load_config(config)
-        ic = self._get_index_config(cfg, index)
-        svc = create_sidecar_service()
-        results: list[dict[str, Any]] = []
-        for fp in file_paths:
-            try:
-                source = self._resolve_source_path(index, ic, fp)
-                results.append(svc.update(source))
-            except Exception as exc:
-                results.append({"file_path": fp, "error": str(exc)})
-        return results
+        return do_enrich_batch(cfg, file_paths, index=index)
 
     def check_health(self, config: str) -> dict[str, Any]:
         """Run mesh integrity diagnostics.  Returns structured report
@@ -431,12 +220,7 @@ class SmakMcpServer:
             config: Path to ``workspace_config.yaml``.
         """
         cfg = self._load_config(config)
-        service = create_doctor_service(cfg)
-        try:
-            service.validate_all()
-        except RuntimeError as exc:
-            return {"status": "unhealthy", "issues": str(exc).split("\n")}
-        return {"status": "healthy", "issues": []}
+        return do_health(cfg)
 
     def graph_stats(self, config: str) -> dict[str, Any]:
         """Return knowledge graph coverage statistics.
@@ -452,8 +236,7 @@ class SmakMcpServer:
             config: Path to ``workspace_config.yaml``.
         """
         cfg = self._load_config(config)
-        service = create_doctor_service(cfg)
-        return service.graph_stats()
+        return do_graph_stats(cfg)
 
 
 # ------------------------------------------------------------------
