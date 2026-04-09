@@ -257,6 +257,7 @@ class SmakMcpServer:
         self, config: str, file_path: str, symbol: str,
         intent: str | None = None, relations: list[str] | None = None,
         index: str = "source_code",
+        bidirectional: bool = False,
     ) -> dict[str, Any]:
         """Annotate a single code symbol with intent and/or relations.
 
@@ -266,6 +267,10 @@ class SmakMcpServer:
         - Clears stale symbols that block sync
         - Writes the intent and relations
 
+        When ``bidirectional=True`` and relations are provided, also adds
+        a reverse relation from each target back to this symbol.  The
+        reverse relation target symbol defaults to ``*`` (file-level).
+
         Args:
             config: Path to ``workspace_config.yaml``.
             file_path: Source file path (relative OK — resolved automatically).
@@ -273,6 +278,7 @@ class SmakMcpServer:
             intent: Human description of the symbol's purpose.
             relations: List of full UIDs to link as relations.
             index: Index whose paths resolve the file.
+            bidirectional: If True, add reverse relations from targets back to this symbol.
         """
         svc, source_path = self._resolve_file(config, index, file_path)
 
@@ -307,13 +313,78 @@ class SmakMcpServer:
                 f"No intent/relations provided for '{symbol}'.",
             }
         svc.update(source_path, symbol=symbol, intent=intent, relations=relations)
-        return {
+
+        # Handle bidirectional relations
+        reverse_results: list[dict[str, Any]] = []
+        if bidirectional and relations:
+            source_uid = f"{source_path}::{symbol}"
+            cfg = self._load_config(config)
+            for rel_uid in relations:
+                try:
+                    result = self._add_reverse_relation(cfg, svc, rel_uid, source_uid)
+                    reverse_results.append(result)
+                except Exception as exc:
+                    reverse_results.append({
+                        "target": rel_uid, "status": "error", "message": str(exc),
+                    })
+
+        result: dict[str, Any] = {
             "status": "ok",
             "file_path": str(source_path),
             "symbol": symbol,
             "intent": intent,
             "relations": relations,
         }
+        if reverse_results:
+            result["reverse_relations"] = reverse_results
+        return result
+
+    def _add_reverse_relation(
+        self, cfg: SmakConfig, svc: object, target_uid: str, source_uid: str,
+    ) -> dict[str, Any]:
+        """Add a reverse relation from target back to source.
+
+        Parses the target UID to find the file and symbol, then adds
+        source_uid to its relations list.
+        """
+        if "::" not in target_uid:
+            return {"target": target_uid, "status": "skip", "message": "No :: separator in UID"}
+
+        path_part, symbol_part = target_uid.rsplit("::", 1)
+
+        # Find which index this target belongs to
+        target_index = None
+        for idx_cfg in cfg.indices:
+            for idx_path in idx_cfg.paths:
+                resolved = Path(idx_path).resolve()
+                target_resolved = Path(path_part).resolve()
+                try:
+                    target_resolved.relative_to(resolved)
+                    target_index = idx_cfg.name
+                    break
+                except ValueError:
+                    continue
+            if target_index:
+                break
+
+        if not target_index:
+            return {"target": target_uid, "status": "skip", "message": "Target index not found"}
+
+        try:
+            target_path = self._resolve_source_path(
+                target_index,
+                self._get_index_config(cfg, target_index),
+                path_part,
+            )
+        except (FileNotFoundError, ValueError):
+            return {"target": target_uid, "status": "skip", "message": "Target file not found"}
+
+        # Add reverse relation to the target's sidecar
+        try:
+            svc.update(target_path, symbol=symbol_part, relations=[source_uid])
+            return {"target": target_uid, "status": "ok"}
+        except Exception as exc:
+            return {"target": target_uid, "status": "error", "message": str(exc)}
 
     def enrich_file(
         self, config: str, file_path: str, index: str = "source_code",
@@ -367,6 +438,23 @@ class SmakMcpServer:
             return {"status": "unhealthy", "issues": str(exc).split("\n")}
         return {"status": "healthy", "issues": []}
 
+    def graph_stats(self, config: str) -> dict[str, Any]:
+        """Return knowledge graph coverage statistics.
+
+        Computes per-index and overall metrics: total symbols,
+        enriched symbols (with intent), total relations, coverage
+        percentage, and asymmetric relation warnings.
+
+        Use this to understand the maturity of the knowledge graph
+        and identify indices that need more enrichment.
+
+        Args:
+            config: Path to ``workspace_config.yaml``.
+        """
+        cfg = self._load_config(config)
+        service = create_doctor_service(cfg)
+        return service.graph_stats()
+
 
 # ------------------------------------------------------------------
 # FastMCP server builder
@@ -391,6 +479,7 @@ def build_mcp_server(
         smak.enrich_file,
         smak.enrich_batch,
         smak.check_health,
+        smak.graph_stats,
     ):
         mcp.tool()(method)
 

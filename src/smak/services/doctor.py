@@ -83,3 +83,87 @@ class DoctorService:
         problems = [*issues, *dangling]
         if problems:
             raise RuntimeError("\n".join(problems))
+
+    def graph_stats(self) -> dict[str, Any]:
+        """Compute knowledge graph coverage statistics across all indices.
+
+        Returns a dict with overall metrics and per-index breakdown:
+        total symbols, enriched symbols (with intent), total relations,
+        coverage percentage, and asymmetric relation warnings.
+        """
+        overall_total = 0
+        overall_enriched = 0
+        overall_relations = 0
+        by_index: dict[str, dict[str, Any]] = {}
+        asymmetric_warnings: list[str] = []
+        all_relations: set[tuple[str, str]] = set()  # (source_uid, target_uid)
+
+        for index_config in self.config.indices:
+            idx_total = 0
+            idx_enriched = 0
+            idx_relations = 0
+            idx_files_with_sidecars = 0
+
+            for path_str in index_config.paths:
+                target_path = Path(path_str)
+                if not target_path.exists():
+                    continue
+
+                for sidecar_file in iter_sidecar_files(target_path):
+                    idx_files_with_sidecars += 1
+                    payload = safe_load(sidecar_file.read_text(encoding="utf-8")) or {}
+                    symbols = payload.get("symbols", []) if isinstance(payload, dict) else []
+
+                    source_path = source_path_from_sidecar(sidecar_file)
+                    for symbol in symbols if isinstance(symbols, list) else []:
+                        if not isinstance(symbol, dict):
+                            continue
+                        idx_total += 1
+                        name = symbol.get("name", "")
+                        intent = symbol.get("intent", "")
+                        relations = (
+                            symbol.get("relations", [])
+                            if isinstance(symbol.get("relations", []), list)
+                            else []
+                        )
+
+                        if intent:
+                            idx_enriched += 1
+                        idx_relations += len(relations)
+
+                        source_uid = f"{source_path}::{name}"
+                        for rel in relations:
+                            all_relations.add((source_uid, str(rel)))
+
+            coverage = (idx_enriched / idx_total * 100) if idx_total > 0 else 0.0
+            by_index[index_config.name] = {
+                "total_symbols": idx_total,
+                "enriched_symbols": idx_enriched,
+                "total_relations": idx_relations,
+                "coverage_pct": round(coverage, 2),
+                "files_with_sidecars": idx_files_with_sidecars,
+            }
+            overall_total += idx_total
+            overall_enriched += idx_enriched
+            overall_relations += idx_relations
+
+        # Detect asymmetric relations (A→B exists but B→A doesn't)
+        for src, tgt in all_relations:
+            reverse_exists = any(
+                rs == tgt and rt == src for rs, rt in all_relations
+            )
+            if not reverse_exists:
+                asymmetric_warnings.append(
+                    f"Asymmetric: {src} -> {tgt} (no reverse relation)"
+                )
+
+        overall_coverage = (overall_enriched / overall_total * 100) if overall_total > 0 else 0.0
+
+        return {
+            "total_symbols": overall_total,
+            "enriched_symbols": overall_enriched,
+            "total_relations": overall_relations,
+            "coverage_pct": round(overall_coverage, 2),
+            "by_index": by_index,
+            "asymmetric_warnings": asymmetric_warnings[:50],  # cap output
+        }
