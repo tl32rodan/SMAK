@@ -20,6 +20,7 @@ SMAK (**Semantic Mesh Augmented Kernel**) is a **passive MCP knowledge kernel** 
 | **Sidecar file** | Hidden YAML (e.g. `src/.foo.py.sidecar.yaml`) storing `intent` and `relations` per symbol. Updated by `enrich_symbol` / `enrich_file`. Read at query time for 1-hop expansion. |
 | **UID** | Globally unique identifier: `{path}::{symbol}` (e.g. `/home/user/project/src/foo.py::ClassName.method` or `$DDI_ROOT_PATH/src/foo.py::ClassName.method`). |
 | **Symbol name** | Short name without path prefix (e.g. `ClassName.method`). Used in `enrich_symbol`. |
+| **uri** | Required per-index path to the FAISS vector store directory (e.g. `./smak/source_code`). Each index must have its own `uri`. |
 | **path_env** | Optional config field mapping UIDs to environment variables instead of absolute paths. |
 
 ### Two independent data stores — know the difference
@@ -45,16 +46,24 @@ indices:
   - name: source_code
     description: "RTL Verilog modules for DDR5 PHY datapath"
     paths: [$DDI_ROOT_PATH/src]
-    uri: ./smak_data/source_code
+    uri: ./smak/source_code
     path_env: DDI_ROOT_PATH
   - name: issues
     description: "Jira tickets and postmortems for timing closure failures"
     paths: [./issues]
-    uri: ./smak_data/issues
+    uri: ./smak/issues
 ```
 
-Every SMAK tool takes `config` as its first parameter — the path to `workspace_config.yaml`.
+- **`uri`** (required) — path to the FAISS vector store directory for this index (e.g. `./smak/source_code`).
+- **`config`** — every SMAK tool takes this as its first parameter — the path to `workspace_config.yaml`.
+
 Indices are **not limited to any default set** — define any number with any names.
+
+### Dual-mode usage
+
+SMAK can be used in two ways:
+1. **Standalone** (direct MCP) — agents call SMAK MCP tools directly using `config` parameter.
+2. **Via All-Might** — agents use All-Might commands (`/search`, `/enrich`, `/explain`) which delegate to SMAK internally. In this mode, agents don't need to know SMAK tool signatures.
 
 ---
 
@@ -254,17 +263,17 @@ indices:
   - name: rtl_code
     description: "Verilog/SystemVerilog RTL modules for DDR5 PHY datapath"
     paths: [$DDI_ROOT_PATH/rtl/phy]
-    uri: ./smak_data/rtl_code
+    uri: ./smak/rtl_code
     path_env: DDI_ROOT_PATH
   - name: verification
     description: "UVM testbenches and coverage models"
     paths: [$DDI_ROOT_PATH/verif]
-    uri: ./smak_data/verification
+    uri: ./smak/verification
     path_env: DDI_ROOT_PATH
   - name: release_notes
     description: "Release notes, known issues, and ECO history"
     paths: [./release_notes]
-    uri: ./smak_data/release_notes
+    uri: ./smak/release_notes
 ```
 
 ### Writing effective descriptions
@@ -286,7 +295,7 @@ Use `path_env` when your codebase lives at different absolute paths:
 indices:
   - name: source_code
     paths: [$DDI_ROOT_PATH/src]
-    uri: ./smak_data/source_code
+    uri: ./smak/source_code
     path_env: DDI_ROOT_PATH
 ```
 
