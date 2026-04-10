@@ -1,6 +1,6 @@
 ---
 name: sos-smak-skill
-description: CliosoftSOS environment guide for SMAK. Teaches agents the internal EDA version control workflow — online vs. version control vs. SOS workspace — and how to correctly use SMAK (path_env, sidecar editing, ingestion) within this environment. Load this skill when working in projects that use CliosoftSOS and $DDI_ROOT_PATH.
+description: CliosoftSOS environment guide for SMAK. Teaches agents the internal EDA version control workflow — online vs. version control vs. SOS workspace — and how to correctly use SMAK (env block, sidecar editing, ingestion) within this environment. Load this skill when working in projects that use CliosoftSOS and $DDI_ROOT_PATH.
 ---
 
 # CliosoftSOS + SMAK Workflow
@@ -76,40 +76,40 @@ SOS workspaces are **link snapshots**: the SOS server creates a directory struct
 
 ## 3. HOW $DDI_ROOT_PATH MAPS TO SMAK
 
-SMAK's `path_env` feature bridges the gap between SOS's multi-path model and SMAK's UID system.
+SMAK's `env` block bridges the gap between SOS's multi-path model and SMAK's UID system.
 
 ### Config setup
 
 ```yaml
 # workspace_config.yaml
+env:
+  DDI_ROOT_PATH: /CAD/stdcell
+  SMAK_DATA: /data/smak/stdcell
+
 indices:
   - name: rtl_code
     description: "Verilog/SystemVerilog RTL modules for DDR5 PHY datapath, including DQ/DQS serializers, FIFO, and clock domain crossing logic"
     paths:
       - $DDI_ROOT_PATH/rtl/phy
     uri: $SMAK_DATA/rtl_code
-    path_env: DDI_ROOT_PATH
 
   - name: verification
     description: "UVM testbenches, coverage models, and assertion libraries for PHY functional verification"
     paths:
       - $DDI_ROOT_PATH/verif
     uri: $SMAK_DATA/verification
-    path_env: DDI_ROOT_PATH
 
   - name: constraints
     description: "SDC timing constraints, floorplan DEF, and power intent UPF for PHY implementation"
     paths:
       - $DDI_ROOT_PATH/constraints
     uri: $SMAK_DATA/constraints
-    path_env: DDI_ROOT_PATH
 
   - name: release_notes
     description: "ECO history, release notes, known issues, and waiver documentation"
     paths:
       - $DDI_ROOT_PATH/doc/releases
     uri: $SMAK_DATA/release_notes
-    path_env: DDI_ROOT_PATH
 ```
 
 ### What happens at each layer
@@ -241,7 +241,7 @@ ingest(config=cfg, index="rtl_code")
 
 1. **Never hardcode absolute paths in relations.** Always use `$DDI_ROOT_PATH/...` format.
 2. **Never edit sidecars directly in online or version control.** Always use an SOS workspace.
-3. **Always set `path_env: DDI_ROOT_PATH`** in config for indices on the shared disk.
+3. **Always define `DDI_ROOT_PATH` in the `env:` block** for configs targeting the shared disk.
 4. **Set `$DDI_ROOT_PATH` before running SMAK** — it determines which layer you're operating on.
 5. **Path mismatch warnings in workspaces are normal.** Don't suppress or work around them.
 6. **Re-ingest after cutting a version control release** to build FAISS for the new version.

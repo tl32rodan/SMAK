@@ -1,5 +1,5 @@
-# Set SMAK_DATA to an absolute path before running, e.g.:
-#   export SMAK_DATA=/home/user/SMAK/demo/workspace_a/smak_data
+env:
+  SMAK_DATA: /tmp/smak_demo/workspace_a
 
 indices:
   - name: source_code

@@ -143,7 +143,7 @@ def _resolve_file(
 ) -> tuple[object, Path]:
     """Return ``(SidecarService, resolved_source_path)``."""
     ic = _get_index_config(config, index)
-    return create_sidecar_service(), resolve_source_path(index, ic, file_path)
+    return create_sidecar_service(env=config.env), resolve_source_path(index, ic, file_path)
 
 
 def _add_reverse_relation(
@@ -200,7 +200,6 @@ def do_describe(config: SmakConfig) -> dict[str, Any]:
                 "name": idx.name,
                 "description": idx.description,
                 "paths": idx.paths,
-                "path_env": idx.path_env,
             }
             for idx in config.indices
         ],
@@ -261,6 +260,7 @@ def do_ingest(
         skip_file=sidecar_skip_file,
         on_ghost_source=on_ghost_source,
         embedder_loader=lambda: InternalNomicEmbedding(embedding_config=emb_cfg),
+        env=config.env or None,
     )
     return {
         "files": stats.files,
@@ -349,7 +349,7 @@ def do_enrich_batch(
 ) -> list[dict[str, Any]]:
     """Sync sidecars for multiple files. Continues on error."""
     ic = _get_index_config(config, index)
-    svc = create_sidecar_service()
+    svc = create_sidecar_service(env=config.env)
     results: list[dict[str, Any]] = []
     for fp in file_paths:
         try:

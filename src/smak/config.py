@@ -50,7 +50,6 @@ class IndexConfig:
     description: str
     uri: str
     paths: list[str] = field(default_factory=lambda: ["."])
-    path_env: str | None = None
 
 
 @dataclass(frozen=True)
@@ -58,6 +57,7 @@ class SmakConfig:
     """Typed configuration container."""
 
     indices: list[IndexConfig] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
     embedding_dimensions: int | None = None
 
     def get_index(self, name: str) -> IndexConfig | None:
@@ -65,15 +65,14 @@ class SmakConfig:
         return next((entry for entry in self.indices if entry.name == name), None)
 
 
-
-def _resolve_absolute_path(raw: str, base: Path) -> str:
+def _resolve_absolute_path(raw: str, base: Path, env: dict[str, str]) -> str:
     """Resolve *raw* relative to *base*, or expand it if already absolute.
 
-    Supports ``$VAR`` environment variable references which are expanded
+    Supports ``$VAR`` references which are expanded using *env*
     before path resolution.
     """
     if contains_env_var(raw):
-        raw = expand_env_path(raw)
+        raw = expand_env_path(raw, env)
     expanded = Path(raw).expanduser()
     if expanded.is_absolute():
         return str(expanded.resolve())
@@ -85,7 +84,7 @@ def _has_glob_meta(pattern: str) -> bool:
     return any(ch in pattern for ch in ("*", "?", "["))
 
 
-def _expand_glob_paths(raw_paths: list[str], base_path: Path) -> list[str]:
+def _expand_glob_paths(raw_paths: list[str], base_path: Path, env: dict[str, str]) -> list[str]:
     """Resolve and expand *raw_paths*, supporting shell glob patterns.
 
     Literal (non-glob) paths are resolved as before.  Glob patterns are
@@ -96,7 +95,7 @@ def _expand_glob_paths(raw_paths: list[str], base_path: Path) -> list[str]:
     """
     expanded: list[str] = []
     for raw in raw_paths:
-        resolved = _resolve_absolute_path(raw, base_path)
+        resolved = _resolve_absolute_path(raw, base_path, env)
         if _has_glob_meta(resolved):
             matches = sorted(
                 p for p in _glob.glob(resolved) if Path(p).is_dir() or Path(p).is_file()
@@ -115,20 +114,20 @@ def _expand_glob_paths(raw_paths: list[str], base_path: Path) -> list[str]:
 def _resolve_config(cfg: SmakConfig, config_path: str | Path) -> SmakConfig:
     config_file = Path(config_path)
     base_path = config_file.resolve().parent if config_file.exists() else Path.cwd().resolve()
+    env = cfg.env
     resolved_indices = []
     for index in cfg.indices:
-        resolved_paths = _expand_glob_paths(index.paths, base_path)
-        resolved_uri = _resolve_absolute_path(index.uri, base_path)
+        resolved_paths = _expand_glob_paths(index.paths, base_path, env)
+        resolved_uri = _resolve_absolute_path(index.uri, base_path, env)
         resolved_indices.append(
             IndexConfig(
                 name=index.name,
                 description=index.description,
-                paths=resolved_paths,
                 uri=resolved_uri,
-                path_env=index.path_env,
+                paths=resolved_paths,
             )
         )
-    return SmakConfig(indices=resolved_indices, embedding_dimensions=cfg.embedding_dimensions)
+    return SmakConfig(indices=resolved_indices, env=env, embedding_dimensions=cfg.embedding_dimensions)
 
 
 def load_config(path: str | Path) -> SmakConfig:
@@ -141,6 +140,12 @@ def load_config(path: str | Path) -> SmakConfig:
 
 
 def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
+    # Parse env block
+    raw_env = data.get("env", {}) if isinstance(data, Mapping) else {}
+    env: dict[str, str] = {}
+    if isinstance(raw_env, Mapping):
+        env = {str(k): str(v) for k, v in raw_env.items()}
+
     indices_data = data.get("indices", []) if isinstance(data, Mapping) else []
     indices: list[IndexConfig] = []
     if isinstance(indices_data, list):
@@ -148,7 +153,6 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
             if isinstance(entry, Mapping):
                 raw_paths = entry.get("paths", ["."])
                 paths = [str(p) for p in raw_paths] if isinstance(raw_paths, list) else [str(raw_paths)]
-                raw_path_env = entry.get("path_env")
                 index_name = str(entry.get("name", ""))
                 if entry.get("uri") is None:
                     raise ValueError(
@@ -156,14 +160,18 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
                         "Every index must specify a uri for its vector store."
                     )
                 raw_uri = str(entry["uri"])
-                if not (
-                    contains_env_var(raw_uri)
-                    or Path(raw_uri).expanduser().is_absolute()
-                ):
+                # Validate uri is absolute or uses $VAR (after env expansion)
+                test_uri = raw_uri
+                if contains_env_var(test_uri):
+                    try:
+                        test_uri = expand_env_path(test_uri, env)
+                    except ValueError:
+                        pass  # undefined var — will fail later during resolve
+                if not contains_env_var(raw_uri) and not Path(test_uri).expanduser().is_absolute():
                     raise ValueError(
                         f"Index '{index_name}' has a relative uri '{raw_uri}'. "
-                        "The uri must be an absolute path or use an environment "
-                        "variable (e.g. $SMAK_DATA/source_code)."
+                        "The uri must be an absolute path or use a variable "
+                        "defined in the env block (e.g. $SMAK_DATA/source_code)."
                     )
                 indices.append(
                     IndexConfig(
@@ -171,13 +179,11 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
                         description=str(entry.get("description", "")),
                         uri=raw_uri,
                         paths=paths,
-                        path_env=(
-                            str(raw_path_env) if raw_path_env is not None else None
-                        ),
                     )
                 )
     return SmakConfig(
         indices=indices,
+        env=env,
     )
 
 

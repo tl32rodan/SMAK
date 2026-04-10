@@ -39,19 +39,14 @@ class TestConfig(unittest.TestCase):
             self.assertFalse(hasattr(config, "llm"))
 
     def test_demo_workspace_config_loads_without_llm_field(self) -> None:
-        import os
-        from unittest.mock import patch as mock_patch
-
         demo_config = (
             Path(__file__).resolve().parents[1]
             / "demo"
             / "workspace_a"
             / "workspace_config.yaml"
         )
-        smak_data = str(demo_config.parent / "smak_data")
 
-        with mock_patch.dict(os.environ, {"SMAK_DATA": smak_data}):
-            config = load_config(demo_config)
+        config = load_config(demo_config)
 
         self.assertFalse(hasattr(config, "llm"))
 
@@ -73,21 +68,16 @@ class TestConfig(unittest.TestCase):
             self.assertFalse(hasattr(config, "llm"))
 
     def test_demo_workspace_config_source_code_uri(self) -> None:
-        import os
-        from unittest.mock import patch as mock_patch
-
         demo_config = (
             Path(__file__).resolve().parents[1]
             / "demo"
             / "workspace_a"
             / "workspace_config.yaml"
         )
-        smak_data = str(demo_config.parent / "smak_data")
 
-        with mock_patch.dict(os.environ, {"SMAK_DATA": smak_data}):
-            config = load_config(demo_config)
+        config = load_config(demo_config)
 
-        self.assertTrue(config.indices[0].uri.endswith("smak/source_code"))
+        self.assertEqual(config.indices[0].uri, "/tmp/smak_demo/workspace_a/source_code")
 
     def test_load_config_raises_when_uri_relative(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -311,26 +301,28 @@ class TestConfig(unittest.TestCase):
             self.assertTrue(resolved[0].endswith("specific.py"))
 
 
-    def test_load_config_reads_path_env(self) -> None:
+    def test_load_config_parses_env_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             (Path(tmp_dir) / "src").mkdir()
             path = Path(tmp_dir) / "workspace.yaml"
             path.write_text(
+                "env:\n"
+                "  DDI_ROOT_PATH: /opt/ddi/online\n"
+                "  SMAK_DATA: /data/smak\n"
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
-                "    uri: /tmp/smak_test_data\n"
+                "    uri: /data/smak/source_code\n"
                 "    paths:\n"
-                "      - ./src\n"
-                "    path_env: DDI_ROOT_PATH\n",
+                "      - ./src\n",
                 encoding="utf-8",
             )
 
             config = load_config(path)
 
-            self.assertEqual(config.indices[0].path_env, "DDI_ROOT_PATH")
+            self.assertEqual(config.env, {"DDI_ROOT_PATH": "/opt/ddi/online", "SMAK_DATA": "/data/smak"})
 
-    def test_load_config_path_env_defaults_to_none(self) -> None:
+    def test_load_config_env_defaults_to_empty(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "workspace.yaml"
             path.write_text(
@@ -340,37 +332,50 @@ class TestConfig(unittest.TestCase):
 
             config = load_config(path)
 
-            self.assertIsNone(config.indices[0].path_env)
+            self.assertEqual(config.env, {})
 
     def test_load_config_expands_env_var_in_paths(self) -> None:
-        import os
-        from unittest.mock import patch as mock_patch
-
         with tempfile.TemporaryDirectory() as tmp_dir:
             src_dir = Path(tmp_dir) / "src"
             src_dir.mkdir()
             path = Path(tmp_dir) / "workspace.yaml"
             path.write_text(
+                "env:\n"
+                f"  TEST_ROOT: {tmp_dir}\n"
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source\n"
                 "    uri: /tmp/smak_test_data\n"
                 "    paths:\n"
-                f'      - "$TEST_SMAK_ROOT/src"\n',
+                '      - "$TEST_ROOT/src"\n',
                 encoding="utf-8",
             )
 
-            with mock_patch.dict(os.environ, {"TEST_SMAK_ROOT": tmp_dir}):
-                config = load_config(path)
+            config = load_config(path)
 
             self.assertTrue(config.indices[0].paths[0].endswith("src"))
             self.assertTrue(Path(config.indices[0].paths[0]).is_absolute())
 
-    def test_load_config_raises_on_undefined_env_in_paths(self) -> None:
-        import os
+    def test_load_config_expands_env_var_in_uri(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "env:\n"
+                "  SMAK_DATA: /data/smak\n"
+                "indices:\n"
+                "  - name: source_code\n"
+                "    description: Source\n"
+                "    uri: $SMAK_DATA/source_code\n"
+                "    paths:\n"
+                "      - ./src\n",
+                encoding="utf-8",
+            )
 
-        key = "_SMAK_TEST_UNDEF_CONFIG_"
-        os.environ.pop(key, None)
+            config = load_config(path)
+
+            self.assertEqual(config.indices[0].uri, "/data/smak/source_code")
+
+    def test_load_config_raises_on_undefined_env_in_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "workspace.yaml"
             path.write_text(
@@ -379,7 +384,7 @@ class TestConfig(unittest.TestCase):
                 "    description: Source\n"
                 "    uri: /tmp/smak_test_data\n"
                 "    paths:\n"
-                f'      - "${key}/src"\n',
+                '      - "$UNDEFINED_VAR/src"\n',
                 encoding="utf-8",
             )
 

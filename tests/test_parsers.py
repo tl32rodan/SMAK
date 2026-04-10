@@ -1,7 +1,5 @@
-import os
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from smak.parsers import (
     NullParser,
@@ -125,45 +123,45 @@ class TestParsers(unittest.TestCase):
         units = parser.parse("def login():\n    return True\n", source="/repo/src/auth.py")
         self.assertEqual(units[0].uid, "/repo/src/auth.py::login")
 
-    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
-    def test_python_parser_uses_env_var_in_uid_when_path_env_set(self) -> None:
+    def test_python_parser_uses_env_var_in_uid_when_env_set(self) -> None:
+        env = {"DDI_ROOT_PATH": "/opt/ddi/online"}
         parser = PythonParser()
         units = parser.parse(
             "def login():\n    return True\n",
             source="/opt/ddi/online/src/auth.py",
-            path_env="DDI_ROOT_PATH",
+            env=env,
         )
         self.assertEqual(units[0].uid, "$DDI_ROOT_PATH/src/auth.py::login")
         self.assertEqual(units[0].metadata["source"], "$DDI_ROOT_PATH/src/auth.py")
 
-    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
-    def test_perl_parser_uses_env_var_in_uid_when_path_env_set(self) -> None:
+    def test_perl_parser_uses_env_var_in_uid_when_env_set(self) -> None:
+        env = {"DDI_ROOT_PATH": "/opt/ddi/online"}
         parser = PerlParser()
         units = parser.parse(
             "sub login {\n}\n",
             source="/opt/ddi/online/src/main.pl",
-            path_env="DDI_ROOT_PATH",
+            env=env,
         )
         self.assertEqual(units[0].uid, "$DDI_ROOT_PATH/src/main.pl::login")
         self.assertEqual(units[0].metadata["source"], "$DDI_ROOT_PATH/src/main.pl")
 
-    @patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"})
-    def test_simple_line_parser_uses_env_var_in_uid_when_path_env_set(self) -> None:
+    def test_simple_line_parser_uses_env_var_in_uid_when_env_set(self) -> None:
+        env = {"DDI_ROOT_PATH": "/opt/ddi/online"}
         parser = SimpleLineParser()
         units = parser.parse(
             "some content",
             source="/opt/ddi/online/docs/readme.txt",
-            path_env="DDI_ROOT_PATH",
+            env=env,
         )
         self.assertEqual(units[0].uid, "$DDI_ROOT_PATH/docs/readme.txt::*")
         self.assertEqual(units[0].metadata["source"], "$DDI_ROOT_PATH/docs/readme.txt")
 
-    def test_python_parser_preserves_absolute_when_no_path_env(self) -> None:
+    def test_python_parser_preserves_absolute_when_no_env(self) -> None:
         parser = PythonParser()
         units = parser.parse(
             "def login():\n    return True\n",
             source="/repo/src/auth.py",
-            path_env=None,
+            env=None,
         )
         self.assertEqual(units[0].uid, "/repo/src/auth.py::login")
 

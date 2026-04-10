@@ -36,8 +36,9 @@ The `path:` field on each index entry in `workspace_config.yaml` controls which 
 `smak ingest` reads. For example, `source_code` has `path: ./src`, so `smak ingest
 --index source_code` ingests from `<workspace>/src/` automatically.
 
-Every index **must** specify a `uri` field — an **absolute path or `$ENV_VAR` path** to the
-vector store for that index. Relative paths are rejected. The demo uses `$SMAK_DATA`.
+Every index **must** specify a `uri` field — an **absolute path or `$VAR` path** to the
+vector store. Variables are defined in the `env:` block of `workspace_config.yaml`
+(not shell env vars). The demo defines `SMAK_DATA` in its `env:` block.
 
 ---
 
@@ -49,13 +50,7 @@ vector store for that index. Relative paths are rejected. The demo uses `$SMAK_D
 pip install -e .
 ```
 
-**2. Set `SMAK_DATA`**
-
-```bash
-export SMAK_DATA="$(pwd)/demo/workspace_a/smak_data"
-```
-
-**3. Embedding server**
+**2. Embedding server**
 
 SMAK uses a Nomic embedding model served via Ollama or a compatible OpenAI-style API.
 To override the default endpoint or model, edit `src/smak/embedding_setup.yaml`.

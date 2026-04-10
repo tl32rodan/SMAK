@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from smak.parsers import get_parser_for_path
-from smak.utils.path_env import contains_env_var, expand_env_path
+from smak.utils.path_env import contains_env_var, expand_env_path, warn_path_mismatch
 
 logger = logging.getLogger(__name__)
 from smak.sidecar.manager import IntegrityError, SidecarManager
@@ -28,8 +28,13 @@ def _iter_source_files(folder: Path):
 
 
 class SidecarService:
-    def __init__(self, sidecar_store: SidecarStore | None = None) -> None:
+    def __init__(
+        self,
+        sidecar_store: SidecarStore | None = None,
+        env: dict[str, str] | None = None,
+    ) -> None:
         self.sidecar_store = sidecar_store or YAMLSidecarStore()
+        self.env: dict[str, str] = env or {}
 
     def inspect(self, path: Path) -> list[str]:
         parser = get_parser_for_path(path)
@@ -136,31 +141,26 @@ class SidecarService:
             return {"file_path": str(file_path), "valid": False, "issues": [str(exc)]}
         return {"file_path": str(file_path), "valid": True, "issues": []}
 
-    @staticmethod
-    def _extract_env_root(rel: str) -> str | None:
-        """Extract the env var value from a relation like ``$VAR/path``."""
-        import os
-        import re
-
-        match = re.match(r"\$([A-Za-z_][A-Za-z0-9_]*)", rel)
-        if match is None:
-            return None
-        return os.environ.get(match.group(1))
-
     def _check_path_mismatch(
         self, file_path: Path, relations: list[str]
     ) -> None:
         """Warn if any relation UID contains env vars whose expanded root
         doesn't match the sidecar file's location."""
+        import re
+
         resolved_file = file_path.resolve()
         for rel in relations:
             if not contains_env_var(rel):
                 continue
-            env_root = self._extract_env_root(rel.split("::")[0] if "::" in rel else rel)
+            rel_path = rel.split("::")[0] if "::" in rel else rel
+            # Extract the first env var to find the root directory
+            match = re.match(r"\$([A-Za-z_][A-Za-z0-9_]*)", rel_path)
+            if match is None:
+                continue
+            env_root = self.env.get(match.group(1))
             if env_root is None:
                 continue
             env_root_path = Path(env_root).resolve()
-            # Check if the sidecar file lives under the env var's root directory
             try:
                 resolved_file.relative_to(env_root_path)
             except ValueError:

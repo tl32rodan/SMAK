@@ -19,8 +19,13 @@ def build_symbol_name_candidates(uid: str, metadata: dict[str, Any]) -> set[str]
 
 
 class SidecarRelationResolver:
-    def __init__(self, sidecar_store: SidecarLoader | None = None) -> None:
+    def __init__(
+        self,
+        sidecar_store: SidecarLoader | None = None,
+        env: dict[str, str] | None = None,
+    ) -> None:
         self.sidecar_store = sidecar_store or YAMLSidecarStore()
+        self.env: dict[str, str] = env or {}
 
     def resolve(self, uid: str, metadata: dict[str, Any]) -> list[str]:
         source = metadata.get("source")
@@ -30,7 +35,7 @@ class SidecarRelationResolver:
         source_path = source
         if contains_env_var(source_path):
             try:
-                source_path = expand_env_path(source_path)
+                source_path = expand_env_path(source_path, self.env)
             except ValueError:
                 pass
 
