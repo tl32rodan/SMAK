@@ -21,7 +21,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
-                "    uri: data/source_code\n"
+                "    uri: /tmp/smak_test_data/source_code\n"
                 "llm:\n"
                 "  provider: ollama\n"
                 "  model: llama3\n"
@@ -34,19 +34,24 @@ class TestConfig(unittest.TestCase):
             config = load_config(path)
 
             self.assertEqual(config.indices[0].name, "source_code")
-            self.assertTrue(config.indices[0].uri.endswith("data/source_code"))
+            self.assertEqual(config.indices[0].uri, "/tmp/smak_test_data/source_code")
             self.assertIsNone(config.embedding_dimensions)
             self.assertFalse(hasattr(config, "llm"))
 
     def test_demo_workspace_config_loads_without_llm_field(self) -> None:
+        import os
+        from unittest.mock import patch as mock_patch
+
         demo_config = (
             Path(__file__).resolve().parents[1]
             / "demo"
             / "workspace_a"
             / "workspace_config.yaml"
         )
+        smak_data = str(demo_config.parent / "smak_data")
 
-        config = load_config(demo_config)
+        with mock_patch.dict(os.environ, {"SMAK_DATA": smak_data}):
+            config = load_config(demo_config)
 
         self.assertFalse(hasattr(config, "llm"))
 
@@ -57,7 +62,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
-                "    uri: ./data\n"
+                "    uri: /tmp/smak_test_data\n"
                 "llm:\n"
                 "  provider: legacy\n",
                 encoding="utf-8",
@@ -68,16 +73,33 @@ class TestConfig(unittest.TestCase):
             self.assertFalse(hasattr(config, "llm"))
 
     def test_demo_workspace_config_source_code_uri(self) -> None:
+        import os
+        from unittest.mock import patch as mock_patch
+
         demo_config = (
             Path(__file__).resolve().parents[1]
             / "demo"
             / "workspace_a"
             / "workspace_config.yaml"
         )
+        smak_data = str(demo_config.parent / "smak_data")
 
-        config = load_config(demo_config)
+        with mock_patch.dict(os.environ, {"SMAK_DATA": smak_data}):
+            config = load_config(demo_config)
 
         self.assertTrue(config.indices[0].uri.endswith("smak_data/source_code"))
+
+    def test_load_config_raises_when_uri_relative(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "workspace.yaml"
+            path.write_text(
+                "indices:\n  - name: docs\n    description: docs\n    uri: ./relative/path\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError) as ctx:
+                load_config(path)
+            self.assertIn("relative", str(ctx.exception).lower())
 
     def test_load_config_raises_when_uri_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -99,7 +121,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
-                "    uri: ./data\n"
+                "    uri: /tmp/smak_test_data\n"
                 "    paths:\n"
                 "      - ./src\n"
                 "      - ./lib\n",
@@ -119,7 +141,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: docs\n"
                 "    description: docs index\n"
-                "    uri: ./data\n",
+                "    uri: /tmp/smak_test_data\n",
                 encoding="utf-8",
             )
 
@@ -141,7 +163,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
-                "    uri: ./data\n"
+                "    uri: /tmp/smak_test_data\n"
                 "    paths:\n"
                 "      - ./modules/*\n",
                 encoding="utf-8",
@@ -162,7 +184,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
-                "    uri: ./data\n"
+                "    uri: /tmp/smak_test_data\n"
                 "    paths:\n"
                 "      - ./nonexistent_*\n",
                 encoding="utf-8",
@@ -183,7 +205,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
-                "    uri: ./data\n"
+                "    uri: /tmp/smak_test_data\n"
                 "    paths:\n"
                 "      - ./src\n"
                 "      - ./plugins/*\n",
@@ -206,7 +228,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
-                "    uri: ./data\n"
+                "    uri: /tmp/smak_test_data\n"
                 "    paths:\n"
                 "      - ./src\n",
                 encoding="utf-8",
@@ -231,7 +253,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: scripts\n"
                 "    description: Python scripts\n"
-                "    uri: ./data\n"
+                "    uri: /tmp/smak_test_data\n"
                 "    paths:\n"
                 "      - ./scripts/*.py\n",
                 encoding="utf-8",
@@ -254,7 +276,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: data\n"
                 "    description: Data files\n"
-                "    uri: ./store\n"
+                "    uri: /tmp/smak_test_store\n"
                 "    paths:\n"
                 "      - ./data/*\n",
                 encoding="utf-8",
@@ -276,7 +298,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: single\n"
                 "    description: Single file\n"
-                "    uri: ./data\n"
+                "    uri: /tmp/smak_test_data\n"
                 "    paths:\n"
                 "      - ./specific.py\n",
                 encoding="utf-8",
@@ -297,7 +319,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source code files\n"
-                "    uri: ./data\n"
+                "    uri: /tmp/smak_test_data\n"
                 "    paths:\n"
                 "      - ./src\n"
                 "    path_env: DDI_ROOT_PATH\n",
@@ -312,7 +334,7 @@ class TestConfig(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "workspace.yaml"
             path.write_text(
-                "indices:\n  - name: docs\n    description: docs index\n    uri: ./data\n",
+                "indices:\n  - name: docs\n    description: docs index\n    uri: /tmp/smak_test_data\n",
                 encoding="utf-8",
             )
 
@@ -332,7 +354,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source\n"
-                "    uri: ./data\n"
+                "    uri: /tmp/smak_test_data\n"
                 "    paths:\n"
                 f'      - "$TEST_SMAK_ROOT/src"\n',
                 encoding="utf-8",
@@ -355,7 +377,7 @@ class TestConfig(unittest.TestCase):
                 "indices:\n"
                 "  - name: source_code\n"
                 "    description: Source\n"
-                "    uri: ./data\n"
+                "    uri: /tmp/smak_test_data\n"
                 "    paths:\n"
                 f'      - "${key}/src"\n',
                 encoding="utf-8",

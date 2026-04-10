@@ -73,7 +73,7 @@ class TestSetupConfig(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "workspace_config.yaml"
             config_path.write_text(
-                "indices:\n  - name: src\n    description: d\n    uri: ./data\n    paths:\n      - .\n",
+                "indices:\n  - name: src\n    description: d\n    uri: /tmp/smak_test_data\n    paths:\n      - .\n",
                 encoding="utf-8",
             )
             with _patch_init_config():

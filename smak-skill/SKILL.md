@@ -45,16 +45,20 @@ indices:
   - name: source_code
     description: "RTL Verilog modules for DDR5 PHY datapath"
     paths: [$DDI_ROOT_PATH/src]
-    uri: ./smak_data/source_code
+    uri: $SMAK_DATA/source_code          # absolute or $ENV_VAR — never relative
     path_env: DDI_ROOT_PATH
   - name: issues
     description: "Jira tickets and postmortems for timing closure failures"
     paths: [./issues]
-    uri: ./smak_data/issues
+    uri: $SMAK_DATA/issues
 ```
 
 Every SMAK tool takes `config` as its first parameter — the path to `workspace_config.yaml`.
 Indices are **not limited to any default set** — define any number with any names.
+
+**`uri` must be an absolute path or use an environment variable** (e.g. `$SMAK_DATA/source_code`).
+Relative paths like `./smak_data/...` are rejected. This ensures portability — if data moves,
+only the env var (or absolute path) needs to change, with no ambiguity about the base directory.
 
 ---
 
@@ -254,17 +258,17 @@ indices:
   - name: rtl_code
     description: "Verilog/SystemVerilog RTL modules for DDR5 PHY datapath"
     paths: [$DDI_ROOT_PATH/rtl/phy]
-    uri: ./smak_data/rtl_code
+    uri: $SMAK_DATA/rtl_code
     path_env: DDI_ROOT_PATH
   - name: verification
     description: "UVM testbenches and coverage models"
     paths: [$DDI_ROOT_PATH/verif]
-    uri: ./smak_data/verification
+    uri: $SMAK_DATA/verification
     path_env: DDI_ROOT_PATH
   - name: release_notes
     description: "Release notes, known issues, and ECO history"
     paths: [./release_notes]
-    uri: ./smak_data/release_notes
+    uri: $SMAK_DATA/release_notes
 ```
 
 ### Writing effective descriptions
@@ -286,7 +290,7 @@ Use `path_env` when your codebase lives at different absolute paths:
 indices:
   - name: source_code
     paths: [$DDI_ROOT_PATH/src]
-    uri: ./smak_data/source_code
+    uri: $SMAK_DATA/source_code
     path_env: DDI_ROOT_PATH
 ```
 
@@ -308,3 +312,4 @@ For CliosoftSOS / EDA environments, see **[`sos-smak-skill/SKILL.md`](../sos-sma
 5. **Always `lookup`** to verify a UID exists before adding it to relations.
 6. **Sidecar updates ≠ vector store updates.** Call `ingest` only when source files change.
 7. **`ingest` is resource-intensive.** Don't call casually.
+8. **`uri` must be absolute or use `$ENV_VAR`.** Relative URIs are rejected. Use an environment variable (e.g. `$SMAK_DATA/index_name`) or a full absolute path.

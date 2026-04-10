@@ -1,21 +1,24 @@
+# Set SMAK_DATA to an absolute path before running, e.g.:
+#   export SMAK_DATA=/home/user/SMAK/demo/workspace_a/smak_data
+
 indices:
   - name: source_code
     description: Contains the project's source code (Python, Perl), function definitions, and logic.
     paths:
       - ./src
-    uri: ./smak_data/source_code
+    uri: $SMAK_DATA/source_code
   - name: issues
     description: Contains historical bug reports, GitHub issues, and Jira tickets describing known problems.
     paths:
       - ./issues
-    uri: ./smak_data/issues
+    uri: $SMAK_DATA/issues
   - name: tests
     description: Contains unit tests, integration tests, and test cases.
     paths:
       - ./src/tests
-    uri: ./smak_data/tests
+    uri: $SMAK_DATA/tests
   - name: documentation
     description: Contains architecture diagrams, API docs, and general knowledge base.
     paths:
       - ./documentation
-    uri: ./smak_data/documentation
+    uri: $SMAK_DATA/documentation

@@ -70,7 +70,7 @@ class TestMcpServer(unittest.TestCase):
             "indices:\n"
             "  - name: source_code\n"
             "    description: src\n"
-            "    uri: ./smak_data/source_code\n"
+            "    uri: /tmp/smak_test_data/source_code\n"
             "    paths:\n"
             "      - ./src\n"
             + extra_yaml,
@@ -152,7 +152,7 @@ class TestMcpServer(unittest.TestCase):
         p1, p2, p3 = _query_patches()
         with p1, p2, p3 as query_factory, tempfile.TemporaryDirectory() as tmp_dir:
             server, config = self._server_and_config(
-                tmp_dir, "  - name: issues\n    description: bugs\n    uri: ./smak_data/issues\n    paths:\n      - ./src\n",
+                tmp_dir, "  - name: issues\n    description: bugs\n    uri: /tmp/smak_test_data/issues\n    paths:\n      - ./src\n",
             )
             query_factory.return_value.search.return_value = {"hits": [], "related_context": []}
 
@@ -165,7 +165,7 @@ class TestMcpServer(unittest.TestCase):
         p1, p2, p3 = _query_patches()
         with p1, p2, p3 as query_factory, tempfile.TemporaryDirectory() as tmp_dir:
             server, config = self._server_and_config(
-                tmp_dir, "  - name: issues\n    description: bugs\n    uri: ./smak_data/issues\n    paths:\n      - ./src\n",
+                tmp_dir, "  - name: issues\n    description: bugs\n    uri: /tmp/smak_test_data/issues\n    paths:\n      - ./src\n",
             )
             query_factory.return_value.search.return_value = {"hits": [], "related_context": []}
 

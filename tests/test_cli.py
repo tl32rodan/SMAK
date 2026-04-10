@@ -17,10 +17,10 @@ class TestCli(unittest.TestCase):
     def test_default_config_template_includes_index_uri(self) -> None:
         cli = importlib.import_module("smak.cli")
         template = cli._default_config_template()
-        self.assertIn("uri: ./smak_data/source_code", template)
-        self.assertIn("uri: ./smak_data/issues", template)
-        self.assertIn("uri: ./smak_data/tests", template)
-        self.assertIn("uri: ./smak_data/documentation", template)
+        self.assertIn("uri: $SMAK_DATA/source_code", template)
+        self.assertIn("uri: $SMAK_DATA/issues", template)
+        self.assertIn("uri: $SMAK_DATA/tests", template)
+        self.assertIn("uri: $SMAK_DATA/documentation", template)
         self.assertIn("paths:", template)
         self.assertIn("path_env", template)
 
