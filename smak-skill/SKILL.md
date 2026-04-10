@@ -20,10 +20,9 @@ SMAK (**Semantic Mesh Augmented Kernel**) is a **passive MCP knowledge kernel** 
 | **Sidecar file** | Hidden YAML (e.g. `src/.foo.py.sidecar.yaml`) storing `intent` and `relations` per symbol. Updated by `enrich_symbol` / `enrich_file`. Read at query time for 1-hop expansion. |
 | **UID** | Globally unique identifier: `{path}::{symbol}` (e.g. `/home/user/project/src/foo.py::ClassName.method` or `$DDI_ROOT_PATH/src/foo.py::ClassName.method`). |
 | **Symbol name** | Short name without path prefix (e.g. `ClassName.method`). Used in `enrich_symbol`. |
-| **uri** | Required per-index path to the FAISS vector store directory (e.g. `./smak/source_code`). Each index must have its own `uri`. |
-| **path_env** | Optional config field mapping UIDs to environment variables instead of absolute paths. |
-| **`$SMAK_DATA`** | Convention: env var pointing to the directory where SMAK vector stores are persisted. Used in `uri` fields. |
-| **`$DDI_ROOT_PATH`** | Convention (EDA/SOS): env var pointing to the project root. Used in `paths` and `path_env`. |
+| **`env` block** | Top-level section in `workspace_config.yaml` defining workspace-scoped variables. All `$VAR` references in `paths` and `uri` resolve from this block — never from shell environment. |
+| **`$SMAK_DATA`** | Convention: variable pointing to vector store directory. Defined in `env:`. Used in `uri` fields. |
+| **`$DDI_ROOT_PATH`** | Convention (EDA/SOS): variable pointing to the project root. Defined in `env:`. Used in `paths`. |
 
 ### Two independent data stores — know the difference
 
@@ -44,26 +43,29 @@ SMAK (**Semantic Mesh Augmented Kernel**) is a **passive MCP knowledge kernel** 
 
 ```yaml
 # workspace_config.yaml — agent passes path dynamically per tool call
+env:
+  DDI_ROOT_PATH: /opt/ddi/online
+  SMAK_DATA: /data/smak
+
 indices:
   - name: source_code
     description: "RTL Verilog modules for DDR5 PHY datapath"
     paths: [$DDI_ROOT_PATH/src]
-    uri: $SMAK_DATA/source_code          # absolute or $ENV_VAR — never relative
-    path_env: DDI_ROOT_PATH
+    uri: $SMAK_DATA/source_code
   - name: issues
     description: "Jira tickets and postmortems for timing closure failures"
     paths: [./issues]
     uri: $SMAK_DATA/issues
 ```
 
-- **`uri`** (required) — path to the FAISS vector store directory for this index (e.g. `./smak/source_code`).
-- **`config`** — every SMAK tool takes this as its first parameter — the path to `workspace_config.yaml`.
-
+Every SMAK tool takes `config` as its first parameter — the path to `workspace_config.yaml`.
 Indices are **not limited to any default set** — define any number with any names.
 
-**`uri` must be an absolute path or use an environment variable** (e.g. `$SMAK_DATA/source_code`).
-Relative paths like `./smak_data/...` are rejected. This ensures portability — if data moves,
-only the env var (or absolute path) needs to change, with no ambiguity about the base directory.
+**`env` block** defines workspace-scoped variables. All `$VAR` references in `paths` and `uri`
+resolve from this block — **never from the shell environment**. This makes configs fully
+self-contained and portable.
+
+**`uri` must be absolute or use a `$VAR`** from the `env` block. Relative paths are rejected.
 
 ---
 
@@ -259,17 +261,19 @@ Indices are **arbitrary** — not limited to any default set.
 
 ```yaml
 # EDA project example
+env:
+  DDI_ROOT_PATH: /opt/ddi/online
+  SMAK_DATA: /data/smak
+
 indices:
   - name: rtl_code
     description: "Verilog/SystemVerilog RTL modules for DDR5 PHY datapath"
     paths: [$DDI_ROOT_PATH/rtl/phy]
     uri: $SMAK_DATA/rtl_code
-    path_env: DDI_ROOT_PATH
   - name: verification
     description: "UVM testbenches and coverage models"
     paths: [$DDI_ROOT_PATH/verif]
     uri: $SMAK_DATA/verification
-    path_env: DDI_ROOT_PATH
   - name: release_notes
     description: "Release notes, known issues, and ECO history"
     paths: [./release_notes]
@@ -287,36 +291,34 @@ The `description` field is the **agent's ONLY hint** for index selection.
 
 ---
 
-## 8. ENVIRONMENT VARIABLES
+## 8. WORKSPACE-SCOPED VARIABLES (`env` block)
 
-SMAK uses two environment variable conventions:
-
-| Variable | Purpose | Example value |
-|---|---|---|
-| `SMAK_DATA` | Root directory for vector store data (used in `uri`) | `/data/smak_stores` |
-| `DDI_ROOT_PATH` | Project/codebase root (used in `paths` and `path_env`, common in EDA/SOS) | `/CAD/stdcell` |
-
-Both must be set before running SMAK. Any `$VAR` reference in the config that cannot
-be resolved will raise an error at load time.
-
-### Using env vars in config
+Variables are defined in the `env:` block of `workspace_config.yaml`. They are **not**
+shell environment variables — SMAK never reads `os.environ`.
 
 ```yaml
+env:
+  DDI_ROOT_PATH: /opt/ddi/online
+  SMAK_DATA: /data/smak
+
 indices:
   - name: source_code
     paths: [$DDI_ROOT_PATH/src]
     uri: $SMAK_DATA/source_code
-    path_env: DDI_ROOT_PATH
 ```
 
-- **`uri`** uses `$SMAK_DATA` — keeps vector store location portable across machines.
+| Convention | Purpose |
+|---|---|
+| `SMAK_DATA` | Root directory for vector store data (used in `uri`) |
+| `DDI_ROOT_PATH` | Project/codebase root (used in `paths`; common in EDA/SOS) |
+
+- **`uri`** uses `$SMAK_DATA` — keeps vector store location portable.
 - **`paths`** uses `$DDI_ROOT_PATH` — lets the same config work across workspaces.
-- **`path_env`** tells SMAK to write UIDs as `$DDI_ROOT_PATH/src/a.py::ClassName`
-  instead of absolute paths, so they remain valid when `$DDI_ROOT_PATH` changes.
+- During ingest, UIDs are collapsed to `$DDI_ROOT_PATH/src/a.py::ClassName` automatically
+  (longest matching env value wins).
+- Any undefined `$VAR` reference raises an error at config load time.
 
-Path mismatch warnings are emitted when editing sidecars in SOS workspaces — this is expected.
-
-For CliosoftSOS / EDA environments, see **[`sos-smak-skill/SKILL.md`](../sos-smak-skill/SKILL.md)** for the full three-layer path model (online → version control → workspace) and operational workflows.
+For CliosoftSOS / EDA environments, see **[`sos-smak-skill/SKILL.md`](../sos-smak-skill/SKILL.md)** for the full three-layer path model.
 
 ---
 
@@ -329,4 +331,5 @@ For CliosoftSOS / EDA environments, see **[`sos-smak-skill/SKILL.md`](../sos-sma
 5. **Always `lookup`** to verify a UID exists before adding it to relations.
 6. **Sidecar updates ≠ vector store updates.** Call `ingest` only when source files change.
 7. **`ingest` is resource-intensive.** Don't call casually.
-8. **`uri` must be absolute or use `$ENV_VAR`.** Relative URIs are rejected. Use an environment variable (e.g. `$SMAK_DATA/index_name`) or a full absolute path.
+8. **`uri` must be absolute or use `$VAR` from the `env` block.** Relative URIs are rejected.
+9. **Variables resolve from `env:` only.** SMAK never reads shell environment variables.

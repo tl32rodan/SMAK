@@ -21,8 +21,8 @@ class TestCli(unittest.TestCase):
         self.assertIn("uri: $SMAK_DATA/issues", template)
         self.assertIn("uri: $SMAK_DATA/tests", template)
         self.assertIn("uri: $SMAK_DATA/documentation", template)
-        self.assertIn("paths:", template)
-        self.assertIn("path_env", template)
+        self.assertIn("env:", template)
+        self.assertIn("SMAK_DATA:", template)
 
     def test_init_creates_config_file(self) -> None:
         runner = CliRunner()

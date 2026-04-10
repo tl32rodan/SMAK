@@ -235,10 +235,7 @@ class TestIngestService(unittest.TestCase):
             self.assertEqual(store.deleted_ids, [["ghost::1"]])
 
 
-    def test_ingest_stores_env_var_uid_when_path_env_set(self) -> None:
-        import os
-        from unittest.mock import patch as mock_patch
-
+    def test_ingest_stores_env_var_uid_when_env_set(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             src = root / "pkg" / "a.py"
@@ -247,20 +244,19 @@ class TestIngestService(unittest.TestCase):
 
             store = FakeVectorStore()
             service = IngestService(vector_store=store)
-            with mock_patch.dict(os.environ, {"TEST_DDI_ROOT": str(root)}):
-                service.ingest_paths(
-                    [root],
-                    incremental=False,
-                    node_class_loader=lambda: FakeNode,
-                    embedder_loader=DummyEmbedder,
-                    path_env="TEST_DDI_ROOT",
-                )
+            service.ingest_paths(
+                [root],
+                incremental=False,
+                node_class_loader=lambda: FakeNode,
+                embedder_loader=DummyEmbedder,
+                env={"TEST_DDI_ROOT": str(root)},
+            )
 
             self.assertGreaterEqual(len(store.saved), 1)
             self.assertTrue(store.saved[0].id_.startswith("$TEST_DDI_ROOT/"))
             self.assertIn("::foo", store.saved[0].id_)
 
-    def test_ingest_preserves_absolute_uid_when_no_path_env(self) -> None:
+    def test_ingest_preserves_absolute_uid_when_no_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             src = root / "a.py"
@@ -273,7 +269,6 @@ class TestIngestService(unittest.TestCase):
                 incremental=False,
                 node_class_loader=lambda: FakeNode,
                 embedder_loader=DummyEmbedder,
-                path_env=None,
             )
 
             self.assertGreaterEqual(len(store.saved), 1)

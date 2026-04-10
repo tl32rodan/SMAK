@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,19 +20,19 @@ class TestSidecarPathMismatch(unittest.TestCase):
             source = workspace / "a.py"
             source.write_text("def hello():\n    pass\n", encoding="utf-8")
 
-            service = SidecarService(sidecar_store=YAMLSidecarStore())
+            env = {"DDI_ROOT_PATH": "/opt/ddi/online"}
+            service = SidecarService(sidecar_store=YAMLSidecarStore(), env=env)
             # First create the sidecar
             service.update(source)
 
             # Update with a relation that uses env var
-            with patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"}):
-                with self.assertLogs("smak.services.sidecar", level="WARNING") as cm:
-                    service.update(
-                        source,
-                        symbol="hello",
-                        intent="greeting",
-                        relations=["$DDI_ROOT_PATH/issues/bug.md::*"],
-                    )
+            with self.assertLogs("smak.services.sidecar", level="WARNING") as cm:
+                service.update(
+                    source,
+                    symbol="hello",
+                    intent="greeting",
+                    relations=["$DDI_ROOT_PATH/issues/bug.md::*"],
+                )
 
             self.assertTrue(any("mismatch" in msg.lower() for msg in cm.output))
 
@@ -61,20 +60,20 @@ class TestSidecarPathMismatch(unittest.TestCase):
             source = Path(tmp_dir) / "a.py"
             source.write_text("def hello():\n    pass\n", encoding="utf-8")
 
-            service = SidecarService(sidecar_store=YAMLSidecarStore())
+            env = {"DDI_ROOT_PATH": tmp_dir}
+            service = SidecarService(sidecar_store=YAMLSidecarStore(), env=env)
             service.update(source)
 
             # Env var resolves to the same directory as the source
-            with patch.dict(os.environ, {"DDI_ROOT_PATH": tmp_dir}):
-                logger = logging.getLogger("smak.services.sidecar")
-                with patch.object(logger, "warning") as mock_warn:
-                    service.update(
-                        source,
-                        symbol="hello",
-                        intent="greeting",
-                        relations=["$DDI_ROOT_PATH/issues/bug.md::*"],
-                    )
-                    mock_warn.assert_not_called()
+            logger = logging.getLogger("smak.services.sidecar")
+            with patch.object(logger, "warning") as mock_warn:
+                service.update(
+                    source,
+                    symbol="hello",
+                    intent="greeting",
+                    relations=["$DDI_ROOT_PATH/issues/bug.md::*"],
+                )
+                mock_warn.assert_not_called()
 
 
 if __name__ == "__main__":

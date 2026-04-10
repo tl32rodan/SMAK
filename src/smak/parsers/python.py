@@ -17,12 +17,12 @@ class PythonParser:
         self,
         content: str,
         source: str | None = None,
-        path_env: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> list[KnowledgeUnit]:
         tree = ast.parse(content or "")
         abs_source = str(Path(source).absolute()) if source else None
-        if abs_source and path_env:
-            collapsed = collapse_to_env(abs_source, path_env)
+        if abs_source and env:
+            collapsed = collapse_to_env(abs_source, env)
             if collapsed is not None:
                 abs_source = collapsed
         units: list[KnowledgeUnit] = []

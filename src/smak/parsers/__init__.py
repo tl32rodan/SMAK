@@ -17,7 +17,7 @@ class Parser(Protocol):
         self,
         content: str,
         source: str | None = None,
-        path_env: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> list[KnowledgeUnit]: ...
 
 
@@ -27,9 +27,9 @@ class NullParser:
         self,
         content: str,
         source: str | None = None,
-        path_env: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> list[KnowledgeUnit]:
-        _ = content, source, path_env
+        _ = content, source, env
         return []
 
 
@@ -39,14 +39,14 @@ class SimpleLineParser:
         self,
         content: str,
         source: str | None = None,
-        path_env: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> list[KnowledgeUnit]:
         normalized_content = (content or "").strip()
         if not normalized_content:
             return []
         origin = str(Path(source).absolute()) if source else "content"
-        if origin != "content" and path_env:
-            collapsed = collapse_to_env(origin, path_env)
+        if origin != "content" and env:
+            collapsed = collapse_to_env(origin, env)
             if collapsed is not None:
                 origin = collapsed
         symbol = "*"

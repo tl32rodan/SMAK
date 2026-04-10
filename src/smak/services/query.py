@@ -28,12 +28,16 @@ class QueryService:
         self.relation_resolver = relation_resolver or SidecarRelationResolver()
         self._vector_store_cache: dict[str, object] = {}
 
+    @property
+    def _env(self) -> dict[str, str]:
+        return self.config.env
+
     def _build_resolver_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
         """Return a copy of *metadata* with 'source' made absolute for sidecar lookup.
 
         The stored source path is relative to one of the index roots. The relation resolver
         needs an absolute path to locate the .sidecar.yaml file on disk.
-        Environment variables (``$VAR``) are expanded before resolution.
+        Variables (``$VAR``) are expanded using the workspace env before resolution.
         """
         resolver_metadata = dict(metadata)
         if "source" in resolver_metadata:
@@ -41,7 +45,7 @@ class QueryService:
             # Expand env vars first
             if contains_env_var(source):
                 try:
-                    source = expand_env_path(source)
+                    source = expand_env_path(source, self._env)
                     resolver_metadata["source"] = source
                 except ValueError:
                     pass
@@ -71,7 +75,7 @@ class QueryService:
         resolved_uid = uid
         if contains_env_var(uid):
             try:
-                resolved_uid = expand_uid(uid)
+                resolved_uid = expand_uid(uid, self._env)
             except ValueError:
                 resolved_uid = uid
             if resolved_uid != uid:
@@ -107,7 +111,7 @@ class QueryService:
         # Try expanding env vars if the UID contains them
         if contains_env_var(uid):
             try:
-                expanded = expand_uid(uid)
+                expanded = expand_uid(uid, self._env)
             except ValueError:
                 expanded = uid
             if expanded != uid:

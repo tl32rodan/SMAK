@@ -24,13 +24,13 @@ class PerlParser:
         self,
         content: str,
         source: str | None = None,
-        path_env: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> list[KnowledgeUnit]:
         original = content or ""
         cleaned = _clean_for_structure_scan(original)
         abs_source = str(Path(source).absolute()) if source else None
-        if abs_source and path_env:
-            collapsed = collapse_to_env(abs_source, path_env)
+        if abs_source and env:
+            collapsed = collapse_to_env(abs_source, env)
             if collapsed is not None:
                 abs_source = collapsed
 

@@ -396,9 +396,6 @@ class TestQueryService(unittest.TestCase):
 
 
     def test_lookup_expands_env_var_uid(self) -> None:
-        import os
-        from unittest.mock import patch as mock_patch
-
         store = SimpleNamespace(
             get_by_id=lambda uid: (
                 {"uid": uid, "content": "def foo(): pass", "metadata": {"symbol": "foo"}}
@@ -406,7 +403,11 @@ class TestQueryService(unittest.TestCase):
                 else None
             ),
         )
-        config = SmakConfig(indices=[IndexConfig(name="source_code", description="source", uri="/tmp/test")])
+        env = {"DDI_ROOT_PATH": "/opt/ddi/online"}
+        config = SmakConfig(
+            indices=[IndexConfig(name="source_code", description="source", uri="/tmp/test")],
+            env=env,
+        )
         service = QueryService(
             store,
             config=config,
@@ -415,16 +416,12 @@ class TestQueryService(unittest.TestCase):
             index_config=config.indices[0],
         )
 
-        with mock_patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"}):
-            result = service.lookup("$DDI_ROOT_PATH/src/a.py::foo")
+        result = service.lookup("$DDI_ROOT_PATH/src/a.py::foo")
 
         self.assertTrue(result["found"])
         self.assertEqual(result["uid"], "$DDI_ROOT_PATH/src/a.py::foo")
 
     def test_relation_resolver_expands_env_in_relation_targets(self) -> None:
-        import os
-        from unittest.mock import patch as mock_patch
-
         with tempfile.TemporaryDirectory() as tmp_dir:
             source = Path(tmp_dir) / "main.py"
             source.write_text("def a():\n    pass\n", encoding="utf-8")
@@ -451,19 +448,20 @@ class TestQueryService(unittest.TestCase):
                     else None
                 ),
             )
+            env = {"DDI_ROOT_PATH": "/opt/ddi/online"}
             config = SmakConfig(
-                indices=[IndexConfig(name="source_code", description="source", uri="/tmp/test")]
+                indices=[IndexConfig(name="source_code", description="source", uri="/tmp/test")],
+                env=env,
             )
 
-            with mock_patch.dict(os.environ, {"DDI_ROOT_PATH": "/opt/ddi/online"}):
-                payload = QueryService(
-                    store,
-                    config=config,
-                    vector_store_loader=lambda index_config, cfg: store,
-                    embedder=DummyEmbedder(),
-                    index_config=config.indices[0],
-                    relation_resolver=SidecarRelationResolver(YAMLSidecarStore()),
-                ).search("query", top_k=1)
+            payload = QueryService(
+                store,
+                config=config,
+                vector_store_loader=lambda index_config, cfg: store,
+                embedder=DummyEmbedder(),
+                index_config=config.indices[0],
+                relation_resolver=SidecarRelationResolver(YAMLSidecarStore()),
+            ).search("query", top_k=1)
 
             self.assertEqual(len(payload["related_context"]), 1)
             self.assertEqual(payload["related_context"][0]["content"], "Bug report")

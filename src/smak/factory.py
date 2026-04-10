@@ -57,14 +57,14 @@ def create_query_service(
         config=config,
         index_config=index_config,
         vector_store_loader=_load_vector_store_for_index,
-        relation_resolver=SidecarRelationResolver(sidecar_store),
+        relation_resolver=SidecarRelationResolver(sidecar_store, env=config.env),
         embedder=InternalNomicEmbedding(embedding_config=embedding_config),
     )
 
 
-def create_sidecar_service() -> SidecarService:
+def create_sidecar_service(env: dict[str, str] | None = None) -> SidecarService:
     """Create a SidecarService with the default YAML store."""
-    return SidecarService(sidecar_store=YAMLSidecarStore())
+    return SidecarService(sidecar_store=YAMLSidecarStore(), env=env)
 
 
 def create_doctor_service(

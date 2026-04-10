@@ -93,7 +93,7 @@ class IngestService:
         sync: bool = False,
         skip_file: Callable[[Path], bool] | None = None,
         on_ghost_source: Callable[[str, list[Path]], None] | None = None,
-        path_env: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> IngestStats:
         """Ingest content from multiple paths into the vector store.
 
@@ -133,7 +133,7 @@ class IngestService:
                 all_visited_sources.add(source_key)
             parser = get_parser_for_path(file_path)
             content = _read_text_with_fallback(file_path)
-            parsed_units = parser.parse(content, source=str(file_path), path_env=path_env)
+            parsed_units = parser.parse(content, source=str(file_path), env=env)
             source_mtime = _source_mtime(file_path)
             if (
                 incremental
@@ -151,7 +151,7 @@ class IngestService:
                 content,
                 source=str(file_path),
                 compute_embeddings=True,
-                path_env=path_env,
+                env=env,
             )
             nodes = []
             for unit, vector in zip(result.units, result.embeddings):
