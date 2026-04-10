@@ -155,11 +155,21 @@ def _coerce_config(data: Mapping[str, Any]) -> SmakConfig:
                         f"Index '{index_name}' is missing the required 'uri' field. "
                         "Every index must specify a uri for its vector store."
                     )
+                raw_uri = str(entry["uri"])
+                if not (
+                    contains_env_var(raw_uri)
+                    or Path(raw_uri).expanduser().is_absolute()
+                ):
+                    raise ValueError(
+                        f"Index '{index_name}' has a relative uri '{raw_uri}'. "
+                        "The uri must be an absolute path or use an environment "
+                        "variable (e.g. $SMAK_DATA/source_code)."
+                    )
                 indices.append(
                     IndexConfig(
                         name=index_name,
                         description=str(entry.get("description", "")),
-                        uri=str(entry["uri"]),
+                        uri=raw_uri,
                         paths=paths,
                         path_env=(
                             str(raw_path_env) if raw_path_env is not None else None

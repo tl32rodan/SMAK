@@ -87,28 +87,28 @@ indices:
     description: "Verilog/SystemVerilog RTL modules for DDR5 PHY datapath, including DQ/DQS serializers, FIFO, and clock domain crossing logic"
     paths:
       - $DDI_ROOT_PATH/rtl/phy
-    uri: ./smak/rtl_code
+    uri: $SMAK_DATA/rtl_code
     path_env: DDI_ROOT_PATH
 
   - name: verification
     description: "UVM testbenches, coverage models, and assertion libraries for PHY functional verification"
     paths:
       - $DDI_ROOT_PATH/verif
-    uri: ./smak/verification
+    uri: $SMAK_DATA/verification
     path_env: DDI_ROOT_PATH
 
   - name: constraints
     description: "SDC timing constraints, floorplan DEF, and power intent UPF for PHY implementation"
     paths:
       - $DDI_ROOT_PATH/constraints
-    uri: ./smak/constraints
+    uri: $SMAK_DATA/constraints
     path_env: DDI_ROOT_PATH
 
   - name: release_notes
     description: "ECO history, release notes, known issues, and waiver documentation"
     paths:
       - $DDI_ROOT_PATH/doc/releases
-    uri: ./smak/release_notes
+    uri: $SMAK_DATA/release_notes
     path_env: DDI_ROOT_PATH
 ```
 
