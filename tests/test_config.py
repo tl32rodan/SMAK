@@ -87,7 +87,7 @@ class TestConfig(unittest.TestCase):
         with mock_patch.dict(os.environ, {"SMAK_DATA": smak_data}):
             config = load_config(demo_config)
 
-        self.assertTrue(config.indices[0].uri.endswith("smak_data/source_code"))
+        self.assertTrue(config.indices[0].uri.endswith("smak/source_code"))
 
     def test_load_config_raises_when_uri_relative(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

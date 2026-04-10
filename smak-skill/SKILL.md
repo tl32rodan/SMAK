@@ -20,6 +20,7 @@ SMAK (**Semantic Mesh Augmented Kernel**) is a **passive MCP knowledge kernel** 
 | **Sidecar file** | Hidden YAML (e.g. `src/.foo.py.sidecar.yaml`) storing `intent` and `relations` per symbol. Updated by `enrich_symbol` / `enrich_file`. Read at query time for 1-hop expansion. |
 | **UID** | Globally unique identifier: `{path}::{symbol}` (e.g. `/home/user/project/src/foo.py::ClassName.method` or `$DDI_ROOT_PATH/src/foo.py::ClassName.method`). |
 | **Symbol name** | Short name without path prefix (e.g. `ClassName.method`). Used in `enrich_symbol`. |
+| **uri** | Required per-index path to the FAISS vector store directory (e.g. `./smak/source_code`). Each index must have its own `uri`. |
 | **path_env** | Optional config field mapping UIDs to environment variables instead of absolute paths. |
 | **`$SMAK_DATA`** | Convention: env var pointing to the directory where SMAK vector stores are persisted. Used in `uri` fields. |
 | **`$DDI_ROOT_PATH`** | Convention (EDA/SOS): env var pointing to the project root. Used in `paths` and `path_env`. |
@@ -55,7 +56,9 @@ indices:
     uri: $SMAK_DATA/issues
 ```
 
-Every SMAK tool takes `config` as its first parameter — the path to `workspace_config.yaml`.
+- **`uri`** (required) — path to the FAISS vector store directory for this index (e.g. `./smak/source_code`).
+- **`config`** — every SMAK tool takes this as its first parameter — the path to `workspace_config.yaml`.
+
 Indices are **not limited to any default set** — define any number with any names.
 
 **`uri` must be an absolute path or use an environment variable** (e.g. `$SMAK_DATA/source_code`).
