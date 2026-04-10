@@ -21,6 +21,8 @@ SMAK (**Semantic Mesh Augmented Kernel**) is a **passive MCP knowledge kernel** 
 | **UID** | Globally unique identifier: `{path}::{symbol}` (e.g. `/home/user/project/src/foo.py::ClassName.method` or `$DDI_ROOT_PATH/src/foo.py::ClassName.method`). |
 | **Symbol name** | Short name without path prefix (e.g. `ClassName.method`). Used in `enrich_symbol`. |
 | **path_env** | Optional config field mapping UIDs to environment variables instead of absolute paths. |
+| **`$SMAK_DATA`** | Convention: env var pointing to the directory where SMAK vector stores are persisted. Used in `uri` fields. |
+| **`$DDI_ROOT_PATH`** | Convention (EDA/SOS): env var pointing to the project root. Used in `paths` and `path_env`. |
 
 ### Two independent data stores — know the difference
 
@@ -282,9 +284,19 @@ The `description` field is the **agent's ONLY hint** for index selection.
 
 ---
 
-## 8. ENVIRONMENT VARIABLE UIDs
+## 8. ENVIRONMENT VARIABLES
 
-Use `path_env` when your codebase lives at different absolute paths:
+SMAK uses two environment variable conventions:
+
+| Variable | Purpose | Example value |
+|---|---|---|
+| `SMAK_DATA` | Root directory for vector store data (used in `uri`) | `/data/smak_stores` |
+| `DDI_ROOT_PATH` | Project/codebase root (used in `paths` and `path_env`, common in EDA/SOS) | `/CAD/stdcell` |
+
+Both must be set before running SMAK. Any `$VAR` reference in the config that cannot
+be resolved will raise an error at load time.
+
+### Using env vars in config
 
 ```yaml
 indices:
@@ -294,8 +306,10 @@ indices:
     path_env: DDI_ROOT_PATH
 ```
 
-UIDs become `$DDI_ROOT_PATH/src/a.py::ClassName` instead of absolute paths.
-At query time, `$DDI_ROOT_PATH` is expanded to the current environment value.
+- **`uri`** uses `$SMAK_DATA` — keeps vector store location portable across machines.
+- **`paths`** uses `$DDI_ROOT_PATH` — lets the same config work across workspaces.
+- **`path_env`** tells SMAK to write UIDs as `$DDI_ROOT_PATH/src/a.py::ClassName`
+  instead of absolute paths, so they remain valid when `$DDI_ROOT_PATH` changes.
 
 Path mismatch warnings are emitted when editing sidecars in SOS workspaces — this is expected.
 

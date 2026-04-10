@@ -89,6 +89,7 @@ def _default_config_template() -> str:
             "# uri (required): absolute path or $ENV_VAR path to the vector store.",
             "# Relative paths are NOT allowed — use an absolute path or an",
             "# environment variable so the config stays portable.",
+            "#   export SMAK_DATA=/path/to/your/smak_stores",
             "#",
             "# Optional: set path_env to use $ENV_VAR in UIDs instead of",
             "# absolute paths (useful for CliosoftSOS or multi-root setups).",
