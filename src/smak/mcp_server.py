@@ -155,6 +155,7 @@ class SmakMcpServer:
         intent: str | None = None, relations: list[str] | None = None,
         index: str = "source_code",
         bidirectional: bool = False,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """Annotate a single code symbol with intent and/or relations.
 
@@ -168,6 +169,10 @@ class SmakMcpServer:
         a reverse relation from each target back to this symbol.  The
         reverse relation target symbol defaults to ``*`` (file-level).
 
+        When ``dry_run=True``, computes the enriched sidecar content and
+        returns it as ``sidecar_yaml`` without writing to disk.  Useful
+        in SOS environments where the caller handles checkout/write/checkin.
+
         Args:
             config: Path to ``workspace_config.yaml``.
             file_path: Source file path (relative OK — resolved automatically).
@@ -176,12 +181,14 @@ class SmakMcpServer:
             relations: List of full UIDs to link as relations.
             index: Index whose paths resolve the file.
             bidirectional: If True, add reverse relations from targets back to this symbol.
+            dry_run: If True, return sidecar content without writing to disk.
         """
         cfg = self._load_config(config)
         return do_enrich_symbol(
             cfg, file_path, symbol,
             intent=intent, relations=relations,
             index=index, bidirectional=bidirectional,
+            dry_run=dry_run,
         )
 
     def enrich_file(

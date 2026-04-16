@@ -246,9 +246,11 @@ def lookup(config: str, embedding_setup: str, index: str, as_json: bool,
 @click.option("--intent", default=None, help="Human description of symbol purpose")
 @click.option("--relation", "relations", multiple=True, help="UID to link (repeatable)")
 @click.option("--bidirectional", is_flag=True, help="Add reverse relations")
+@click.option("--dry-run", "dry_run", is_flag=True, help="Preview sidecar without writing")
 def enrich(config: str, index: str, as_json: bool,
            file_path: str, symbol: str, intent: str | None,
-           relations: tuple[str, ...], bidirectional: bool) -> None:
+           relations: tuple[str, ...], bidirectional: bool,
+           dry_run: bool) -> None:
     """Annotate a symbol with intent and/or relations."""
     cfg, emb_cfg = setup_config(config)
     rel_list = list(relations) if relations else None
@@ -256,6 +258,7 @@ def enrich(config: str, index: str, as_json: bool,
         cfg, file_path, symbol,
         intent=intent, relations=rel_list,
         index=index, bidirectional=bidirectional,
+        dry_run=dry_run,
     )
     _output(result, as_json)
     if not as_json and result.get("status") == "error":

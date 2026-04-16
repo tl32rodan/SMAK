@@ -274,6 +274,7 @@ def do_enrich_symbol(
     intent: str | None = None, relations: list[str] | None = None,
     index: str = "source_code",
     bidirectional: bool = False,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Annotate a single code symbol with intent and/or relations."""
     svc, source_path = _resolve_file(config, index, file_path)
@@ -287,6 +288,19 @@ def do_enrich_symbol(
                 f"Valid symbols: {valid_symbols}"
             ),
             "valid_symbols": valid_symbols,
+        }
+
+    if dry_run:
+        preview = svc.preview_update(
+            source_path, symbol, intent=intent, relations=relations,
+        )
+        return {
+            "status": "ok",
+            "dry_run": True,
+            "symbol": symbol,
+            "intent": intent,
+            "relations": relations,
+            **preview,
         }
 
     try:
