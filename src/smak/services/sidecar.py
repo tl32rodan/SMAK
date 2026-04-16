@@ -6,6 +6,7 @@ from typing import Any
 
 from smak.parsers import get_parser_for_path
 from smak.utils.path_env import contains_env_var, expand_env_path, warn_path_mismatch
+from smak.utils.yaml import safe_dump
 
 logger = logging.getLogger(__name__)
 from smak.sidecar.manager import IntegrityError, SidecarManager
@@ -121,6 +122,69 @@ class SidecarService:
             "file_path": str(file_path),
             "sidecar_path": str(sidecar_path),
             "total_symbols": total_symbols,
+        }
+
+    def preview_update(
+        self,
+        file_path: Path,
+        symbol: str,
+        intent: str | None = None,
+        relations: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Compute enriched sidecar content without writing to disk.
+
+        Combines full-sync and single-symbol-update logic in memory.
+        Returns a dict with ``sidecar_yaml``, ``sidecar_path``, and
+        ``total_symbols``.
+        """
+        # 1. Full sync in memory
+        current_uids = set(self.inspect(file_path))
+        existing = self.sidecar_store.load_symbols_for_source(file_path)
+        existing_by_name: dict[str, dict[str, Any]] = {
+            e["name"]: e for e in existing if isinstance(e.get("name"), str)
+        }
+
+        deleted = set(existing_by_name.keys()) - current_uids
+        blocked = sorted(
+            name for name in deleted if existing_by_name[name].get("relations")
+        )
+        if blocked:
+            cmds = "\n".join(
+                f'  smak sidecar clear {file_path} --symbol "{name}"'
+                for name in blocked
+            )
+            raise ValueError(
+                f"Cannot remove symbols with existing relations. "
+                f"Clear them first:\n{cmds}"
+            )
+
+        table: dict[str, dict[str, Any]] = {}
+        for uid in sorted(current_uids):
+            if uid in existing_by_name:
+                table[uid] = dict(existing_by_name[uid])
+            else:
+                table[uid] = {"name": uid, "intent": "", "relations": []}
+
+        # 2. Apply single-symbol update in memory
+        if intent is not None or relations is not None:
+            if relations:
+                self._check_path_mismatch(file_path, relations)
+            target = table.get(symbol, {"name": symbol})
+            if intent is not None:
+                target["intent"] = intent
+            if relations is not None:
+                target["relations"] = relations
+            table[symbol] = target
+
+        final = sorted(table.values(), key=lambda e: str(e.get("name", "")))
+        sidecar_path = self.sidecar_store.resolve_sidecar_path(file_path)
+        sidecar_yaml = safe_dump({"symbols": final})
+
+        return {
+            "file_path": str(file_path),
+            "sidecar_path": str(sidecar_path),
+            "sidecar_yaml": sidecar_yaml,
+            "total_symbols": len(final),
         }
 
     def validate(self, file_path: Path) -> dict[str, Any]:

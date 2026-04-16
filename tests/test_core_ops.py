@@ -198,6 +198,65 @@ class TestDoEnrichSymbol(unittest.TestCase):
                 self.assertEqual(result["status"], "ok")
                 self.assertEqual(result["intent"], "greets")
 
+    def test_enrich_symbol_dry_run_returns_yaml(self) -> None:
+        """dry_run=True returns sidecar_yaml without calling svc.update()."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cfg = _make_config(tmp_dir)
+            _write_source(tmp_dir)
+            with _patch_sidecar() as svc_factory:
+                svc = svc_factory.return_value
+                svc.inspect.return_value = ["hello"]
+                svc.preview_update.return_value = {
+                    "file_path": "/tmp/src/a.py",
+                    "sidecar_path": "/tmp/src/.a.py.sidecar.yaml",
+                    "sidecar_yaml": "symbols:\n- name: hello\n  intent: greets\n",
+                    "total_symbols": 1,
+                }
+                result = do_enrich_symbol(
+                    cfg, "a.py", "hello", intent="greets",
+                    index="source_code", dry_run=True,
+                )
+                self.assertEqual(result["status"], "ok")
+                self.assertTrue(result["dry_run"])
+                self.assertIn("sidecar_yaml", result)
+                # svc.update should NOT be called in dry_run mode
+                svc.update.assert_not_called()
+
+    def test_enrich_symbol_dry_run_skips_bidirectional(self) -> None:
+        """dry_run=True skips bidirectional reverse relations."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cfg = _make_config(tmp_dir)
+            _write_source(tmp_dir)
+            with _patch_sidecar() as svc_factory:
+                svc = svc_factory.return_value
+                svc.inspect.return_value = ["hello"]
+                svc.preview_update.return_value = {
+                    "file_path": "/tmp/src/a.py",
+                    "sidecar_path": "/tmp/src/.a.py.sidecar.yaml",
+                    "sidecar_yaml": "symbols:\n- name: hello\n",
+                    "total_symbols": 1,
+                }
+                result = do_enrich_symbol(
+                    cfg, "a.py", "hello", intent="greets",
+                    relations=["other.py::world"],
+                    index="source_code", bidirectional=True, dry_run=True,
+                )
+                self.assertEqual(result["status"], "ok")
+                self.assertNotIn("reverse_relations", result)
+
+    def test_enrich_symbol_dry_run_rejects_unknown(self) -> None:
+        """dry_run=True still validates symbol existence."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cfg = _make_config(tmp_dir)
+            _write_source(tmp_dir)
+            with _patch_sidecar() as svc_factory:
+                svc_factory.return_value.inspect.return_value = ["hello"]
+                result = do_enrich_symbol(
+                    cfg, "a.py", "nonexistent", intent="x",
+                    index="source_code", dry_run=True,
+                )
+                self.assertEqual(result["status"], "error")
+
     def test_enrich_symbol_rejects_unknown(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             cfg = _make_config(tmp_dir)

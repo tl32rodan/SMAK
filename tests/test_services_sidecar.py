@@ -229,6 +229,116 @@ class TestSidecarService(unittest.TestCase):
             self.assertTrue(result["valid"])
             self.assertEqual(result["issues"], [])
 
+    # ------------------------------------------------------------------
+    # preview_update() — dry-run enrichment (no disk writes)
+    # ------------------------------------------------------------------
+
+    def test_preview_update_returns_yaml_without_writing(self) -> None:
+        """preview_update() returns sidecar YAML but does NOT create the file."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+            service = SidecarService()
+
+            result = service.preview_update(source, symbol="hello", intent="greet")
+
+            self.assertIn("sidecar_yaml", result)
+            self.assertIn("sidecar_path", result)
+            self.assertIn("total_symbols", result)
+            self.assertEqual(result["total_symbols"], 1)
+            # Must NOT write to disk
+            sidecar = Path(tmp_dir) / ".main.py.sidecar.yaml"
+            self.assertFalse(sidecar.exists())
+
+    def test_preview_update_applies_intent(self) -> None:
+        """preview_update() includes the provided intent in the returned YAML."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+            service = SidecarService()
+
+            result = service.preview_update(source, symbol="hello", intent="greeting fn")
+
+            from smak.utils.yaml import safe_load
+            parsed = safe_load(result["sidecar_yaml"])
+            symbols = parsed["symbols"]
+            hello = next(s for s in symbols if "hello" in s["name"])
+            self.assertEqual(hello["intent"], "greeting fn")
+
+    def test_preview_update_applies_relations(self) -> None:
+        """preview_update() includes the provided relations in the returned YAML."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+            service = SidecarService()
+
+            result = service.preview_update(
+                source, symbol="hello", relations=["issue-1"]
+            )
+
+            from smak.utils.yaml import safe_load
+            parsed = safe_load(result["sidecar_yaml"])
+            hello = next(s for s in parsed["symbols"] if "hello" in s["name"])
+            self.assertEqual(hello["relations"], ["issue-1"])
+
+    def test_preview_update_preserves_existing_data(self) -> None:
+        """preview_update() merges with existing sidecar data."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text(
+                "def hello():\n  return True\ndef world():\n  pass\n",
+                encoding="utf-8",
+            )
+            service = SidecarService()
+            uids = service.inspect(source)
+            hello_uid = [u for u in uids if "hello" in u][0]
+            world_uid = [u for u in uids if "world" in u][0]
+
+            # Pre-populate sidecar on disk
+            store = YAMLSidecarStore()
+            store.save_symbols_for_source(
+                source,
+                [{"name": hello_uid, "intent": "old intent", "relations": ["old-rel"]}],
+            )
+            service = SidecarService(sidecar_store=store)
+
+            result = service.preview_update(
+                source, symbol=world_uid, intent="new"
+            )
+
+            from smak.utils.yaml import safe_load
+            parsed = safe_load(result["sidecar_yaml"])
+            hello = next(s for s in parsed["symbols"] if s["name"] == hello_uid)
+            self.assertEqual(hello["intent"], "old intent")
+            self.assertEqual(hello["relations"], ["old-rel"])
+            self.assertEqual(result["total_symbols"], 2)
+
+    def test_preview_update_blocks_removal_of_symbol_with_relations(self) -> None:
+        """preview_update() raises ValueError when deleted symbols have relations."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "main.py"
+            source.write_text("def hello():\n  return True\n", encoding="utf-8")
+            service = SidecarService()
+            uids = service.inspect(source)
+            hello_uid = uids[0]
+
+            store = YAMLSidecarStore()
+            store.save_symbols_for_source(
+                source,
+                [
+                    {"name": hello_uid, "intent": "", "relations": []},
+                    {"name": "old_func", "intent": "old", "relations": ["issue-2"]},
+                ],
+            )
+            service = SidecarService(sidecar_store=store)
+
+            with self.assertRaises(ValueError) as ctx:
+                service.preview_update(
+                    source, symbol=hello_uid, intent="updated"
+                )
+
+            self.assertIn("Cannot remove symbols", str(ctx.exception))
+
     def test_sidecar_read_text_fallback_replaces_invalid_bytes(self) -> None:
         from smak.services import sidecar as sidecar_module
 
