@@ -6,6 +6,7 @@ from typing import Any
 
 from smak.config import SmakConfig
 from smak.sidecar.paths import iter_sidecar_files, source_path_from_sidecar
+from smak.utils.path_env import contains_env_var, expand_uid
 from smak.utils.yaml import safe_load
 
 
@@ -30,10 +31,22 @@ class DoctorService:
             return get_by_id(target_uid) is not None
         return False
 
+    def _candidate_uids(self, target_uid: str) -> list[str]:
+        candidates = [target_uid]
+        if contains_env_var(target_uid):
+            try:
+                expanded = expand_uid(target_uid, self.config.env)
+            except ValueError:
+                expanded = target_uid
+            if expanded != target_uid:
+                candidates.append(expanded)
+        return candidates
+
     def _exists_in_any_index(self, target_uid: str) -> bool:
+        candidates = self._candidate_uids(target_uid)
         for index_config in self.config.indices:
             store = self._get_store(index_config.name)
-            if self._store_contains_uid(store, target_uid):
+            if any(self._store_contains_uid(store, uid) for uid in candidates):
                 return True
         return False
 
