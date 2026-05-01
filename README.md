@@ -8,7 +8,7 @@ For SMAK concepts, MCP workflow conventions, and agent behavior guidance, see
 ```bash
 smak ingest --index source_code --config demo/workspace_a/workspace_config.yaml
 smak ingest --index issues      --config demo/workspace_a/workspace_config.yaml
-smak query "why does update_cell raise an error" \
+smak search "why does update_cell raise an error" \
       --index source_code \
       --config demo/workspace_a/workspace_config.yaml
 smak doctor --config demo/workspace_a/workspace_config.yaml

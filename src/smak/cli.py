@@ -7,10 +7,11 @@ Commands:
   init          Generate a workspace_config.yaml template
   doctor        Run mesh integrity diagnostics
   search        Semantic search within one index
-  search-all    Semantic search across all indices
+  search-all    Semantic search across all (or selected) indices
   lookup        Look up a UID in the vector store
   enrich        Annotate a symbol with intent/relations
   enrich-file   Sync a file's sidecar
+  enrich-batch  Sync sidecars for multiple files at once
   ingest        Re-ingest files into a vector store index
   describe      Describe workspace indices
   health        Run health checks (structured output)
@@ -29,6 +30,7 @@ import click
 from smak.config import load_config, load_embedding_config
 from smak.core_ops import (
     do_describe,
+    do_enrich_batch,
     do_enrich_file,
     do_enrich_symbol,
     do_graph_stats,
@@ -210,12 +212,16 @@ def search(config: str, embedding_setup: str, index: str, as_json: bool,
 @_embedding_option()
 @_json_option()
 @click.option("--top-k", default=3, type=int, help="Max results per index")
+@click.option("--indices", "indices", multiple=True,
+              help="Index name to search (repeatable; default: all indices)")
 @click.argument("query")
 def search_all(config: str, embedding_setup: str, as_json: bool,
-               top_k: int, query: str) -> None:
-    """Search across all indices at once."""
+               top_k: int, indices: tuple[str, ...], query: str) -> None:
+    """Search across all indices at once (or a subset via --indices)."""
     cfg, emb_cfg = setup_config(config, embedding_setup)
-    result = do_search_all(cfg, query, top_k=top_k, embedding_config=emb_cfg)
+    index_list = list(indices) if indices else None
+    result = do_search_all(cfg, query, indices=index_list, top_k=top_k,
+                           embedding_config=emb_cfg)
     _output(result, as_json)
 
 
@@ -274,6 +280,19 @@ def enrich_file(config: str, index: str, as_json: bool, file_path: str) -> None:
     """Sync a file's sidecar — create stubs for all symbols."""
     cfg, emb_cfg = setup_config(config)
     result = do_enrich_file(cfg, file_path, index=index)
+    _output(result, as_json)
+
+
+@main.command("enrich-batch")
+@_config_option()
+@_index_option()
+@_json_option()
+@click.argument("file_paths", nargs=-1, required=True)
+def enrich_batch(config: str, index: str, as_json: bool,
+                 file_paths: tuple[str, ...]) -> None:
+    """Sync sidecars for multiple files at once. Continues on error."""
+    cfg, emb_cfg = setup_config(config)
+    result = do_enrich_batch(cfg, list(file_paths), index=index)
     _output(result, as_json)
 
 
