@@ -1,16 +1,27 @@
 ---
 name: smak-skill
-description: SMAK (Semantic Mesh Augmented Kernel) - A semantic search and context expansion tool. Use ONLY when you do NOT already know the file path or symbol name. If you know the target, use grep or read the file directly. Use this exclusively to explore code intent, historical context, and 1-hop bi-directional cross-entity relations (e.g., linking code with issues, tests, and docs in both directions).
+description: SMAK (Semantic Mesh Augmented Kernel) - A semantic search and context expansion tool exposed via both a CLI (`smak ...`) and an MCP server. Use ONLY when you do NOT already know the file path or symbol name. If you know the target, use grep or read the file directly. Use this exclusively to explore code intent, historical context, and 1-hop bi-directional cross-entity relations (e.g., linking code with issues, tests, and docs in both directions).
 ---
 
 # SMAK Skill
 
 ## 1. WHAT SMAK IS
 
-SMAK (**Semantic Mesh Augmented Kernel**) is a **passive MCP knowledge kernel** — a read/write layer for:
+SMAK (**Semantic Mesh Augmented Kernel**) is a **passive knowledge kernel** — a read/write layer for:
 - **Semantic retrieval**: embedding-based search over code, issues, tests, and docs.
 - **Sidecar metadata**: per-file YAML storing human-written `intent` and cross-entity `relations` for each code symbol.
 - **1-hop mesh traversal**: when a search hit has sidecar relations, SMAK auto-fetches the linked entities and returns them alongside the hit.
+
+### Two interfaces — same underlying operations
+
+SMAK exposes every operation through **two equivalent surfaces**. Pick whichever fits the caller:
+
+| Surface | Invocation | When to use |
+|---|---|---|
+| **CLI** | `smak <command> [--json] ...` | Shell scripts, one-off commands, agents that shell out (e.g. All-Might), CI |
+| **MCP** | Tool call on a running `python -m smak.mcp_server` | Long-lived agent sessions that already speak MCP |
+
+Both delegate to the same `core_ops` layer, so behavior is identical. Pass `--json` to the CLI to get the same structured payload an MCP tool would return.
 
 ### Key concepts
 
@@ -58,8 +69,9 @@ indices:
     uri: $SMAK_DATA/issues
 ```
 
-Every SMAK tool takes `config` as its first parameter — the path to `workspace_config.yaml`.
-Indices are **not limited to any default set** — define any number with any names.
+Every SMAK operation needs a workspace config — passed as the first parameter to an MCP
+tool (`config=...`) or via `--config <path>` on the CLI. Indices are **not limited to any
+default set** — define any number with any names.
 
 **`env` block** defines workspace-scoped variables. All `$VAR` references in `paths` and `uri`
 resolve from this block — **never from the shell environment**. This makes configs fully
@@ -93,27 +105,55 @@ If results are low-relevance **2 times in a row**, **STOP**. Ask user for a narr
 
 ---
 
-## 3. MCP TOOL REFERENCE (10 tools)
+## 3. TOOL REFERENCE (CLI + MCP)
 
-Every tool takes `config` (path to `workspace_config.yaml`) as first parameter.
+Every operation requires a workspace config. The MCP tool takes `config` as the first
+argument; the CLI takes it as `--config <path>` (defaults to `./workspace_config.yaml`).
+All CLI commands also accept `--json` to emit the same structured payload the MCP tool returns.
 
 ### Discovery
-- **`describe_workspace(config)`** — list all indices with names, descriptions, paths. Call this first.
+
+| Purpose | MCP tool | CLI command |
+|---|---|---|
+| List all indices (call this first) | `describe_workspace(config)` | `smak describe --config <cfg>` |
 
 ### Search
-- **`search(config, query, index, top_k=5)`** — semantic search within one index
-- **`search_all(config, query, indices=None, top_k=3)`** — search across all (or specified) indices at once
-- **`lookup(config, uid, index)`** — verify a UID exists in the vector store
+
+| Purpose | MCP tool | CLI command |
+|---|---|---|
+| Semantic search within one index | `search(config, query, index, top_k=5)` | `smak search "<query>" --index <n> --top-k 5 --config <cfg>` |
+| Search across all (or specified) indices | `search_all(config, query, indices=None, top_k=3)` | `smak search-all "<query>" [--indices <n>]... --top-k 3 --config <cfg>` |
+| Verify a UID exists in the vector store | `lookup(config, uid, index)` | `smak lookup "<uid>" --index <n> --config <cfg>` |
 
 ### Sidecar enrichment
-- **`enrich_symbol(config, file_path, symbol, intent?, relations?, index, bidirectional=False)`** — annotate one symbol (auto-syncs sidecar, auto-clears stale symbols, validates symbol exists). When `bidirectional=True`, also adds reverse relations from targets back to this symbol.
-- **`enrich_file(config, file_path, index)`** — create/sync a file's sidecar (stub entries for all symbols)
-- **`enrich_batch(config, file_paths, index)`** — sync sidecars for multiple files at once
+
+| Purpose | MCP tool | CLI command |
+|---|---|---|
+| Annotate one symbol (auto-syncs sidecar, validates symbol, clears stale entries) | `enrich_symbol(config, file_path, symbol, intent?, relations?, index, bidirectional=False, dry_run=False)` | `smak enrich --file <p> --symbol <s> [--intent <t>] [--relation <uid>]... [--bidirectional] [--dry-run] --index <n> --config <cfg>` |
+| Create/sync a file's sidecar (stubs for all symbols) | `enrich_file(config, file_path, index)` | `smak enrich-file --file <p> --index <n> --config <cfg>` |
+| Sync sidecars for multiple files at once | `enrich_batch(config, file_paths, index)` | `smak enrich-batch <p1> <p2> ... --index <n> --config <cfg>` |
+
+When `--bidirectional` is set, the reverse relation is also written back from each target.
+When `--dry-run` is set, the enriched sidecar is computed and returned without being written
+(useful in SOS environments — see `sos-smak-skill/SKILL.md`).
 
 ### Maintenance
-- **`ingest(config, index, follow_symlinks=True)`** — re-embed files into vector store (**resource-intensive**)
-- **`check_health(config)`** — run integrity diagnostics, returns `{status, issues}`
-- **`graph_stats(config)`** — knowledge graph coverage statistics: total/enriched symbols, relations, coverage %, per-index breakdown, asymmetric relation warnings
+
+| Purpose | MCP tool | CLI command |
+|---|---|---|
+| Re-embed files into a vector store (**resource-intensive**) | `ingest(config, index, follow_symlinks=True)` | `smak ingest --index <n> [--no-follow-symlinks] --config <cfg>` |
+| Integrity diagnostics, returns `{status, issues}` | `check_health(config)` | `smak health --config <cfg>` |
+| Knowledge graph coverage stats (per-index totals, relations, coverage %, asymmetric-relation warnings) | `graph_stats(config)` | `smak stats --config <cfg>` |
+
+### CLI-only commands
+
+These two commands exist on the CLI but have no MCP counterpart (they are bootstrapping /
+end-user concerns, not agent operations):
+
+| Purpose | CLI command |
+|---|---|
+| Write a starter `workspace_config.yaml` to disk | `smak init [--path <p>] [--force]` |
+| Run mesh diagnostics with a non-zero exit code on failure (script-friendly variant of `health`) | `smak doctor --config <cfg>` |
 
 ---
 
@@ -160,6 +200,7 @@ When unsure which index, use `search_all` to search everything at once.
 
 ### Annotate a symbol (the primary workflow)
 
+MCP:
 ```python
 # One call does everything: validate symbol, sync sidecar, write enrichment
 enrich_symbol(
@@ -172,13 +213,26 @@ enrich_symbol(
 )
 ```
 
-What `enrich_symbol` does internally:
+CLI:
+```bash
+smak enrich \
+  --config ./workspace_config.yaml \
+  --index source_code \
+  --file src/csv_editor.py \
+  --symbol CsvEditor.update_cell \
+  --intent "Rewrites entire file to update one cell. Known IndexError issue." \
+  --relation '$DDI_ROOT_PATH/issues/csv-bugs.md::*' \
+  --json
+```
+
+What `enrich_symbol` / `smak enrich` does internally:
 1. Validates `symbol` exists in the file (returns error + valid list if not)
 2. Syncs the sidecar (creates if missing, auto-clears stale symbols)
 3. Writes intent and relations
 
 ### Initialize sidecars for a directory
 
+MCP:
 ```python
 # Create stub sidecars for all files
 enrich_batch(
@@ -186,6 +240,14 @@ enrich_batch(
   file_paths=["src/a.py", "src/b.py", "src/c.py"],
   index="source_code"
 )
+```
+
+CLI:
+```bash
+smak enrich-batch src/a.py src/b.py src/c.py \
+  --index source_code \
+  --config ./workspace_config.yaml \
+  --json
 ```
 
 ### Sidecar YAML format (for reference)
@@ -207,6 +269,7 @@ symbols:
 
 ### Pipeline A: Link code to related issues
 
+MCP:
 ```python
 cfg = "./workspace_config.yaml"
 
@@ -219,38 +282,65 @@ issue = search(config=cfg, query="cell update out of range bug", index="issues")
 # 3. Verify the issue UID exists
 lookup(config=cfg, uid=issue_uid, index="issues")
 
-# 4. Annotate the code symbol with the relation
+# 4. Annotate the code symbol with the relation (use bidirectional=True to also write the reverse)
 enrich_symbol(
   config=cfg,
   file_path=hit["exact_relative_path"],
   symbol="CsvEditor.update_cell",
   relations=[issue_uid],
-  index="source_code"
+  index="source_code",
+  bidirectional=True,
 )
+```
 
-# 5. (Optional) Add reverse relation
-enrich_symbol(
-  config=cfg,
-  file_path=issue_path,
-  symbol="*",
-  relations=[code_uid],
-  index="issues"
-)
+CLI:
+```bash
+CFG=./workspace_config.yaml
+
+# 1. Find the code
+smak search "CSV cell update logic" --index source_code --config "$CFG" --json
+
+# 2. Find the related issue
+smak search "cell update out of range bug" --index issues --config "$CFG" --json
+
+# 3. Verify the issue UID exists
+smak lookup "$ISSUE_UID" --index issues --config "$CFG" --json
+
+# 4. Annotate the code symbol (--bidirectional adds the reverse relation in one step)
+smak enrich \
+  --config "$CFG" --index source_code \
+  --file src/csv_editor.py \
+  --symbol CsvEditor.update_cell \
+  --relation "$ISSUE_UID" \
+  --bidirectional \
+  --json
 ```
 
 ### Pipeline B: Broad exploration
 
 ```python
-# Don't know which index? Search everything.
+# MCP — don't know which index? Search everything.
 search_all(config=cfg, query="authentication timeout handling", top_k=3)
+```
+
+```bash
+# CLI equivalent
+smak search-all "authentication timeout handling" --top-k 3 --config "$CFG" --json
 ```
 
 ### Pipeline C: Health check
 
 ```python
+# MCP
 check_health(config=cfg)
 # → {"status": "healthy", "issues": []}
 # → {"status": "unhealthy", "issues": ["Orphaned sidecar: ..."]}
+```
+
+```bash
+# CLI — same structured payload with --json; or use `smak doctor` to exit non-zero on failure.
+smak health --config "$CFG" --json
+smak doctor --config "$CFG"   # for scripts: exits 1 if unhealthy
 ```
 
 ---
