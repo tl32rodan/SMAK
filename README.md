@@ -1,7 +1,13 @@
 # SMAK
 
 For SMAK concepts, MCP workflow conventions, and agent behavior guidance, see
-**[`smak-skill/SKILL.md`](smak-skill/SKILL.md)**.
+**[`src/smak/skills/smak-skill/SKILL.md`](src/smak/skills/smak-skill/SKILL.md)**.
+The SKILL.md files ship inside the installed `smak` Python package, so they
+travel with the wheel — locate them at runtime with:
+
+```bash
+python -c "import smak, pathlib; print(pathlib.Path(smak.__path__[0]) / 'skills')"
+```
 
 ## Quick start (CLI)
 
