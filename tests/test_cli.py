@@ -66,7 +66,7 @@ class TestCli(unittest.TestCase):
         cli = importlib.import_module("smak.cli")
         help_output = runner.invoke(cli.main, ["--help"]).output
         for cmd in ("search", "search-all", "lookup", "enrich", "enrich-file",
-                    "ingest", "describe", "health", "stats"):
+                    "enrich-batch", "ingest", "describe", "health", "stats"):
             self.assertIn(cmd, help_output, f"Missing command: {cmd}")
         # Old fine-grained commands should not be present as top-level commands
         self.assertNotIn("query", help_output)
@@ -114,6 +114,39 @@ class TestNewCliCommands(unittest.TestCase):
             self.assertEqual(result.exit_code, 0)
             data = json.loads(result.output)
             self.assertIn("src", data)
+
+    def test_search_all_passes_indices_filter(self) -> None:
+        with self._patch_setup(), \
+             patch("smak.cli.do_search_all", return_value={"src": {"hits": []}}) as mock_call:
+            result = self.runner.invoke(self.cli.main, [
+                "search-all", "--json", "--indices", "src", "--indices", "docs", "query",
+            ])
+            self.assertEqual(result.exit_code, 0)
+            kwargs = mock_call.call_args.kwargs
+            self.assertEqual(kwargs["indices"], ["src", "docs"])
+
+    def test_search_all_default_indices_is_none(self) -> None:
+        with self._patch_setup(), \
+             patch("smak.cli.do_search_all", return_value={"src": {"hits": []}}) as mock_call:
+            result = self.runner.invoke(self.cli.main, ["search-all", "--json", "query"])
+            self.assertEqual(result.exit_code, 0)
+            self.assertIsNone(mock_call.call_args.kwargs["indices"])
+
+    def test_enrich_batch_json(self) -> None:
+        with self._patch_setup(), \
+             patch("smak.cli.do_enrich_batch",
+                   return_value=[{"file": "a.py", "ok": True}]) as mock_call:
+            result = self.runner.invoke(self.cli.main, [
+                "enrich-batch", "--json", "a.py", "b.py", "c.py",
+            ])
+            self.assertEqual(result.exit_code, 0)
+            data = json.loads(result.output)
+            self.assertEqual(len(data), 1)
+            self.assertEqual(mock_call.call_args.args[1], ["a.py", "b.py", "c.py"])
+
+    def test_enrich_batch_requires_at_least_one_file(self) -> None:
+        result = self.runner.invoke(self.cli.main, ["enrich-batch"])
+        self.assertNotEqual(result.exit_code, 0)
 
     def test_lookup_json(self) -> None:
         with self._patch_setup(), \
