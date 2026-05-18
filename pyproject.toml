@@ -23,6 +23,12 @@ dependencies = [
 [project.scripts]
 smak = "smak.cli:main"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+smak = ["*.yaml", "skills/**/*.md"]
+
 [tool.pytest.ini_options]
 pythonpath = ["tests", "src"]
 
