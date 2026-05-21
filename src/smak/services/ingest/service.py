@@ -11,6 +11,7 @@ from typing import Callable, Iterable
 from smak.parsers import get_parser_for_path
 from smak.services.ingest.pipeline import IngestPipeline
 from smak.utils.embedding import EmbeddingProbe, InternalNomicEmbedding
+from smak.utils.file_kind import is_binary_file
 
 
 @dataclass(frozen=True)
@@ -131,6 +132,8 @@ class IngestService:
             source_key = _source_key(file_path, root_folder)
             with lock:
                 all_visited_sources.add(source_key)
+            if is_binary_file(file_path):
+                return 0, True
             parser = get_parser_for_path(file_path)
             content = _read_text_with_fallback(file_path)
             parsed_units = parser.parse(content, source=str(file_path), env=env)
