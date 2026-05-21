@@ -62,16 +62,19 @@ class InternalEmbedding(BaseEmbedding):
         return f"{self.api_base}/embeddings"
 
     def _post_embeddings(self, texts: Sequence[str]) -> list[list[float]]:
+        text_list = list(texts)
+        if not text_list:
+            return []
         response = self.session.post(
             self._embedding_endpoint(),
-            json={"model": self.model, "input": list(texts)},
+            json={"model": self.model, "input": text_list},
             headers=self.headers,
             timeout=self.timeout,
         )
         if not response.ok:
             raise requests.HTTPError(
                 f"{response.status_code} {response.reason} for {self._embedding_endpoint()} "
-                f"(model={self.model!r}): {response.text}",
+                f"(model={self.model!r}, n_inputs={len(text_list)}): {response.text}",
                 response=response,
             )
         payload = response.json()
