@@ -395,10 +395,10 @@ class TestConfig(unittest.TestCase):
 class TestEmbeddingConfig(unittest.TestCase):
     def test_defaults(self) -> None:
         cfg = EmbeddingConfig()
-        self.assertEqual(cfg.api_base, "http://f15dtpai1:11434")
-        self.assertEqual(cfg.model, "nomic_embed_text:latest")
+        self.assertEqual(cfg.api_base, "http://f15dtpai1:11515/v1")
+        self.assertEqual(cfg.model, "qwen3_embedding_8B")
         self.assertEqual(cfg.timeout, 600.0)
-        self.assertEqual(cfg.batch_size, 64)
+        self.assertEqual(cfg.batch_size, 32)
 
     def test_load_embedding_config_from_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -422,7 +422,7 @@ class TestEmbeddingConfig(unittest.TestCase):
             path.write_text("api_base: http://other:5555\n", encoding="utf-8")
             cfg = load_embedding_config(path)
             self.assertEqual(cfg.api_base, "http://other:5555")
-            self.assertEqual(cfg.model, "nomic_embed_text:latest")  # default
+            self.assertEqual(cfg.model, "qwen3_embedding_8B")  # default
             self.assertEqual(cfg.timeout, 600.0)  # default
 
     def test_load_embedding_config_missing_file_returns_defaults(self) -> None:

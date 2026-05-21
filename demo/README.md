@@ -52,7 +52,7 @@ pip install -e .
 
 **2. Embedding server**
 
-SMAK uses a Nomic embedding model served via Ollama or a compatible OpenAI-style API.
+SMAK uses an embedding model served via an OpenAI-compatible API.
 To override the default endpoint or model, edit `src/smak/embedding_setup.yaml`.
 
 Verify the server is reachable before running any `ingest` or `query` command.

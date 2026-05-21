@@ -59,7 +59,7 @@ class InternalNomicEmbedding(BaseEmbedding):
         self.embed_batch_size = resolved_batch_size
 
     def _embedding_endpoint(self) -> str:
-        return f"{self.api_base}/api/embed"
+        return f"{self.api_base}/embeddings"
 
     def _post_embeddings(self, texts: Sequence[str]) -> list[list[float]]:
         response = self.session.post(
