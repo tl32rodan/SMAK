@@ -4,7 +4,7 @@ import unittest
 
 from smak.config import EmbeddingConfig, SmakConfig
 from smak.utils.embedding import (
-    InternalNomicEmbedding,
+    InternalEmbedding,
     detect_embedding_dimension,
     initialize_embedding_dimensions,
     validate_vector_store_dimension,
@@ -33,8 +33,12 @@ class DummyVectorStore:
 
 
 class DummyResponse:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self, payload: dict, status_code: int = 200, text: str = "") -> None:
         self._payload = payload
+        self.status_code = status_code
+        self.ok = 200 <= status_code < 300
+        self.reason = "OK" if self.ok else "Bad Request"
+        self.text = text
 
     def raise_for_status(self) -> None:
         return None
@@ -82,12 +86,12 @@ class TestEmbeddingHelpers(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_vector_store_dimension(vector_store, 3)
 
-    def test_internal_nomic_embedding_initializes_all_members(self) -> None:
+    def test_internal_embedding_initializes_all_members(self) -> None:
         session = DummySession()
 
-        embedder = InternalNomicEmbedding(
+        embedder = InternalEmbedding(
             api_base="http://localhost:1234",
-            model="nomic-test",
+            model="test-model",
             timeout=5.0,
             headers={"x-test": "1"},
             session=session,
@@ -95,22 +99,22 @@ class TestEmbeddingHelpers(unittest.TestCase):
         )
 
         self.assertEqual(embedder.api_base, "http://localhost:1234")
-        self.assertEqual(embedder.model, "nomic-test")
+        self.assertEqual(embedder.model, "test-model")
         self.assertEqual(embedder.timeout, 5.0)
         self.assertEqual(embedder.headers, {"x-test": "1"})
         self.assertIs(embedder.session, session)
-        self.assertEqual(embedder.model_name, "nomic-test")
+        self.assertEqual(embedder.model_name, "test-model")
         self.assertEqual(embedder.embed_batch_size, 16)
 
 
-    def test_internal_nomic_embedding_uses_600s_default_timeout(self) -> None:
-        embedder = InternalNomicEmbedding(session=DummySession())
+    def test_internal_embedding_uses_600s_default_timeout(self) -> None:
+        embedder = InternalEmbedding(session=DummySession())
 
         self.assertEqual(embedder.timeout, 600.0)
 
-    def test_internal_nomic_embedding_gets_embeddings(self) -> None:
+    def test_internal_embedding_gets_embeddings(self) -> None:
         session = DummySession()
-        embedder = InternalNomicEmbedding(session=session)
+        embedder = InternalEmbedding(session=session)
 
         vectors = embedder._get_text_embeddings(["hello"])
 
@@ -122,7 +126,7 @@ class TestEmbeddingHelpers(unittest.TestCase):
     def test_embedding_config_overrides_defaults(self) -> None:
         cfg = EmbeddingConfig(api_base="http://custom:9999", model="custom-model")
         session = DummySession()
-        embedder = InternalNomicEmbedding(session=session, embedding_config=cfg)
+        embedder = InternalEmbedding(session=session, embedding_config=cfg)
 
         self.assertEqual(embedder.api_base, "http://custom:9999")
         self.assertEqual(embedder.model, "custom-model")
@@ -130,7 +134,7 @@ class TestEmbeddingHelpers(unittest.TestCase):
     def test_explicit_kwargs_override_embedding_config(self) -> None:
         cfg = EmbeddingConfig(api_base="http://config:1111", timeout=99.0)
         session = DummySession()
-        embedder = InternalNomicEmbedding(
+        embedder = InternalEmbedding(
             api_base="http://explicit:2222",
             timeout=7.0,
             session=session,
@@ -143,7 +147,7 @@ class TestEmbeddingHelpers(unittest.TestCase):
     def test_embedding_config_batch_size(self) -> None:
         cfg = EmbeddingConfig(batch_size=128)
         session = DummySession()
-        embedder = InternalNomicEmbedding(session=session, embedding_config=cfg)
+        embedder = InternalEmbedding(session=session, embedding_config=cfg)
 
         self.assertEqual(embedder.embed_batch_size, 128)
 

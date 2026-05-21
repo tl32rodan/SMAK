@@ -12,8 +12,8 @@ from llama_index.core.embeddings import BaseEmbedding
 from smak.config import EmbeddingConfig, SmakConfig
 
 
-class InternalNomicEmbedding(BaseEmbedding):
-    """Embedding adapter for the internal Nomic server."""
+class InternalEmbedding(BaseEmbedding):
+    """Embedding adapter for the internal embedding server."""
 
     api_base: str
     model: str
@@ -62,20 +62,28 @@ class InternalNomicEmbedding(BaseEmbedding):
         return f"{self.api_base}/embeddings"
 
     def _post_embeddings(self, texts: Sequence[str]) -> list[list[float]]:
+        text_list = list(texts)
+        if not text_list:
+            return []
         response = self.session.post(
             self._embedding_endpoint(),
-            json={"model": self.model, "input": list(texts)},
+            json={"model": self.model, "input": text_list},
             headers=self.headers,
             timeout=self.timeout,
         )
-        response.raise_for_status()
+        if not response.ok:
+            raise requests.HTTPError(
+                f"{response.status_code} {response.reason} for {self._embedding_endpoint()} "
+                f"(model={self.model!r}, n_inputs={len(text_list)}): {response.text}",
+                response=response,
+            )
         payload = response.json()
         if "data" in payload:
             ordered = sorted(payload["data"], key=lambda d: d.get("index", 0))
             return [item["embedding"] for item in ordered]
         if "embeddings" in payload:
             return list(payload["embeddings"])
-        raise ValueError("Unexpected response format from Nomic embedding service.")
+        raise ValueError("Unexpected response format from embedding service.")
 
     def _get_query_embedding(self, query: str) -> list[float]:
         return self._post_embeddings([query])[0]
@@ -230,7 +238,7 @@ def _coerce_dimension(value: Any) -> int | None:
 
 
 __all__ = [
-    "InternalNomicEmbedding",
+    "InternalEmbedding",
     "detect_embedding_dimension",
     "initialize_embedding_dimensions",
     "validate_vector_store_dimension",
