@@ -12,8 +12,8 @@ from llama_index.core.embeddings import BaseEmbedding
 from smak.config import EmbeddingConfig, SmakConfig
 
 
-class InternalNomicEmbedding(BaseEmbedding):
-    """Embedding adapter for the internal Nomic server."""
+class InternalEmbedding(BaseEmbedding):
+    """Embedding adapter for the internal embedding server."""
 
     api_base: str
     model: str
@@ -75,7 +75,7 @@ class InternalNomicEmbedding(BaseEmbedding):
             return [item["embedding"] for item in ordered]
         if "embeddings" in payload:
             return list(payload["embeddings"])
-        raise ValueError("Unexpected response format from Nomic embedding service.")
+        raise ValueError("Unexpected response format from embedding service.")
 
     def _get_query_embedding(self, query: str) -> list[float]:
         return self._post_embeddings([query])[0]
@@ -230,7 +230,7 @@ def _coerce_dimension(value: Any) -> int | None:
 
 
 __all__ = [
-    "InternalNomicEmbedding",
+    "InternalEmbedding",
     "detect_embedding_dimension",
     "initialize_embedding_dimensions",
     "validate_vector_store_dimension",

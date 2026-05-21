@@ -7,7 +7,7 @@ from typing import Any
 
 from smak.core.domain import KnowledgeUnit
 from smak.parsers import Parser
-from smak.utils.embedding import EmbeddingProbe, InternalNomicEmbedding
+from smak.utils.embedding import EmbeddingProbe, InternalEmbedding
 
 Embedder = EmbeddingProbe
 
@@ -26,7 +26,7 @@ class IngestPipeline:
 
     def __post_init__(self) -> None:
         if self.embedder is None:
-            self.embedder = InternalNomicEmbedding()
+            self.embedder = InternalEmbedding()
 
     def run(
         self,

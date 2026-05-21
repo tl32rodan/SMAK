@@ -10,7 +10,7 @@ from typing import Callable, Iterable
 
 from smak.parsers import get_parser_for_path
 from smak.services.ingest.pipeline import IngestPipeline
-from smak.utils.embedding import EmbeddingProbe, InternalNomicEmbedding
+from smak.utils.embedding import EmbeddingProbe, InternalEmbedding
 
 
 @dataclass(frozen=True)
@@ -104,7 +104,7 @@ class IngestService:
         until all paths have been visited, so sources from one path are
         not mistakenly pruned while another path is being processed.
         """
-        embedder = (embedder_loader or InternalNomicEmbedding)()
+        embedder = (embedder_loader or InternalEmbedding)()
         node_class = (node_class_loader or _load_text_node_class)()
         vector_store = self.vector_store
         tracked_sources = (

@@ -111,13 +111,13 @@ class TestIngestPipeline(unittest.TestCase):
 
         self.assertEqual(result.embeddings, [[28.0, 1.0, 2.0]])
 
-    def test_ingest_pipeline_defaults_to_internal_nomic_embedder(self) -> None:
+    def test_ingest_pipeline_defaults_to_internal_embedder(self) -> None:
         class DefaultDummyEmbedder:
             def embed_documents(self, texts: list[str]) -> list[list[float]]:
                 return [[float(len(text))] for text in texts]
 
         with patch(
-            "smak.services.ingest.pipeline.InternalNomicEmbedding",
+            "smak.services.ingest.pipeline.InternalEmbedding",
             return_value=DefaultDummyEmbedder(),
         ):
             pipeline = _load_pipeline().IngestPipeline(
