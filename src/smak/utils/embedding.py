@@ -68,7 +68,12 @@ class InternalEmbedding(BaseEmbedding):
             headers=self.headers,
             timeout=self.timeout,
         )
-        response.raise_for_status()
+        if not response.ok:
+            raise requests.HTTPError(
+                f"{response.status_code} {response.reason} for {self._embedding_endpoint()} "
+                f"(model={self.model!r}): {response.text}",
+                response=response,
+            )
         payload = response.json()
         if "data" in payload:
             ordered = sorted(payload["data"], key=lambda d: d.get("index", 0))

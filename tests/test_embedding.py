@@ -33,8 +33,12 @@ class DummyVectorStore:
 
 
 class DummyResponse:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self, payload: dict, status_code: int = 200, text: str = "") -> None:
         self._payload = payload
+        self.status_code = status_code
+        self.ok = 200 <= status_code < 300
+        self.reason = "OK" if self.ok else "Bad Request"
+        self.text = text
 
     def raise_for_status(self) -> None:
         return None
