@@ -61,14 +61,20 @@ class SimpleLineParser:
 
 
 def get_parser_for_path(path: Path) -> Parser:
+    """Return a parser for *path* based on its file extension.
+
+    Known source-code extensions (``.py``, ``.pl``/``.pm``/``.t``) dispatch
+    to their dedicated parsers. Every other path is treated as plain text
+    and dispatched to :class:`SimpleLineParser`. Binary files must be
+    filtered out by the caller (see :func:`smak.utils.file_kind.is_binary_file`)
+    before reaching the parser.
+    """
     suffix = path.suffix.lower()
     if suffix == ".py":
         return PythonParser()
     if suffix in {".pl", ".pm", ".t"}:
         return PerlParser()
-    if suffix in {".md", ".markdown", ".txt", ".csv", ".il"}:
-        return SimpleLineParser()
-    return NullParser()
+    return SimpleLineParser()
 
 
 __all__ = [

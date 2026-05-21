@@ -59,6 +59,43 @@ class TestIngestService(unittest.TestCase):
             self.assertEqual(stats.files, 1)
             self.assertGreaterEqual(stats.vectors, 1)
 
+    def test_ingest_service_skips_binary_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "code.py").write_text("def foo():\n    return 1\n", encoding="utf-8")
+            (root / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+            store = FakeVectorStore()
+            service = IngestService(vector_store=store)
+            stats = service.ingest_paths(
+                [root],
+                incremental=False,
+                node_class_loader=lambda: FakeNode,
+                embedder_loader=DummyEmbedder,
+            )
+            self.assertEqual(stats.files, 1)
+            self.assertEqual(stats.skipped, 1)
+            for node in store.saved:
+                self.assertNotIn("image.png", node.id_)
+
+    def test_ingest_service_processes_unknown_text_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "script.sh").write_text("#!/bin/bash\necho hi\n", encoding="utf-8")
+            (root / "diff.patch").write_text("--- a\n+++ b\n@@ -1 +1 @@\n", encoding="utf-8")
+            store = FakeVectorStore()
+            service = IngestService(vector_store=store)
+            stats = service.ingest_paths(
+                [root],
+                incremental=False,
+                node_class_loader=lambda: FakeNode,
+                embedder_loader=DummyEmbedder,
+            )
+            self.assertEqual(stats.files, 2)
+            saved_sources = {node.metadata.get("source") for node in store.saved}
+            self.assertEqual(len(store.saved), 2)
+            self.assertTrue(any("script.sh" in (s or "") for s in saved_sources))
+            self.assertTrue(any("diff.patch" in (s or "") for s in saved_sources))
+
 
     def test_ingest_service_stores_absolute_uid_for_python_symbols(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

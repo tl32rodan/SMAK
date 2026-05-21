@@ -112,7 +112,14 @@ class TestParsers(unittest.TestCase):
         self.assertIsInstance(get_parser_for_path(Path("a.txt")), SimpleLineParser)
         self.assertIsInstance(get_parser_for_path(Path("a.csv")), SimpleLineParser)
         self.assertIsInstance(get_parser_for_path(Path("a.il")), SimpleLineParser)
-        self.assertIsInstance(get_parser_for_path(Path("a.json")), NullParser)
+
+    def test_get_parser_for_path_defaults_to_simple_line_parser(self) -> None:
+        for suffix in (".json", ".patch", ".sh", ".yaml", ".cfg", ""):
+            self.assertIsInstance(
+                get_parser_for_path(Path(f"a{suffix}")),
+                SimpleLineParser,
+                msg=f"suffix {suffix!r} should default to SimpleLineParser",
+            )
 
     def test_null_parser_skips_content(self) -> None:
         parser = NullParser()
