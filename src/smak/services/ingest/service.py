@@ -10,7 +10,7 @@ from typing import Callable, Iterable
 
 from smak.parsers import get_parser_for_path
 from smak.services.ingest.pipeline import IngestPipeline
-from smak.utils.embedding import EmbeddingProbe, InternalNomicEmbedding
+from smak.utils.embedding import EmbeddingProbe
 from smak.utils.file_kind import is_binary_file
 
 
@@ -89,7 +89,7 @@ class IngestService:
         max_workers: int = 4,
         incremental: bool = True,
         node_class_loader: Callable[[], type] | None = None,
-        embedder_loader: Callable[[], EmbeddingProbe] | None = None,
+        embedder_loader: Callable[[], EmbeddingProbe],
         follow_symlinks: bool = True,
         sync: bool = False,
         skip_file: Callable[[Path], bool] | None = None,
@@ -105,7 +105,7 @@ class IngestService:
         until all paths have been visited, so sources from one path are
         not mistakenly pruned while another path is being processed.
         """
-        embedder = (embedder_loader or InternalNomicEmbedding)()
+        embedder = embedder_loader()
         node_class = (node_class_loader or _load_text_node_class)()
         vector_store = self.vector_store
         tracked_sources = (
