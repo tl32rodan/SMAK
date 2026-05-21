@@ -13,6 +13,11 @@ def _install_requests() -> None:
     mod = ModuleType("requests")
 
     class _Resp:
+        ok = True
+        status_code = 200
+        reason = "OK"
+        text = ""
+
         def raise_for_status(self) -> None:
             return None
 
@@ -23,7 +28,13 @@ def _install_requests() -> None:
         def post(self, *_args: Any, **_kwargs: Any) -> _Resp:
             return _Resp()
 
+    class HTTPError(Exception):
+        def __init__(self, message: str = "", response: Any = None) -> None:
+            super().__init__(message)
+            self.response = response
+
     mod.Session = Session
+    mod.HTTPError = HTTPError
     sys.modules["requests"] = mod
 
 

@@ -6,7 +6,7 @@ from typing import Any
 
 from smak.config import IndexConfig, SmakConfig
 from smak.services.relation_resolver import SidecarRelationResolver
-from smak.utils.embedding import InternalNomicEmbedding
+from smak.utils.embedding import InternalEmbedding
 from smak.utils.path_env import contains_env_var, expand_env_path, expand_uid
 
 
@@ -24,7 +24,7 @@ class QueryService:
         self.config = config
         self.vector_store_loader = vector_store_loader
         self.index_config = index_config
-        self.embedder = embedder or InternalNomicEmbedding()
+        self.embedder = embedder or InternalEmbedding()
         self.relation_resolver = relation_resolver or SidecarRelationResolver()
         self._vector_store_cache: dict[str, object] = {}
 

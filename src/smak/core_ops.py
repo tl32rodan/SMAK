@@ -21,7 +21,7 @@ from smak.factory import (
     sidecar_skip_file,
 )
 from smak.services import IngestService
-from smak.utils.embedding import InternalNomicEmbedding
+from smak.utils.embedding import InternalEmbedding
 
 _STALE_SYMBOL_RE = re.compile(r'--symbol "([^"]+)"')
 
@@ -259,7 +259,7 @@ def do_ingest(
         follow_symlinks=follow_symlinks,
         skip_file=sidecar_skip_file,
         on_ghost_source=on_ghost_source,
-        embedder_loader=lambda: InternalNomicEmbedding(embedding_config=emb_cfg),
+        embedder_loader=lambda: InternalEmbedding(embedding_config=emb_cfg),
         env=config.env or None,
     )
     return {

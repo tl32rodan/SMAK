@@ -21,7 +21,7 @@ from smak.services.sidecar import SidecarService
 
 
 class TestFactory(unittest.TestCase):
-    @patch("smak.factory.InternalNomicEmbedding")
+    @patch("smak.factory.InternalEmbedding")
     def test_create_query_service_returns_query_service(self, _mock_embedder: object) -> None:
         store = SimpleNamespace(
             get_by_id=lambda uid: None,
@@ -48,7 +48,7 @@ class TestFactory(unittest.TestCase):
             self.assertFalse(sidecar.exists())
 
 
-    @patch("smak.factory.InternalNomicEmbedding")
+    @patch("smak.factory.InternalEmbedding")
     def test_init_config_forwards_embedding_config(self, mock_embedder_cls: MagicMock) -> None:
         mock_embedder_cls.return_value = SimpleNamespace(
             get_embedding_dimension=lambda: 42,
@@ -61,7 +61,7 @@ class TestFactory(unittest.TestCase):
         mock_embedder_cls.assert_called_once_with(embedding_config=emb_cfg)
         self.assertEqual(result.embedding_dimensions, 42)
 
-    @patch("smak.factory.InternalNomicEmbedding")
+    @patch("smak.factory.InternalEmbedding")
     def test_create_query_service_forwards_embedding_config(
         self, mock_embedder_cls: MagicMock,
     ) -> None:

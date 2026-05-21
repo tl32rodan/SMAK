@@ -11,7 +11,7 @@ from smak.services.relation_resolver import SidecarRelationResolver
 from smak.sidecar import is_sidecar_file
 from smak.sidecar.store import YAMLSidecarStore
 from smak.utils.embedding import (
-    InternalNomicEmbedding,
+    InternalEmbedding,
     initialize_embedding_dimensions,
     validate_vector_store_dimension,
 )
@@ -40,7 +40,7 @@ def init_config(
     """Initialise embedding dimensions on a config object."""
     return initialize_embedding_dimensions(
         config,
-        InternalNomicEmbedding(embedding_config=embedding_config),
+        InternalEmbedding(embedding_config=embedding_config),
     )
 
 
@@ -58,7 +58,7 @@ def create_query_service(
         index_config=index_config,
         vector_store_loader=_load_vector_store_for_index,
         relation_resolver=SidecarRelationResolver(sidecar_store, env=config.env),
-        embedder=InternalNomicEmbedding(embedding_config=embedding_config),
+        embedder=InternalEmbedding(embedding_config=embedding_config),
     )
 
 
